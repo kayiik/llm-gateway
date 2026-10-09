@@ -1,0 +1,117 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - website/**
+      - brand/**
+      - docs/**
+      - go/internal/providers/registry_snapshot.json
+      - README.md
+      - CONTRIBUTING.md
+      - SECURITY.md
+      - scripts/check-docs.mjs
+      - scripts/build-website.mjs
+      - scripts/render-brand-assets.mjs
+      - scripts/provider-roster-community/baseline.mjs
+      - scripts/provider-roster-community/github.mjs
+      - .github/workflows/pages.yml
+  pull_request:
+    paths:
+      - website/**
+      - brand/**
+      - docs/**
+      - go/internal/providers/registry_snapshot.json
+      - README.md
+      - CONTRIBUTING.md
+      - SECURITY.md
+      - scripts/**
+      - .github/workflows/pages.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Reads the provider roster workflow's runs and downloads its artifact.
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.23.3"
+
+      - name: Validate and build static site
+        run: |
+          node --check website/site.js
+          node --check scripts/check-docs.mjs
+          node --check scripts/build-website.mjs
+          node --check scripts/render-brand-assets.mjs
+          node scripts/render-brand-assets.mjs --check
+          node scripts/build-website.mjs
+
+      # Every installation fetches roster/payload.json from this site, so a
+      # website deployment republishes the newest roster instead of wiping it.
+      # Without one it deploys anyway, with a warning; a lookup error fails.
+      - name: Find the newest published provider roster
+        id: roster
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/provider-roster-community/baseline.mjs --published
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: steps.roster.outputs.found == 'true'
+        with:
+          name: provider-roster-staging
+          path: published-roster
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.roster.outputs.run_id }}
+
+      - name: Include the provider roster
+        if: steps.roster.outputs.found == 'true'
+        run: |
+          mkdir -p .website-dist/roster
+          cp published-roster/payload.json .website-dist/roster/payload.json
+          # Optional, as in the roster workflow's own deployment.
+          if [ -f published-roster/report.json ]; then
+            cp published-roster/report.json .website-dist/roster/report.json
+          fi
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        with:
+          path: .website-dist
+
+  deploy:
+    needs: validate
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Shared with the roster workflow's deployment so the two never interleave.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

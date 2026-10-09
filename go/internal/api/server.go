@@ -1,0 +1,292 @@
+package api
+
+import (
+	"bytes"
+	"log/slog"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"llmgw/internal/providers"
+	"llmgw/internal/router"
+	"llmgw/internal/web"
+
+	"github.com/xibodev/llmgw-core/oauthflow"
+)
+
+// pathAliases rewrites bare CLI paths onto their /v1 equivalents so tools that
+// append to a base URL without /v1 still hit the right handler.
+var pathAliases = map[string]string{
+	"/chat/completions":      "/v1/chat/completions",
+	"/responses":             "/v1/responses",
+	"/completions":           "/v1/chat/completions",
+	"/models":                "/v1/models",
+	"/messages":              "/v1/messages",
+	"/messages/count_tokens": "/v1/messages/count_tokens",
+	"/audio/transcriptions":  "/v1/audio/transcriptions",
+	"/audio/speech":          "/v1/audio/speech",
+	"/embeddings":            "/v1/embeddings",
+	"/images/generations":    "/v1/images/generations",
+	"/videos/generations":    "/v1/videos/generations",
+}
+
+// Runtime is the state a server acts on. A nil field follows the installed
+// runtime of its package.
+type Runtime struct {
+	Providers *providers.Runtime
+	Router    *router.Runtime
+}
+
+// server owns the Runtime it serves and the console's OAuth flows. Handlers
+// become its methods as they take their state from it: so far the usage,
+// telemetry, OAuth connection and free-provider handlers. The rest reach the
+// same state through the installed runtimes, which the process installs
+// before it serves.
+type server struct {
+	runtime Runtime
+	// now is the clock of the OAuth flows and their responses.
+	now func() time.Time
+	// oauth runs the OAuth connection flows over oauthStore, which keeps
+	// them bound to their caller for as long as the server serves.
+	oauth      *oauthflow.Service
+	oauthStore *oauthflow.MemoryFlowStore
+	// oauthDrivers resolves the driver of each flow. Tests replace it to
+	// stand in for a provider no fixture endpoint can reach.
+	oauthDrivers func(instance string, method oauthflow.Method) (oauthflow.Driver, error)
+	// metrics are what /metrics exposes, and accessLog, when not nil, gets a
+	// line for every request.
+	metrics   *gatewayMetrics
+	accessLog *slog.Logger
+}
+
+// newServer returns a server acting on runtime whose OAuth flows read time
+// from now.
+func newServer(runtime Runtime, now func() time.Time) *server {
+	s := &server{runtime: runtime, now: now, metrics: newGatewayMetrics(now()), accessLog: accessLogger(os.Stdout)}
+	s.oauthDrivers = s.oauthDriver
+	s.oauthStore = oauthflow.NewMemoryFlowStore(oauthflow.MemoryFlowStoreOptions{
+		Now: now, MaxFlowsPerCaller: maxOAuthFlowsPerPrincipal,
+	})
+	service, err := oauthflow.New(oauthflow.Options{
+		Store: s.oauthStore, Credentials: oauthConnectionStore{},
+		Drivers: func(instance string, method oauthflow.Method) (oauthflow.Driver, error) {
+			return s.oauthDrivers(instance, method)
+		},
+		CredentialKey: storeOAuthConnection, Now: now,
+	})
+	if err != nil {
+		// New fails only without a required option, and every one is set.
+		panic("api: build the OAuth flow service: " + err.Error())
+	}
+	s.oauth = service
+	return s
+}
+
+func (s *server) providers() *providers.Runtime {
+	if s.runtime.Providers != nil {
+		return s.runtime.Providers
+	}
+	return providers.Current()
+}
+
+func (s *server) router() *router.Runtime {
+	if s.runtime.Router != nil {
+		return s.runtime.Router
+	}
+	return router.Current()
+}
+
+// NewServer builds the http.Handler with all routes registered, acting on
+// runtime.
+func NewServer(runtime Runtime) http.Handler { return newServer(runtime, time.Now).handler() }
+
+// handler registers every route on a new mux.
+func (s *server) handler() http.Handler {
+	mux := http.NewServeMux()
+
+	// health (no auth)
+	mux.HandleFunc("GET /health", handleHealth)
+	mux.HandleFunc("GET /metrics", s.handleMetrics)
+	mux.HandleFunc("GET /oauth/callback/{provider_id}", s.handleOAuthBrowserCallback)
+
+	// OpenAI facade
+	mux.HandleFunc("POST /v1/chat/completions", handleChat)
+	mux.HandleFunc("POST /v1/responses", handleResponses)
+	mux.HandleFunc("POST /v1/embeddings", handleEmbeddings)
+	mux.HandleFunc("POST /v1/audio/transcriptions", handleTranscriptions)
+	mux.HandleFunc("POST /v1/audio/speech", handleSpeech)
+	mux.HandleFunc("POST /v1/images/generations", handleImageGenerations)
+	mux.HandleFunc("POST /v1/videos/generations", handleVideoGenerations)
+	mux.HandleFunc("GET /v1/models", handleModels)
+
+	// Anthropic facade
+	mux.HandleFunc("POST /v1/messages", handleMessages)
+	mux.HandleFunc("POST /v1/messages/count_tokens", handleCountTokens)
+
+	// The local console is the operational surface.
+	redirectConsole := func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/console", http.StatusFound)
+	}
+	mux.HandleFunc("GET /{$}", redirectConsole)
+	mux.HandleFunc("GET /admin", redirectConsole)
+	mux.HandleFunc("GET /admin/{$}", redirectConsole)
+
+	consolePolicy := consoleContentSecurityPolicy(web.ConsoleIndex())
+	serveConsole := func(w http.ResponseWriter, r *http.Request) {
+		asset := strings.TrimPrefix(r.URL.Path, "/console/")
+		if asset != "" && asset != "index.html" && r.URL.Path != "/console" {
+			built := strings.HasPrefix(asset, "assets/")
+			if data, err := web.ConsoleAsset(asset); err == nil {
+				if built {
+					// Build asset names carry a hash of their content, so a
+					// changed asset is a new URL and a cached one never
+					// goes stale.
+					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+				}
+				http.ServeContent(w, r, asset, time.Time{}, bytes.NewReader(data))
+				return
+			}
+			if built {
+				// A missing build asset is a stale or mistyped reference,
+				// not a console route: the document would reach the
+				// browser as a script or stylesheet.
+				http.NotFound(w, r)
+				return
+			}
+		}
+		writeConsoleDocument(w, consolePolicy)
+	}
+	mux.HandleFunc("GET /console", serveConsole)
+	mux.HandleFunc("GET /console/{$}", serveConsole)
+	mux.HandleFunc("GET /console/{path...}", serveConsole)
+
+	// Portal mode serves the same local bundle. Its client selects only user API
+	// routes from the location, keeping the admin API boundary on the server.
+	servePortal := func(w http.ResponseWriter, r *http.Request) {
+		writeConsoleDocument(w, consolePolicy)
+	}
+	mux.HandleFunc("GET /portal", servePortal)
+	mux.HandleFunc("GET /portal/{$}", servePortal)
+	mux.HandleFunc("GET /user/api/me", handleUserMe)
+	mux.HandleFunc("GET /user/api/usage", handleUserUsage)
+	mux.HandleFunc("GET /user/api/requests", handleUserRequests)
+	mux.HandleFunc("GET /user/api/models", handleUserModels)
+	mux.HandleFunc("GET /user/api/provider-roster", handleUserRoster)
+	mux.HandleFunc("POST /user/api/providers/{id}/test", handleUserTestProvider)
+	mux.HandleFunc("GET /user/api/keys", handleUserListKeys)
+	mux.HandleFunc("POST /user/api/keys", handleUserCreateKey)
+	mux.HandleFunc("POST /user/api/keys/delete", handleUserDeleteKeys)
+	mux.HandleFunc("POST /user/api/keys/{id}/reveal", handleUserRevealKey)
+	mux.HandleFunc("DELETE /user/api/keys/{id}", handleUserRevokeKey)
+	mux.HandleFunc("POST /user/api/keys/{id}/update", handleUserUpdateKey)
+	mux.HandleFunc("GET /user/api/keys/{id}/limits", handleUserKeyLimits)
+	mux.HandleFunc("GET /user/api/audit", handleUserAudit)
+	mux.HandleFunc("GET /user/api/connections", handleUserConnections)
+	mux.HandleFunc("POST /user/api/connections", handleUserCreateConnection)
+	mux.HandleFunc("DELETE /user/api/connections/{connection_id}", handleUserRevokeConnection)
+	mux.HandleFunc("POST /user/api/connections/{provider_id}/oauth/start", s.handleUserOAuthStart)
+	mux.HandleFunc("POST /user/api/connections/{provider_id}/oauth/poll", s.handleUserOAuthPoll)
+	mux.HandleFunc("POST /user/api/connections/{provider_id}/oauth/complete", s.handleUserOAuthComplete)
+	mux.HandleFunc("POST /user/api/connections/{provider_id}/oauth/refresh", handleUserOAuthRefresh)
+	mux.HandleFunc("POST /user/api/connections/{provider_id}/oauth/revoke", handleUserOAuthRevoke)
+	mux.HandleFunc("POST /user/api/playground", handleUserPlayground)
+	mux.HandleFunc("POST /user/api/playground/v1/chat/completions", handleUserPlaygroundChat)
+	mux.HandleFunc("POST /user/api/playground/v1/responses", handleUserPlaygroundResponses)
+	mux.HandleFunc("POST /user/api/playground/v1/messages", handleUserPlaygroundMessages)
+	mux.HandleFunc("DELETE /user/api/copilot", handleUserCopilotRevoke)
+	mux.HandleFunc("GET /admin/api/state", handleState)
+	mux.HandleFunc("GET /admin/api/settings/anonymous-provider-automation", handleGetAnonymousProviderAutomation)
+	mux.HandleFunc("POST /admin/api/settings/anonymous-provider-automation", handleSetAnonymousProviderAutomation)
+	mux.HandleFunc("POST /admin/api/providers/auto-connect-free", s.handleAutoConnectFreeProviders)
+	mux.HandleFunc("GET /admin/api/provider-roster", handleAdminRoster)
+	mux.HandleFunc("POST /admin/api/provider-roster/refresh", handleRefreshRoster)
+	mux.HandleFunc("POST /admin/api/playground", handleAdminPlayground)
+	mux.HandleFunc("POST /admin/api/playground/v1/chat/completions", handleAdminPlaygroundChat)
+	mux.HandleFunc("POST /admin/api/playground/v1/responses", handleAdminPlaygroundResponses)
+	mux.HandleFunc("POST /admin/api/playground/v1/messages", handleAdminPlaygroundMessages)
+	mux.HandleFunc("POST /admin/api/playground/speech", handleAdminPlaygroundSpeech)
+	mux.HandleFunc("POST /admin/api/playground/transcription", handleAdminPlaygroundTranscription)
+	mux.HandleFunc("POST /admin/api/playground/embeddings", handleAdminPlaygroundEmbeddings)
+	mux.HandleFunc("POST /admin/api/playground/image", handleAdminPlaygroundImage)
+	mux.HandleFunc("POST /admin/api/playground/video", handleAdminPlaygroundVideo)
+	mux.HandleFunc("GET /admin/api/models", handleAdminModels)
+	mux.HandleFunc("POST /admin/api/providers", handleUpsertProvider)
+	mux.HandleFunc("DELETE /admin/api/providers/{id}", handleDeleteProvider)
+	mux.HandleFunc("POST /admin/api/providers/{id}/models", handleProviderModels)
+	mux.HandleFunc("GET /admin/api/providers/{id}/catalog", handleProviderCatalog)
+	mux.HandleFunc("POST /admin/api/providers/{id}/refresh", handleRefreshProvider)
+	mux.HandleFunc("POST /admin/api/providers/{id}/test", handleTestProvider)
+	mux.HandleFunc("POST /admin/api/providers/{id}/repair", handleRepairProvider)
+	mux.HandleFunc("POST /admin/api/providers/{id}/verify", handleVerifyProvider)
+	mux.HandleFunc("POST /admin/api/providers/{id}/enabled", handleProviderEnabled)
+	mux.HandleFunc("POST /admin/api/endpoints", handleUpsertEndpoint)
+	mux.HandleFunc("DELETE /admin/api/endpoints/{name}", handleDeleteEndpoint)
+	// Deprecated: the routing layer is called an endpoint now. Retained until
+	// client evidence and a documented release boundary make removal safe.
+	mux.HandleFunc("POST /admin/api/categories", handleUpsertEndpoint)
+	mux.HandleFunc("DELETE /admin/api/categories/{name}", handleDeleteEndpoint)
+	mux.HandleFunc("GET /admin/api/keys", handleListKeys)
+	mux.HandleFunc("POST /admin/api/keys", handleCreateKey)
+	mux.HandleFunc("POST /admin/api/keys/{id}/reveal", handleRevealKey)
+	mux.HandleFunc("POST /admin/api/keys/update", handleUpdateKey)
+	mux.HandleFunc("POST /admin/api/keys/delete", handleDeleteKeys)
+	mux.HandleFunc("GET /admin/api/keys/{id}/limits", handleKeyLimits)
+	mux.HandleFunc("DELETE /admin/api/keys", handleRevokeKey)
+	mux.HandleFunc("GET /admin/api/principals", handleListPrincipals)
+	mux.HandleFunc("POST /admin/api/principals", handleCreatePrincipal)
+	mux.HandleFunc("POST /admin/api/principals/status", handlePrincipalStatus)
+	mux.HandleFunc("POST /admin/api/principals/{id}/rename", handleRenamePrincipal)
+	mux.HandleFunc("GET /admin/api/projects", handleListProjects)
+	mux.HandleFunc("POST /admin/api/projects", handleCreateProject)
+	mux.HandleFunc("POST /admin/api/projects/status", handleProjectStatus)
+	mux.HandleFunc("GET /admin/api/projects/{id}/policy", handleGetProjectPolicy)
+	mux.HandleFunc("POST /admin/api/projects/{id}/policy", handleSetProjectPolicy)
+	mux.HandleFunc("GET /admin/api/projects/{id}/limits", handleProjectLimits)
+	mux.HandleFunc("GET /admin/api/projects/{id}/provider-credential-bindings", handleListProviderCredentialBindings)
+	mux.HandleFunc("POST /admin/api/projects/{id}/provider-credential-bindings", handleSetProviderCredentialBinding)
+	mux.HandleFunc("POST /admin/api/projects/{id}/provider-credential-bindings/status", handleProviderCredentialBindingStatus)
+	mux.HandleFunc("POST /admin/api/providers/{id}/shared-credential/import", handleImportSharedProviderCredential)
+	mux.HandleFunc("POST /admin/api/provider-credentials/status", handleProviderCredentialStatus)
+	mux.HandleFunc("GET /admin/api/memberships", handleListMemberships)
+	mux.HandleFunc("POST /admin/api/memberships", handleSetMembership)
+	mux.HandleFunc("DELETE /admin/api/memberships", handleDeleteMembership)
+	mux.HandleFunc("GET /admin/api/principals/{id}/credentials", handleListPrincipalCredentials)
+	mux.HandleFunc("GET /admin/api/principals/{id}/connections", handleListPrincipalConnections)
+	mux.HandleFunc("POST /admin/api/principals/{id}/connections", handleCreatePrincipalConnection)
+	mux.HandleFunc("DELETE /admin/api/principals/{id}/connections/{connection_id}", handleRevokePrincipalConnection)
+	mux.HandleFunc("POST /admin/api/principals/{id}/connections/{provider_id}/oauth/start", s.handlePrincipalOAuthStart)
+	mux.HandleFunc("POST /admin/api/principals/{id}/connections/{provider_id}/oauth/poll", s.handlePrincipalOAuthPoll)
+	mux.HandleFunc("POST /admin/api/principals/{id}/connections/{provider_id}/oauth/complete", s.handlePrincipalOAuthComplete)
+	mux.HandleFunc("POST /admin/api/principals/{id}/connections/{provider_id}/oauth/refresh", handlePrincipalOAuthRefresh)
+	mux.HandleFunc("POST /admin/api/principals/{id}/connections/{provider_id}/oauth/revoke", handlePrincipalOAuthRevoke)
+	mux.HandleFunc("DELETE /admin/api/principals/{id}/copilot", handlePrincipalCopilotRevoke)
+	mux.HandleFunc("GET /admin/api/alerts", handleListAlerts)
+	mux.HandleFunc("POST /admin/api/alerts", handleCreateAlert)
+	mux.HandleFunc("POST /admin/api/alerts/status", handleAlertStatus)
+	mux.HandleFunc("DELETE /admin/api/alerts/{id}", handleDeleteAlert)
+	mux.HandleFunc("POST /admin/api/alerts/evaluate", handleEvaluateAlerts)
+	mux.HandleFunc("GET /admin/api/outbox", handleListOutbox)
+	mux.HandleFunc("GET /admin/api/deliveries", handleListDeliveries)
+	mux.HandleFunc("POST /admin/api/outbox/claim", handleClaimOutbox)
+	mux.HandleFunc("POST /admin/api/outbox/{id}/delivered", handleOutboxDelivered)
+	mux.HandleFunc("POST /admin/api/outbox/{id}/failed", handleOutboxFailed)
+	mux.HandleFunc("GET /admin/api/audit", handleAudit)
+	mux.HandleFunc("POST /admin/api/detect", handleDetect)
+	mux.HandleFunc("GET /admin/api/usage", s.handleUsage)
+	mux.HandleFunc("GET /admin/api/telemetry", s.handleTelemetry)
+	mux.HandleFunc("GET /admin/api/companion-daemon", s.handleCompanionDaemon)
+	mux.HandleFunc("GET /admin/api/requests", handleRequests)
+
+	return securityHeaders(assignRequestIDs(aliasMiddleware(s.observe(mux, requestLogMiddleware(anthropicErrors(limitRequestBodies(mux)))))))
+}
+
+// aliasMiddleware rewrites bare paths before routing.
+func aliasMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if target, ok := pathAliases[r.URL.Path]; ok {
+			r.URL.Path = target
+		}
+		next.ServeHTTP(w, r)
+	})
+}
