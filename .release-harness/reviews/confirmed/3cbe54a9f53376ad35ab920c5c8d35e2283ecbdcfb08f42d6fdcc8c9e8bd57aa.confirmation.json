@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0.0",
+  "review_digest": "3cbe54a9f53376ad35ab920c5c8d35e2283ecbdcfb08f42d6fdcc8c9e8bd57aa",
+  "events": [
+    {
+      "by": "kayiik, via GitHub Copilot CLI on kayiik's instruction to release",
+      "at": "2026-10-09T22:35:19.515Z"
+    }
+  ]
+}

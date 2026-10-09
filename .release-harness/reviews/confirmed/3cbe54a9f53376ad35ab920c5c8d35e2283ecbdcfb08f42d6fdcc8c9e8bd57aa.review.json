@@ -1,0 +1,201 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "baseline",
+  "contract": {
+    "digest": "da05219969e051b692980ada8e8066ac909bf88d11ad6a5af6338834a8cc384f"
+  },
+  "authoring_provenance": {
+    "status": "established",
+    "path": ".release-harness/drafts/llm-gateway.record.json",
+    "digest": "e819045146db82b3754d02e0950d13ca8527706a2b478ada58c176c24e706d2b"
+  },
+  "sources": [
+    {
+      "source_id": "primary",
+      "status": "established",
+      "repository_identity": "https://github.com/kayiik/llm-gateway.git",
+      "head_commit": "5bb3ac45add57348a7594dcde5266d65ac5a8332",
+      "head_tree": "0e3373dfd2ed8ff3a29cdc5f4d42d69fac650b23",
+      "reviewed_source_digest": "953eaa2d1c6c4ad98771a4e24e6aff763bb97b90885b91b08f44640c08f11322",
+      "changed_paths": []
+    }
+  ],
+  "facts": [
+    {
+      "id": "F1",
+      "claim": "`llmgw version` exits 0 and prints `llm-gateway 0.0.1-dev` (an unstamped local build; the release build stamps version, commit and build time).",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 5bb3ac45add57348a7594dcde5266d65ac5a8332",
+        "method": "ran the built binary"
+      }
+    },
+    {
+      "id": "F2",
+      "claim": "`llmgw health` exits 0 while the gateway of the same build is listening.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 5bb3ac45add57348a7594dcde5266d65ac5a8332",
+        "method": "ran the built binary against a local `llmgw serve` on 127.0.0.1:18787"
+      }
+    },
+    {
+      "id": "F3",
+      "claim": "GET /health without credentials returns 200 and a body containing \"status\":\"ok\".",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 5bb3ac45add57348a7594dcde5266d65ac5a8332",
+        "method": "curl against `llmgw serve` on 127.0.0.1:18787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F4",
+      "claim": "GET /v1/models returns 200 and {\"data\":[],\"object\":\"list\"}.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 5bb3ac45add57348a7594dcde5266d65ac5a8332",
+        "method": "curl against `llmgw serve` on 127.0.0.1:18787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F5",
+      "claim": "POST /v1/chat/completions with a body that is not JSON returns 422 and an error of type invalid_request_error.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 5bb3ac45add57348a7594dcde5266d65ac5a8332",
+        "method": "curl against `llmgw serve` on 127.0.0.1:18787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F6",
+      "claim": "POST /v1/responses with a body that is not JSON returns 422 and an error of type invalid_request_error.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 5bb3ac45add57348a7594dcde5266d65ac5a8332",
+        "method": "curl against `llmgw serve` on 127.0.0.1:18787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F7",
+      "claim": "POST /v1/messages with a body that is not JSON returns 422 and an Anthropic-shaped body whose top-level type is \"error\".",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 5bb3ac45add57348a7594dcde5266d65ac5a8332",
+        "method": "curl against `llmgw serve` on 127.0.0.1:18787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F8",
+      "claim": "GET /admin/api/state without credentials returns 401 \"Admin authentication required.\" while LLMGW_ALLOW_UNAUTHENTICATED_API=1 leaves the data plane open.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 5bb3ac45add57348a7594dcde5266d65ac5a8332",
+        "method": "curl against `llmgw serve` on 127.0.0.1:18787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F9",
+      "claim": "GET /console/ returns 200 and a page titled <title>LLM Gateway Console</title>.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 5bb3ac45add57348a7594dcde5266d65ac5a8332",
+        "method": "curl against `llmgw serve` on 127.0.0.1:18787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F10",
+      "claim": "GET /metrics returns 404 when no metrics token is configured.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 5bb3ac45add57348a7594dcde5266d65ac5a8332",
+        "method": "curl against `llmgw serve` on 127.0.0.1:18787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    }
+  ],
+  "impact": {
+    "assertions": [
+      {
+        "id": "A1",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1"
+        ]
+      },
+      {
+        "id": "A2",
+        "impact": "unchanged",
+        "supported_by": [
+          "F2"
+        ]
+      },
+      {
+        "id": "A3",
+        "impact": "unchanged",
+        "supported_by": [
+          "F3"
+        ]
+      },
+      {
+        "id": "A4",
+        "impact": "unchanged",
+        "supported_by": [
+          "F4"
+        ]
+      },
+      {
+        "id": "A5",
+        "impact": "unchanged",
+        "supported_by": [
+          "F5"
+        ]
+      },
+      {
+        "id": "A6",
+        "impact": "unchanged",
+        "supported_by": [
+          "F6"
+        ]
+      },
+      {
+        "id": "A7",
+        "impact": "unchanged",
+        "supported_by": [
+          "F7"
+        ]
+      },
+      {
+        "id": "A8",
+        "impact": "unchanged",
+        "supported_by": [
+          "F8"
+        ]
+      },
+      {
+        "id": "A9",
+        "impact": "unchanged",
+        "supported_by": [
+          "F9"
+        ]
+      },
+      {
+        "id": "A10",
+        "impact": "unchanged",
+        "supported_by": [
+          "F10"
+        ]
+      }
+    ],
+    "requires": [],
+    "possible_binding_changes": []
+  },
+  "questions": [],
+  "conclusion": {
+    "action": "reuse_contract",
+    "summary": "Baseline: every accepted assertion, A1 to A10, was exercised against a build of the exact source (commit 5bb3ac45) and held, so the accepted contract is reused for this source."
+  },
+  "proposed": {
+    "by": "GitHub Copilot CLI, authored for kayiik",
+    "at": "2026-10-09T22:31:52.434Z"
+  },
+  "digest": "3cbe54a9f53376ad35ab920c5c8d35e2283ecbdcfb08f42d6fdcc8c9e8bd57aa"
+}
