@@ -1,0 +1,195 @@
+name: provider roster staging
+
+on:
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+    inputs:
+      bootstrap:
+        description: Allow the first run only, when no previous successful run exists
+        type: boolean
+        default: false
+      no_probe:
+        description: Skip public reachability probes
+        type: boolean
+        default: true
+      restore_entry_id:
+        description: Optional known entry ID to restore after maintainer review
+        type: string
+        default: ''
+      restore_since:
+        description: Restore incident epoch in UTC RFC3339, required with restore_entry_id
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provider-roster-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.3'
+      - name: Verify collector fixtures
+        run: node --test scripts/provider-roster/*.test.mjs
+      - name: Find previous successful state on this branch
+        id: baseline
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ALLOW_BOOTSTRAP: ${{ inputs.bootstrap || false }}
+        run: node scripts/provider-roster-community/baseline.mjs
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: steps.baseline.outputs.found == 'true'
+        with:
+          name: provider-roster-staging
+          path: previous
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.baseline.outputs.run_id }}
+      - name: Collect pinned sources without provider or GitHub credentials
+        env:
+          HAS_PREVIOUS: ${{ steps.baseline.outputs.found }}
+          NO_PROBE: ${{ github.event_name != 'schedule' && inputs.no_probe }}
+        shell: bash
+        run: |
+          args=(--output collected)
+          if [[ "$HAS_PREVIOUS" == 'true' ]]; then
+            args+=(--previous previous/payload.json)
+          fi
+          if [[ "$NO_PROBE" == 'true' ]]; then
+            args+=(--no-probe)
+          fi
+          node scripts/provider-roster/build.mjs "${args[@]}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: provider-roster-collected
+          path: collected/payload.json
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: steps.baseline.outputs.found == 'true'
+        with:
+          name: provider-roster-previous-state
+          path: previous/report-state.json
+          if-no-files-found: warn
+          retention-days: 7
+    outputs:
+      has_previous: ${{ steps.baseline.outputs.found }}
+
+  reconcile:
+    needs: collect
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.3'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: provider-roster-collected
+          path: collected
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: needs.collect.outputs.has_previous == 'true'
+        continue-on-error: true
+        with:
+          name: provider-roster-previous-state
+          path: previous
+      - name: Read community reports and produce a dry-run actions plan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HAS_PREVIOUS: ${{ needs.collect.outputs.has_previous }}
+          ROSTER_RESTORE_ENTRY_ID: ${{ inputs.restore_entry_id }}
+          ROSTER_RESTORE_SINCE: ${{ inputs.restore_since }}
+        shell: bash
+        run: |
+          args=(--payload collected/payload.json --output reconciled --overrides scripts/provider-roster-community/overrides.example.json)
+          if [[ "$HAS_PREVIOUS" == 'true' && -f previous/report-state.json ]]; then
+            args+=(--previous previous/report-state.json)
+          else
+            args+=(--bootstrap)
+          fi
+          node scripts/provider-roster-community/cli.mjs "${args[@]}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: provider-roster-reconciled
+          path: reconciled/
+          if-no-files-found: error
+          retention-days: 7
+
+  package:
+    needs: reconcile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.3'
+      - name: Verify community fixtures
+        run: node --test scripts/provider-roster-community/*.test.mjs
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: provider-roster-reconciled
+          path: reconciled
+      - name: Validate payload size and schema
+        run: |
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('reconciled/payload.json','utf8'));if(!Array.isArray(p.entries)||p.entries.length===0)throw new Error('empty payload');if(p.entries.length>5000)throw new Error('exceeds 5000 entries');const b=Buffer.byteLength(JSON.stringify(p));if(b>4*1024*1024)throw new Error('exceeds 4 MiB: '+b);console.log(JSON.stringify({entries:p.entries.length,bytes:b}))"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: provider-roster-staging
+          path: reconciled/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Build website with roster
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        run: |
+          node scripts/build-website.mjs
+          mkdir -p .website-dist/roster
+          cp reconciled/payload.json .website-dist/roster/payload.json
+          cp reconciled/report.json .website-dist/roster/report.json 2>/dev/null || true
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        with:
+          path: .website-dist
+
+  publish:
+    needs: package
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Shared with the website deployment in pages.yml so the two never interleave.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy roster to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://kayiik.github.io/llm-gateway/sitemap.xml

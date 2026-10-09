@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0.0",
+  "proposition": {
+    "subject": {
+      "id": "llm-gateway",
+      "name": "LLM Gateway"
+    },
+    "assertions": [
+      {
+        "id": "A1",
+        "kind": "cli",
+        "target": "cli",
+        "description": "the CLI reports release version and build identity",
+        "expect": {
+          "args": "version",
+          "exit_code": 0,
+          "stdout_contains": "llm-gateway"
+        },
+        "supported_by": [
+          "cli-version-command"
+        ]
+      },
+      {
+        "id": "A2",
+        "kind": "cli",
+        "target": "cli",
+        "description": "the CLI health command verifies local process health",
+        "expect": {
+          "args": "health",
+          "exit_code": 0
+        },
+        "supported_by": [
+          "cli-health-command"
+        ]
+      },
+      {
+        "id": "A3",
+        "kind": "http",
+        "target": "gateway",
+        "description": "the gateway exposes an unauthenticated GET /health endpoint reporting status ok",
+        "expect": {
+          "method": "GET",
+          "path": "/health",
+          "status": 200,
+          "body_contains": "\"status\":\"ok\""
+        },
+        "supported_by": [
+          "http-health-endpoint"
+        ]
+      },
+      {
+        "id": "A4",
+        "kind": "http",
+        "target": "gateway",
+        "description": "the gateway serves public models list on GET /v1/models",
+        "expect": {
+          "method": "GET",
+          "path": "/v1/models",
+          "status": 200,
+          "body_contains": "\"object\":\"list\""
+        },
+        "supported_by": [
+          "http-models-endpoint"
+        ]
+      },
+      {
+        "id": "A5",
+        "kind": "http",
+        "target": "gateway",
+        "description": "an unreadable Chat Completions request gets an OpenAI-shaped client error",
+        "expect": {
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "status": 422,
+          "body_contains": "invalid_request_error"
+        },
+        "supported_by": [
+          "chat-unreadable-body"
+        ]
+      },
+      {
+        "id": "A6",
+        "kind": "http",
+        "target": "gateway",
+        "description": "an unreadable Responses request gets an OpenAI-shaped client error",
+        "expect": {
+          "method": "POST",
+          "path": "/v1/responses",
+          "status": 422,
+          "body_contains": "invalid_request_error"
+        },
+        "supported_by": [
+          "responses-unreadable-body"
+        ]
+      },
+      {
+        "id": "A7",
+        "kind": "http",
+        "target": "gateway",
+        "description": "an unreadable Messages request gets an Anthropic-shaped error",
+        "expect": {
+          "method": "POST",
+          "path": "/v1/messages",
+          "status": 422,
+          "body_contains": "\"type\":\"error\""
+        },
+        "supported_by": [
+          "messages-anthropic-envelope"
+        ]
+      },
+      {
+        "id": "A8",
+        "kind": "http",
+        "target": "gateway",
+        "description": "the administrator API refuses an unauthenticated caller even when the data plane needs no key",
+        "expect": {
+          "method": "GET",
+          "path": "/admin/api/state",
+          "status": 401,
+          "body_contains": "Admin authentication required."
+        },
+        "supported_by": [
+          "admin-api-requires-authentication"
+        ]
+      },
+      {
+        "id": "A9",
+        "kind": "http",
+        "target": "gateway",
+        "description": "the gateway serves its embedded console",
+        "expect": {
+          "method": "GET",
+          "path": "/console/",
+          "status": 200,
+          "body_contains": "<title>LLM Gateway Console</title>"
+        },
+        "supported_by": [
+          "embedded-console"
+        ]
+      },
+      {
+        "id": "A10",
+        "kind": "http",
+        "target": "gateway",
+        "description": "the gateway exposes no metrics unless an operator sets a metrics token",
+        "expect": {
+          "method": "GET",
+          "path": "/metrics",
+          "status": 404
+        },
+        "supported_by": [
+          "metrics-off-by-default"
+        ]
+      }
+    ]
+  },
+  "questions": [
+    {
+      "id": "Q1",
+      "question": "Does /health verify process liveness and build identity independently of upstream provider network availability?",
+      "blocking": true,
+      "resolution": "Yes, /health is a local process probe returning status ok and build identity without making billable or external upstream provider calls.",
+      "resolved_by": "release owner"
+    }
+  ]
+}

@@ -1,0 +1,610 @@
+# Build and publish immutable binaries and a multi-architecture image.
+# Tag pushes publish. Manual dispatch is always a read-only dry run.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build in vMAJOR.MINOR.PATCH form; never publishes
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+  # Release staging and publication have no checkout to infer a repository from.
+  GH_REPO: ${{ github.repository }}
+  # The accepted release contract a release is reviewed against and certified
+  # by. More than one accepted contract exists, so each command names it;
+  # accepting a new contract means changing this digest with its review.
+  RELEASE_CONTRACT: da05219969e051b692980ada8e8066ac909bf88d11ad6a5af6338834a8cc384f
+
+concurrency:
+  group: release-pipeline
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: validate release identity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      tag: ${{ steps.identity.outputs.tag }}
+      version: ${{ steps.identity.outputs.version }}
+      commit: ${{ steps.identity.outputs.commit }}
+      build_time: ${{ steps.identity.outputs.build_time }}
+      source_date_epoch: ${{ steps.identity.outputs.source_date_epoch }}
+      release_exists: ${{ steps.identity.outputs.release_exists }}
+    steps:
+      # Exercise the same checkout-free context on tag pushes and read-only dry runs.
+      - name: Verify release repository context without checkout
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GH_REPO" = "$GITHUB_REPOSITORY"
+          gh release list --limit 1 --json tagName >/dev/null
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate semantic version
+        id: identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$REQUESTED_TAG" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
+            echo "version must match vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            git fetch --no-tags origin main:refs/remotes/origin/main
+            releases=$(gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100")
+            matches=$(printf '%s' "$releases" | jq --arg tag "$REQUESTED_TAG" '[.[][] | select(.tag_name == $tag)]')
+            published_count=$(printf '%s' "$matches" | jq '[.[] | select(.draft == false)] | length')
+            draft_count=$(printf '%s' "$matches" | jq '[.[] | select(.draft == true)] | length')
+            test "$published_count" -eq 0 || {
+              echo "release already exists; published version tags are immutable" >&2
+              exit 1
+            }
+            test "$draft_count" -le 1 || {
+              echo "multiple draft releases exist for $REQUESTED_TAG; refusing ambiguous resume" >&2
+              exit 1
+            }
+            release_exists=false
+            if [ "$draft_count" -eq 1 ]; then
+              release_exists=true
+            fi
+            if [ "$release_exists" = "true" ]; then
+              git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+                echo "draft release commit is no longer on main" >&2
+                exit 1
+              }
+            else
+              test "$(git rev-parse origin/main)" = "$GITHUB_SHA" || {
+                echo "new release tags must point at the current main head" >&2
+                exit 1
+              }
+            fi
+            previous=$(git tag --list 'v*' | grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' | grep -v -Fx "$REQUESTED_TAG" | sort -V | tail -1 || true)
+            if [ -n "$previous" ] && [ "$(printf '%s\n%s\n' "$previous" "$REQUESTED_TAG" | sort -V | tail -1)" != "$REQUESTED_TAG" ]; then
+              echo "release version must be newer than $previous" >&2
+              exit 1
+            fi
+          else
+            release_exists=false
+          fi
+          build_time=$(date -u -d "$(git show -s --format=%cI "$GITHUB_SHA")" +'%Y-%m-%dT%H:%M:%SZ')
+          source_date_epoch=$(git show -s --format=%ct "$GITHUB_SHA")
+          {
+            echo "tag=$REQUESTED_TAG"
+            echo "version=${REQUESTED_TAG#v}"
+            echo "commit=$GITHUB_SHA"
+            echo "build_time=$build_time"
+            echo "source_date_epoch=$source_date_epoch"
+            echo "release_exists=$release_exists"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.23.3"
+
+      - name: Install pinned release tooling
+        working-directory: .github/release-harness
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Validate release-harness contracts and lifecycle
+        env:
+          RELEASE_HARNESS: ${{ github.workspace }}/.github/release-harness/node_modules/.bin/release-harness
+        run: |
+          "$RELEASE_HARNESS" validate --all
+          "$RELEASE_HARNESS" lifecycle check --contract "$RELEASE_CONTRACT"
+
+  ci:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+
+  binaries:
+    name: binaries / SBOM / checksums
+    needs: [validate, ci]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.23.3"
+
+      - name: Install pinned release tooling
+        working-directory: .github/release-harness
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: v1.42.3
+
+      - name: Build release artifacts
+        working-directory: go
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          COMMIT: ${{ needs.validate.outputs.commit }}
+          BUILD_TIME: ${{ needs.validate.outputs.build_time }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          CGO_ENABLED: "0"
+          RELEASE_HARNESS: ${{ github.workspace }}/.github/release-harness/node_modules/.bin/release-harness
+        run: |
+          set -euo pipefail
+          mkdir -p ../dist
+          ldflags="-s -w -X=llmgw/internal/buildinfo.Version=$VERSION -X=llmgw/internal/buildinfo.Commit=$COMMIT -X=llmgw/internal/buildinfo.BuildTime=$BUILD_TIME"
+          # The cross-compile job in ci.yml builds these same targets on every
+          # pull request; keep the two lists in step.
+          targets="windows/amd64 windows/arm64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 freebsd/amd64 linux/riscv64"
+          target_count=$(printf '%s' "$targets" | wc -w)
+          for target in $targets; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            ext=""
+            [ "$os" = "windows" ] && ext=".exe"
+            name="llmgw_${TAG}_${os}_${arch}"
+            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="$ldflags" -o "llmgw${ext}" ./cmd/llmgw
+            syft "file:llmgw${ext}" -o "spdx-json=../dist/${name}.spdx.json"
+            jq --arg created "$BUILD_TIME" --arg namespace "https://spdx.org/spdxdocs/${name}" \
+              '.creationInfo.created = $created | .documentNamespace = $namespace' \
+              "../dist/${name}.spdx.json" > "../dist/${name}.spdx.json.tmp"
+            mv "../dist/${name}.spdx.json.tmp" "../dist/${name}.spdx.json"
+            if [ "$os/$arch" = "linux/amd64" ]; then
+              output=$(./llmgw version)
+              printf '%s\n' "$output"
+              printf '%s\n' "$output" | grep -Fx "llm-gateway $VERSION"
+              printf '%s\n' "$output" | grep -Fx "commit $COMMIT"
+              printf '%s\n' "$output" | grep -Fx "build_time $BUILD_TIME"
+              LLMGW_ALLOW_UNAUTHENTICATED_API=1 ./llmgw serve &
+              SERVER_PID=$!
+              sleep 2
+              cd ..
+              "$RELEASE_HARNESS" bind ci --target "cli=$(pwd)/go/llmgw" --target "gateway=http://127.0.0.1:8787"
+              "$RELEASE_HARNESS" run --binding ci --contract "$RELEASE_CONTRACT"
+              "$RELEASE_HARNESS" verify
+              kill $SERVER_PID
+              rm -rf .release-harness/bindings .release-harness/runs
+              cd go
+            fi
+            if [ "$os" = "windows" ]; then
+              touch -d "$BUILD_TIME" "llmgw${ext}"
+              zip -Xq "../dist/${name}.zip" "llmgw${ext}"
+            else
+              tar --sort=name --mtime="$BUILD_TIME" --owner=0 --group=0 --numeric-owner -czf "../dist/${name}.tar.gz" "llmgw${ext}"
+            fi
+            rm -f "llmgw${ext}"
+          done
+          cd ../dist
+          mapfile -t artifacts < <(find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | sort)
+          sha256sum "${artifacts[@]}" > SHA256SUMS
+          sha256sum -c SHA256SUMS
+          test "$(find . -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' \) | wc -l)" -eq "$target_count"
+          test "$(find . -maxdepth 1 -type f -name '*.spdx.json' | wc -l)" -eq "$target_count"
+          for sbom in *.spdx.json; do
+            jq -e '.spdxVersion | startswith("SPDX-")' "$sbom" >/dev/null
+          done
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        with:
+          name: release-assets-${{ needs.validate.outputs.tag }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+  image-dry-run:
+    name: image dry run
+    if: github.event_name == 'workflow_dispatch'
+    needs: [validate, ci, binaries]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          version: v0.36.1
+          driver-opts: image=moby/buildkit:v0.32.2@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+
+      - name: Build OCI image without publishing
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: go
+          file: go/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: false
+          outputs: type=oci,dest=/tmp/llmgw-image.tar
+          sbom: generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
+          provenance: mode=max
+          build-args: |
+            VERSION=${{ needs.validate.outputs.version }}
+            COMMIT=${{ needs.validate.outputs.commit }}
+            BUILD_TIME=${{ needs.validate.outputs.build_time }}
+            SOURCE_DATE_EPOCH=${{ needs.validate.outputs.source_date_epoch }}
+
+      - name: Verify OCI archive
+        run: |
+          set -euo pipefail
+          mkdir /tmp/llmgw-oci
+          tar -xf /tmp/llmgw-image.tar -C /tmp/llmgw-oci
+          digest=$(jq -r '.manifests[0].digest' /tmp/llmgw-oci/index.json)
+          nested="/tmp/llmgw-oci/blobs/${digest/:/\/}"
+          jq -e '[.manifests[] | select(.platform.os == "linux") | .platform.architecture] | sort == ["amd64", "arm64"]' "$nested" >/dev/null
+          mapfile -t attestations < <(jq -r '.manifests[] | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest") | .digest' "$nested")
+          test "${#attestations[@]}" -eq 2
+          for attestation in "${attestations[@]}"; do
+            manifest="/tmp/llmgw-oci/blobs/${attestation/:/\/}"
+            jq -e '
+              [.layers[].annotations["in-toto.io/predicate-type"]] as $types |
+              ($types | index("https://spdx.dev/Document")) != null and
+              any($types[]; startswith("https://slsa.dev/provenance/"))
+            ' "$manifest" >/dev/null
+          done
+
+  release-stage:
+    name: stage draft release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [validate, ci, binaries]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.stage.outputs.release_id }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-assets-${{ needs.validate.outputs.tag }}
+          path: dist
+
+      - name: Verify downloaded checksums
+        working-directory: dist
+        run: sha256sum -c SHA256SUMS
+
+      - name: Stage and verify exact draft release
+        id: stage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          releases=$(gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100")
+          matches=$(printf '%s' "$releases" | jq --arg tag "$TAG" '[.[][] | select(.tag_name == $tag)]')
+          match_count=$(printf '%s' "$matches" | jq 'length')
+          published_count=$(printf '%s' "$matches" | jq '[.[] | select(.draft == false)] | length')
+          test "$published_count" -eq 0 || {
+            echo "published release already exists for $TAG" >&2
+            exit 1
+          }
+          if [ "${{ needs.validate.outputs.release_exists }}" = "true" ]; then
+            test "$match_count" -eq 1 || {
+              echo "expected exactly one resumable draft for $TAG, found $match_count" >&2
+              exit 1
+            }
+            release_id=$(printf '%s' "$matches" | jq -r '.[0].id')
+            test "$(printf '%s' "$matches" | jq -r '.[0].draft')" = "true"
+          else
+            test "$match_count" -eq 0 || {
+              echo "unexpected release record already exists for $TAG" >&2
+              exit 1
+            }
+            created=$(gh api --method POST "repos/$GH_REPO/releases" \
+              -f tag_name="$TAG" \
+              -f name="$TAG" \
+              -F draft=true \
+              -F generate_release_notes=true)
+            release_id=$(printf '%s' "$created" | jq -r .id)
+          fi
+
+          mapfile -t asset_ids < <(gh api --paginate --slurp \
+            "repos/$GH_REPO/releases/$release_id/assets?per_page=100" | jq -r '.[][] | .id')
+          for asset_id in "${asset_ids[@]}"; do
+            gh api --method DELETE "repos/$GH_REPO/releases/assets/$asset_id"
+          done
+          gh release upload "$TAG" dist/*
+
+          local_manifest=$(mktemp)
+          remote_manifest=$(mktemp)
+          trap 'rm -f "$local_manifest" "$remote_manifest"' EXIT
+          for file in dist/*; do
+            printf '%s  %s\n' "$(sha256sum "$file" | cut -d' ' -f1)" "$(basename "$file")"
+          done | sort -k2,2 > "$local_manifest"
+          gh api --paginate --slurp "repos/$GH_REPO/releases/$release_id/assets?per_page=100" |
+            jq -r '.[][] | select(.digest != null) | "\(.digest | sub("^sha256:"; ""))  \(.name)"' |
+            sort -k2,2 > "$remote_manifest"
+          diff -u "$local_manifest" "$remote_manifest"
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+
+  image-publish:
+    name: publish candidate image
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [validate, ci, binaries, release-stage]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.confirm.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          version: v0.36.1
+          driver-opts: image=moby/buildkit:v0.32.2@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check resumable candidate image
+        id: existing
+        env:
+          COMMIT: ${{ needs.validate.outputs.commit }}
+          DRAFT_EXISTS: ${{ needs.validate.outputs.release_exists }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY}:candidate-$COMMIT"
+          inspect_error=$(mktemp)
+          if manifest=$(docker buildx imagetools inspect "$image" --format '{{json .Manifest}}' 2>"$inspect_error"); then
+            test "$DRAFT_EXISTS" = "true" || {
+              echo "candidate image exists without a resumable draft release" >&2
+              exit 1
+            }
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "digest=$(printf '%s' "$manifest" | jq -r .digest)" >> "$GITHUB_OUTPUT"
+          elif grep -Eqi 'manifest unknown|name unknown|(^|: )not found$' "$inspect_error"; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            cat "$inspect_error" >&2
+            exit 1
+          fi
+
+      - name: Build and publish candidate image
+        id: image
+        if: steps.existing.outputs.exists != 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: go
+          file: go/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository }}:candidate-${{ needs.validate.outputs.commit }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.validate.outputs.version }}
+            org.opencontainers.image.revision=${{ needs.validate.outputs.commit }}
+            org.opencontainers.image.created=${{ needs.validate.outputs.build_time }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          sbom: generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
+          provenance: mode=max
+          build-args: |
+            VERSION=${{ needs.validate.outputs.version }}
+            COMMIT=${{ needs.validate.outputs.commit }}
+            BUILD_TIME=${{ needs.validate.outputs.build_time }}
+            SOURCE_DATE_EPOCH=${{ needs.validate.outputs.source_date_epoch }}
+
+      - name: Select candidate digest
+        id: confirm
+        env:
+          EXISTING_DIGEST: ${{ steps.existing.outputs.digest }}
+          BUILT_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          digest="${BUILT_DIGEST:-$EXISTING_DIGEST}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Validate candidate image
+        env:
+          DIGEST: ${{ steps.confirm.outputs.digest }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          COMMIT: ${{ needs.validate.outputs.commit }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY}@$DIGEST"
+          manifest=$(docker buildx imagetools inspect "$image" --format '{{json .Manifest}}')
+          printf '%s' "$manifest" | jq -e --arg digest "$DIGEST" '
+            .digest == $digest and
+            ([.manifests[] |
+              select((.annotations["vnd.docker.reference.type"] // "") != "attestation-manifest") |
+              {os: .platform.os, architecture: .platform.architecture}] | sort_by(.architecture)) ==
+            [{os:"linux",architecture:"amd64"},{os:"linux",architecture:"arm64"}] and
+            ([.manifests[] |
+              select(.annotations["vnd.docker.reference.type"] == "attestation-manifest") |
+              .annotations["vnd.docker.reference.digest"]] | sort) ==
+            ([.manifests[] |
+              select((.annotations["vnd.docker.reference.type"] // "") != "attestation-manifest") |
+              .digest] | sort)
+          ' >/dev/null
+          images=$(docker buildx imagetools inspect "$image" --format '{{json .Image}}')
+          printf '%s' "$images" | jq -e --arg version "$VERSION" --arg commit "$COMMIT" '
+            [. | to_entries[] | select(.key == "linux/amd64" or .key == "linux/arm64")] as $images |
+            ($images | length) == 2 and
+            all($images[]; .value.config.Labels["org.opencontainers.image.version"] == $version and
+                           .value.config.Labels["org.opencontainers.image.revision"] == $commit)
+          ' >/dev/null
+          mapfile -t attestations < <(printf '%s' "$manifest" | jq -r '.manifests[] | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest") | .digest')
+          test "${#attestations[@]}" -eq 2
+          for attestation in "${attestations[@]}"; do
+            raw=$(docker buildx imagetools inspect "ghcr.io/${GITHUB_REPOSITORY}@$attestation" --raw)
+            printf '%s' "$raw" | jq -e '
+              [.layers[].annotations["in-toto.io/predicate-type"]] as $types |
+              ($types | index("https://spdx.dev/Document")) != null and
+              any($types[]; startswith("https://slsa.dev/provenance/"))
+            ' >/dev/null
+          done
+
+      - name: Attest candidate image provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.confirm.outputs.digest }}
+          push-to-registry: true
+          # A storage record needs the artifact-metadata permission, which
+          # this job does not hold; the attestation pushed with the image is
+          # what verification reads.
+          create-storage-record: false
+
+  live-acceptance:
+    name: live release acceptance
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [validate, image-publish]
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/live-acceptance.yml
+    with:
+      enforce: true
+      allow_inconclusive: ${{ vars.LLMGW_ALLOW_INCONCLUSIVE_RELEASE == 'true' }}
+      override_reason: ${{ vars.LLMGW_INCONCLUSIVE_RELEASE_REASON }}
+      candidate_image: ghcr.io/${{ github.repository }}@${{ needs.image-publish.outputs.digest }}
+
+  image-promote:
+    name: promote accepted image
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [validate, image-publish, live-acceptance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          version: v0.36.1
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote tested digest to immutable version tag
+        env:
+          DIGEST: ${{ needs.image-publish.outputs.digest }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          source="ghcr.io/${GITHUB_REPOSITORY}@$DIGEST"
+          target="ghcr.io/${GITHUB_REPOSITORY}:$VERSION"
+          inspect_error=$(mktemp)
+          trap 'rm -f "$inspect_error"' EXIT
+          if existing=$(docker buildx imagetools inspect "$target" --format '{{json .Manifest}}' 2>"$inspect_error"); then
+            test "$(printf '%s' "$existing" | jq -r .digest)" = "$DIGEST" || {
+              echo "immutable version tag already points at another digest" >&2
+              exit 1
+            }
+          elif grep -Eqi 'manifest unknown|name unknown|(^|: )not found$' "$inspect_error"; then
+            docker buildx imagetools create --tag "$target" "$source"
+          else
+            cat "$inspect_error" >&2
+            echo "registry inspection failed; refusing to create or overwrite the immutable version tag" >&2
+            exit 1
+          fi
+          test "$(docker buildx imagetools inspect "$target" --format '{{json .Manifest}}' | jq -r .digest)" = "$DIGEST"
+
+  release-publish:
+    name: publish GitHub release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [validate, image-publish, image-promote, release-stage, live-acceptance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-assets-${{ needs.validate.outputs.tag }}
+          path: dist
+
+      - name: Verify downloaded checksums
+        working-directory: dist
+        run: sha256sum -c SHA256SUMS
+
+      - name: Attest release assets
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+
+      - name: Publish staged release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          RELEASE_ID: ${{ needs.release-stage.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          release=$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")
+          test "$(printf '%s' "$release" | jq -r .tag_name)" = "$TAG"
+          test "$(printf '%s' "$release" | jq -r .draft)" = "true"
+
+          local_manifest=$(mktemp)
+          remote_manifest=$(mktemp)
+          trap 'rm -f "$local_manifest" "$remote_manifest"' EXIT
+          for file in dist/*; do
+            printf '%s  %s\n' "$(sha256sum "$file" | cut -d' ' -f1)" "$(basename "$file")"
+          done | sort -k2,2 > "$local_manifest"
+          gh api --paginate --slurp "repos/$GH_REPO/releases/$RELEASE_ID/assets?per_page=100" |
+            jq -r '.[][] | select(.digest != null) | "\(.digest | sub("^sha256:"; ""))  \(.name)"' |
+            sort -k2,2 > "$remote_manifest"
+          diff -u "$local_manifest" "$remote_manifest"
+
+          published=$(gh api --method PATCH "repos/$GH_REPO/releases/$RELEASE_ID" -F draft=false)
+          test "$(printf '%s' "$published" | jq -r .draft)" = "false"
+          test "$(printf '%s' "$published" | jq -r .tag_name)" = "$TAG"

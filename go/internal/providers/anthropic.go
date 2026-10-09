@@ -1,0 +1,530 @@
+package providers
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/kayiik/llm-translate"
+	core "github.com/kayiik/llmgw-core"
+)
+
+const (
+	anthropicVersion     = "2023-06-01"
+	anthropicDefaultBase = "https://api.anthropic.com"
+	anthropicDefaultMax  = 4096
+	anthropicCatalogTTL  = time.Hour
+)
+
+// AnthropicNativeProvider is the gateway's Anthropic facade. Messages and
+// their stream, Chat and the Chat stream go through the core Runtime, which
+// resolves the caller's credential through Anthropic's store on each
+// request, and core's Anthropic, which sends each Messages request and reads
+// each answer as the gateway's transport did, a setup token's completion
+// assembled from its stream included. Token counts go through
+// core.CountTokens.
+//
+// What the gateway did above that transport stays here. Core has no route
+// from Chat to Messages, so a Chat request is converted to Messages with
+// llm-translate and its answer converted back, and a Chat stream is
+// re-encoded as the chunks the API layer reads, which it renders as the
+// events a Messages client reads today.
+//
+// The catalog stays on the gateway's path, with the exported fields and the
+// factory's credential: the gateway never asks the core Runtime for a
+// catalog, and nothing the vertical serves reads one. A facade the factory
+// did not build serves only the catalog.
+type AnthropicNativeProvider struct {
+	BaseURL string
+	APIKey  string
+	Timeout float64
+	Now     func() time.Time
+
+	runtime  *Runtime
+	instance string
+	caller   core.Caller
+}
+
+func (AnthropicNativeProvider) IsStub() bool { return false }
+
+func (AnthropicNativeProvider) PreservesWireNativeSurface(_ string, surface core.ModelSurface) bool {
+	return surface == core.ModelSurfaceMessages
+}
+
+// operation returns the context of an operation on ctx, the caller's,
+// naming Anthropic and the facade's caller for the store and the provider
+// the core Runtime calls. A caller that leaves ends the upstream request.
+func (p AnthropicNativeProvider) operation(ctx context.Context) context.Context {
+	return withCoreOperation(ctx, anthropicCoreType, p.caller)
+}
+
+// anthropicMessagesRequest is the core request of a Messages payload. Core's
+// Anthropic decodes it with its numbers kept as written and re-encodes it as
+// the transport encoded a body, so the upstream body is unchanged.
+func anthropicMessagesRequest(model string, payload map[string]any, invalid string) (core.Request, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return core.Request{}, &ConfigError{Msg: invalid}
+	}
+	return core.Request{Surface: core.ModelSurfaceMessages, Model: model, Body: body, ContentType: core.ContentTypeJSON}, nil
+}
+
+// invoke sends a Messages payload through the core Runtime. A request that
+// gets no answer keeps the transport's message, which named how it was sent:
+// a setup token's completion is requested as a stream. A request whose
+// caller left reports the caller's context error, which nothing repeats or
+// fails over.
+func (p AnthropicNativeProvider) invoke(ctx context.Context, model string, payload map[string]any) (core.Response, error) {
+	request, err := anthropicMessagesRequest(model, payload, "anthropic: invalid Messages request")
+	if err != nil {
+		return core.Response{}, err
+	}
+	request.Header = anthropicClientHeaders(ctx)
+	response, err := p.runtime.core.Invoke(p.operation(ctx), p.caller, p.instance, request)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return core.Response{}, ctxErr
+		}
+		transport := "anthropic: upstream transport error: "
+		return core.Response{}, anthropicFailure(err, transport, p.instance)
+	}
+	return response, nil
+}
+
+// payload converts a Chat request to the Messages payload it is sent as.
+func (p AnthropicNativeProvider) payload(model string, messages []Message, stream bool, kw Kwargs) (map[string]any, error) {
+	conversion := translate.OpenAIMessagesToAnthropicWithReport(messages)
+	if err := RejectMaterialLossExceptThoughtSignatures(conversion.Report); err != nil {
+		return nil, &ConfigError{Msg: err.Error()}
+	}
+	system, anthropicMessages := conversion.Value.System, conversion.Value.Messages
+	maxTokens := anthropicDefaultMax
+	if v := intOf(chatMaxTokens(kw)); v > 0 {
+		maxTokens = v
+	}
+	payload := map[string]any{
+		"model": model, "messages": anthropicMessages, "stream": stream, "max_tokens": maxTokens,
+	}
+	// A system string cannot hold cache breakpoints. SystemBlocks is set only
+	// when a system part carries cache_control, and holds the same text split
+	// at each breakpoint, so the prefix the client marked is the one cached.
+	if blocks := conversion.Value.SystemBlocks; len(blocks) > 0 {
+		payload["system"] = blocks
+	} else if system != "" {
+		payload["system"] = system
+	}
+	if v, ok := kw["temperature"]; ok && v != nil {
+		payload["temperature"] = v
+	}
+	if v, ok := kw["top_p"]; ok && v != nil {
+		payload["top_p"] = v
+	}
+	if stop, ok := kw["stop"]; ok && stop != nil {
+		switch s := stop.(type) {
+		case string:
+			payload["stop_sequences"] = []any{s}
+		case []any:
+			payload["stop_sequences"] = s
+		case []string:
+			arr := make([]any, len(s))
+			for i, v := range s {
+				arr[i] = v
+			}
+			payload["stop_sequences"] = arr
+		}
+	}
+	if tools, ok := kw["tools"].([]any); ok {
+		if t := translate.OpenAIToolsToAnthropic(tools); t != nil {
+			payload["tools"] = t
+		}
+	}
+	if metadata, ok := kw["metadata"].(map[string]any); ok {
+		payload["metadata"] = metadata
+	}
+	if thinking, ok := kw["thinking"].(map[string]any); ok && len(thinking) > 0 {
+		payload["thinking"] = thinking
+	}
+	if outputConfig, ok := kw["output_config"].(map[string]any); ok && len(outputConfig) > 0 {
+		payload["output_config"] = outputConfig
+	}
+	return payload, nil
+}
+
+// Complete sends a Chat request as Messages and converts the answer back,
+// decoded as the transport decoded the answers it converted.
+func (p AnthropicNativeProvider) Complete(model string, messages []Message, kw Kwargs) (map[string]any, error) {
+	return p.CompleteContext(context.Background(), model, messages, kw)
+}
+
+func (p AnthropicNativeProvider) CompleteContext(ctx context.Context, model string, messages []Message, kw Kwargs) (map[string]any, error) {
+	payload, err := p.payload(model, messages, false, kw)
+	if err != nil {
+		return nil, err
+	}
+	response, err := p.invoke(ctx, model, payload)
+	if err != nil {
+		return nil, err
+	}
+	var anthropicResp map[string]any
+	if json.Unmarshal(response.Body, &anthropicResp) != nil {
+		return nil, circuitFailureInvocation("anthropic: invalid JSON in upstream response")
+	}
+	converted := translate.AnthropicResponseToOpenAIWithReport(anthropicResp, model)
+	if err := converted.RejectMaterialLoss(); err != nil {
+		return nil, &ConfigError{Msg: err.Error()}
+	}
+	return converted.Value, nil
+}
+
+// CompleteAnthropicMessages passes a Messages payload through. Core's
+// Anthropic sets its model and stream flag and merges the _llmgw_preamble the
+// API layer set into the system prompt, as the transport did, and the answer
+// is decoded with its numbers kept as Anthropic wrote them.
+func (p AnthropicNativeProvider) CompleteAnthropicMessages(model string, payload map[string]any) (map[string]any, error) {
+	return p.CompleteAnthropicMessagesContext(context.Background(), model, payload)
+}
+
+func (p AnthropicNativeProvider) CompleteAnthropicMessagesContext(ctx context.Context, model string, payload map[string]any) (map[string]any, error) {
+	response, err := p.invoke(ctx, model, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(response.Body))
+	decoder.UseNumber()
+	if decoder.Decode(&result) != nil {
+		return nil, circuitFailureInvocation("anthropic: invalid JSON in upstream response")
+	}
+	return result, nil
+}
+
+// StreamAnthropicMessagesContext passes a Messages payload through as a
+// stream: core's Anthropic shapes it as it shapes one
+// CompleteAnthropicMessagesContext passes through, with the stream flag set.
+// See anthropicRecordStream for what the stream yields.
+func (p AnthropicNativeProvider) StreamAnthropicMessagesContext(ctx context.Context, model string, payload map[string]any) (StreamIter, error) {
+	stream, err := p.stream(ctx, model, payload)
+	if err != nil {
+		return nil, err
+	}
+	return &anthropicRecordStream{inner: stream}, nil
+}
+
+// anthropicRecordStream yields the records core relays from a Messages
+// stream, each whole and as Anthropic sent it. It ends as anthropicStreamEnd
+// says, without an error only once Anthropic sent message_stop. An error
+// event is yielded as any other record, for the reader to act on.
+type anthropicRecordStream struct {
+	inner core.StreamIter
+	err   error
+}
+
+func (s *anthropicRecordStream) Next() (string, bool) {
+	frame, err := s.inner.Next()
+	if err != nil {
+		s.err = anthropicStreamEnd(err)
+		return "", false
+	}
+	return string(frame), true
+}
+
+func (s *anthropicRecordStream) Err() error   { return s.err }
+func (s *anthropicRecordStream) Close() error { return s.inner.Close() }
+
+// anthropicClientHeadersKey carries, in a request's context, the Anthropic
+// headers a Messages client sent.
+type anthropicClientHeadersKey struct{}
+
+// WithAnthropicClientHeaders returns ctx carrying the anthropic-version and
+// anthropic-beta values of a Messages client's request, which a native
+// Anthropic Messages request then forwards so the client reaches the beta
+// features it asked for. Core's Anthropic checks each value and reads no
+// other header, so credentials a client sends never travel this way.
+func WithAnthropicClientHeaders(ctx context.Context, header http.Header) context.Context {
+	forwarded := http.Header{}
+	if version := header.Get("anthropic-version"); version != "" {
+		forwarded.Set("anthropic-version", version)
+	}
+	for _, beta := range header.Values("anthropic-beta") {
+		forwarded.Add("anthropic-beta", beta)
+	}
+	if len(forwarded) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, anthropicClientHeadersKey{}, forwarded)
+}
+
+func anthropicClientHeaders(ctx context.Context) http.Header {
+	header, _ := ctx.Value(anthropicClientHeadersKey{}).(http.Header)
+	return header
+}
+
+// CountAnthropicTokens counts through core.CountTokens, which the core
+// Runtime does not perform, with the credential Anthropic's store resolves
+// for the caller, as a request would be sent. Core's Anthropic forwards the
+// anthropic-version and anthropic-beta values the transport forwarded.
+func (p AnthropicNativeProvider) CountAnthropicTokens(model string, payload map[string]any, version string, beta []string) (json.Number, error) {
+	return p.CountAnthropicTokensContext(context.Background(), model, payload, version, beta)
+}
+
+func (p AnthropicNativeProvider) CountAnthropicTokensContext(ctx context.Context, model string, payload map[string]any, version string, beta []string) (json.Number, error) {
+	request, err := anthropicMessagesRequest(model, payload, "anthropic: invalid token-count request")
+	if err != nil {
+		return "", err
+	}
+	// A count is a short answer, so the whole request stays bounded, and it
+	// goes out on the shared transport rather than a new one per count.
+	counter, err := newCoreAnthropic(p.instance, p.BaseURL, httpClient(p.timeout()))
+	if err != nil {
+		return "", err
+	}
+	ctx = p.operation(ctx)
+	if request.Credential, err = p.runtime.coreCredential(ctx, anthropicCoreType, p.caller, p.instance); err != nil {
+		return "", anthropicCredentialFailure(err, p.instance)
+	}
+	header := http.Header{}
+	header.Set("anthropic-version", version)
+	for _, value := range beta {
+		header.Add("anthropic-beta", value)
+	}
+	count, err := core.CountTokens(ctx, counter, core.TokenCountRequest{Request: request, Header: header})
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return "", ctxErr
+		}
+		return "", anthropicCountFailure(err, p.instance)
+	}
+	return json.Number(strconv.FormatInt(count.InputTokens, 10)), nil
+}
+
+// Stream sends a Chat request as a Messages stream and re-encodes the stream
+// core relays as Chat chunks.
+func (p AnthropicNativeProvider) Stream(model string, messages []Message, kw Kwargs) (StreamIter, error) {
+	return p.StreamContext(context.Background(), model, messages, kw)
+}
+
+func (p AnthropicNativeProvider) StreamContext(ctx context.Context, model string, messages []Message, kw Kwargs) (StreamIter, error) {
+	payload, err := p.payload(model, messages, true, kw)
+	if err != nil {
+		return nil, err
+	}
+	stream, err := p.stream(ctx, model, payload)
+	if err != nil {
+		return nil, err
+	}
+	return newAnthropicChatStream(stream, model), nil
+}
+
+// stream opens a Messages stream of payload through the core Runtime. A
+// stream that gets no answer keeps the transport's message for a stream,
+// and one whose caller left reports the caller's context error, which
+// nothing repeats or fails over.
+func (p AnthropicNativeProvider) stream(ctx context.Context, model string, payload map[string]any) (core.StreamIter, error) {
+	request, err := anthropicMessagesRequest(model, payload, "anthropic: invalid Messages request")
+	if err != nil {
+		return nil, err
+	}
+	request.Header = anthropicClientHeaders(ctx)
+	stream, err := p.runtime.core.Stream(p.operation(ctx), p.caller, p.instance, request)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, anthropicFailure(err, "anthropic: streaming transport error: ", p.instance)
+	}
+	return stream, nil
+}
+
+// anthropicChatStream re-encodes core's Anthropic stream as Chat chunks, as
+// the transport's stream did: llm-translate reads the data of each record
+// core relays and writes the chunks, which a goroutine hands to Next. It ends
+// as that stream ended; see anthropicStreamEnd.
+type anthropicChatStream struct {
+	inner  core.StreamIter
+	chunks chan string
+	done   chan struct{}
+	closed sync.Once
+	err    error
+}
+
+func newAnthropicChatStream(inner core.StreamIter, model string) *anthropicChatStream {
+	s := &anthropicChatStream{inner: inner, chunks: make(chan string, 16), done: make(chan struct{})}
+	go func() {
+		defer close(s.chunks)
+		// Anthropic reports a stream's usage in its own events, which plain
+		// translation drops; the usage chunk carries it to the gateway's
+		// metering as Chat's stream_options.include_usage would.
+		report := translate.AnthropicSSEToOpenAIChunksWithOptions(s.line, model, s.emit, translate.StreamOptions{IncludeUsage: true})
+		var event *translate.StreamError
+		if errors.As(report.Err, &event) {
+			// The error event says what failed; core's failure for the
+			// stream that then ends without message_stop does not.
+			s.err = anthropicStreamEventFailure(event)
+		}
+	}()
+	return s
+}
+
+// anthropicStreamEventStatus is the HTTP status Anthropic answers with for an
+// error type, so a failure reported mid-stream is classified as the same
+// error would be before a stream starts.
+func anthropicStreamEventStatus(errorType string) int {
+	switch errorType {
+	case "invalid_request_error":
+		return http.StatusBadRequest
+	case "authentication_error":
+		return http.StatusUnauthorized
+	case "permission_error":
+		return http.StatusForbidden
+	case "not_found_error":
+		return http.StatusNotFound
+	case "request_too_large":
+		return http.StatusRequestEntityTooLarge
+	case "rate_limit_error":
+		return http.StatusTooManyRequests
+	case "api_error":
+		return http.StatusInternalServerError
+	case "overloaded_error":
+		return 529
+	}
+	return http.StatusBadGateway
+}
+
+func anthropicStreamEventFailure(event *translate.StreamError) error {
+	status := anthropicStreamEventStatus(event.Type)
+	detail := event.Type
+	if detail == "" {
+		detail = "an error"
+	}
+	if event.Message != "" {
+		detail += ": " + event.Message
+	}
+	return invocationStatus("anthropic: streamed Messages response reported "+detail, status)
+}
+
+// line is the data line llm-translate reads next, as the transport fed it.
+func (s *anthropicChatStream) line() (string, bool) {
+	data, err := nextCoreData(s.inner)
+	if err != nil {
+		s.err = anthropicStreamEnd(err)
+		return "", false
+	}
+	return "data: " + data, true
+}
+
+// emit hands a chunk to Next, or drops it once the stream is closed, so the
+// goroutine never outlives a reader that stopped reading. A stream that
+// failed drops it too: llm-translate still closes it with a finish reason,
+// which would let a failed stream read as complete. line sets err on this
+// goroutine, so reading it here needs no lock.
+func (s *anthropicChatStream) emit(chunk string) {
+	if s.err != nil {
+		return
+	}
+	select {
+	case s.chunks <- chunk:
+	case <-s.done:
+	}
+}
+
+func (s *anthropicChatStream) Next() (string, bool) {
+	chunk, ok := <-s.chunks
+	return chunk, ok
+}
+
+func (s *anthropicChatStream) Err() error { return s.err }
+
+// Close releases the goroutine and closes core's stream, which ends a read
+// in progress.
+func (s *anthropicChatStream) Close() error {
+	s.closed.Do(func() { close(s.done) })
+	return s.inner.Close()
+}
+
+func (p AnthropicNativeProvider) base() string {
+	if p.BaseURL != "" {
+		return p.BaseURL
+	}
+	return anthropicDefaultBase
+}
+
+// applyHeaders sets a catalog request's headers as the transport set every
+// request's: the content type and anthropic-version, then the credential's.
+func (p AnthropicNativeProvider) applyHeaders(req *http.Request) error {
+	req.Header = http.Header{}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("anthropic-version", anthropicVersion)
+	if p.APIKey != "" {
+		req.Header.Set("x-api-key", p.APIKey)
+	}
+	return nil
+}
+
+func (p AnthropicNativeProvider) timeout() float64 { return anthropicTimeout(p.Timeout) }
+
+func (p AnthropicNativeProvider) ListModels() []ModelInfo {
+	models, _, _ := p.ListModelsWithError()
+	return models
+}
+
+func (p AnthropicNativeProvider) ListModelsWithError() ([]ModelInfo, *CredentialObservation, error) {
+	timeout := p.timeout()
+	if timeout > 10 {
+		timeout = 10
+	}
+	req, err := http.NewRequest("GET", p.base()+"/v1/models", nil)
+	if err != nil {
+		return nil, nil, catalogError("catalog_transport_error", "Provider catalog request could not be created.", 0)
+	}
+	if err := p.applyHeaders(req); err != nil {
+		return nil, nil, &ConfigError{Msg: err.Error()}
+	}
+	resp, err := httpClient(timeout).Do(req)
+	if err != nil {
+		return nil, nil, catalogError("catalog_transport_error", "Provider catalog request could not reach the upstream service.", 0)
+	}
+	body, err := decodeCatalogResponse(resp, "data", "id")
+	if err != nil {
+		return nil, nil, err
+	}
+	items := body["data"].([]any)
+	discoveredAt := time.Now().UTC()
+	if p.Now != nil {
+		discoveredAt = p.Now().UTC()
+	}
+	out := make([]ModelInfo, 0, len(items))
+	for _, entry := range items {
+		m := entry.(map[string]any)
+		id := m["id"].(string)
+		label, _ := m["display_name"].(string)
+		out = append(out, ModelInfo{
+			ID: id, Vendor: "anthropic", Label: label,
+			SupportedSurfaces: []string{"/v1/messages"},
+			TypedCapabilities: anthropicModelCapabilities(discoveredAt),
+		})
+	}
+	return out, nil, nil
+}
+
+func anthropicModelCapabilities(discoveredAt time.Time) *core.ModelCapabilities {
+	expiresAt := discoveredAt.Add(anthropicCatalogTTL)
+	return &core.ModelCapabilities{
+		SchemaVersion: core.ModelCapabilitiesSchemaVersion,
+		Operations:    core.ModelOperationCapabilities{Chat: core.SupportSupported},
+		Surfaces: core.ModelSurfaceCapabilities{
+			ChatCompletions: core.SupportUnsupported,
+			Responses:       core.SupportUnsupported,
+			Messages:        core.SupportSupported,
+		},
+		Streaming: core.SupportSupported,
+		Provenance: core.ModelCapabilityProvenance{
+			Source: core.ModelCapabilitySourceRegistryStatic, Confidence: core.ModelCapabilityConfidenceHigh,
+		},
+		Freshness: core.ModelCapabilityFreshness{DiscoveredAt: &discoveredAt, ExpiresAt: &expiresAt},
+	}
+}
