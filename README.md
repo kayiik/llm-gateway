@@ -60,6 +60,24 @@ curl -fsS -H "Authorization: Bearer ${LLMGW_API_KEY}" \
 The full first-run journey and Windows commands are in
 [`docs/QUICKSTART.md`](docs/QUICKSTART.md).
 
+### Moving an existing installation
+
+Releases and images now come from `github.com/kayiik/llm-gateway` and
+`ghcr.io/kayiik/llm-gateway`. Release numbering restarted, so builds from before
+the move carry higher numbers than current releases. State, keys, credentials
+and the optional companion daemon's pairing carry over unchanged, and the
+daemon can move before or after the gateway.
+
+Before starting a current build on an existing state directory, stop the
+gateway, delete `provider-roster-cache.json` from the state directory, and
+remove `LLMGW_PROVIDER_ROSTER_URL` if it points at a previous feed; the built-in
+default names the current feed. The roster cache refuses a feed whose revision
+is lower than the cached one, and the feed's revisions restarted. In the image,
+the state directory is the `/state` volume and there is no shell, so use a
+throwaway container or the host path:
+[Moving an existing installation](docs/UPGRADING.md#moving-an-existing-installation)
+has the commands.
+
 ## Client setup
 
 | Client | Gateway configuration |
