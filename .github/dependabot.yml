@@ -28,6 +28,13 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: [version-update:semver-major]
+      # Tagged by mistake while these repositories were set up, and retracted.
+      # Dependabot reads a bare Go version as a caret range (up to the next
+      # major), so each version is pinned exactly with "=".
+      - dependency-name: github.com/kayiik/llm-translate
+        versions: ["= v0.4.0", "= v0.4.1"]
+      - dependency-name: github.com/kayiik/llm-provider-auth
+        versions: ["= v1.0.1", "= v1.0.2"]
 
   # dist/ is committed and embedded; CI's check:dist fails until an update
   # that changes the bundle is rebuilt and committed with it.
