@@ -399,3 +399,46 @@ func TestChatFieldsReachGitHubCopilotThroughTheDaemon(t *testing.T) {
 		}
 	}
 }
+
+// A Responses request for a JSON schema is served by a Chat-only target with
+// the same schema as its response_format, streamed or not, and the answer
+// carries the format back. A target that cannot send response_format
+// refuses the request before anything is sent, as the fallback refuses any
+// control it cannot preserve.
+func TestResponsesFallbackCarriesTextFormatAsResponseFormat(t *testing.T) {
+	handler, upstream := setupChatFieldFixture(t)
+	format := map[string]any{"type": "json_schema", "name": "verdict", "schema": map[string]any{"type": "object"}, "strict": true}
+	wantChat := map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "verdict", "schema": map[string]any{"type": "object"}, "strict": true}}
+	for _, stream := range []bool{false, true} {
+		w := apiSmokeRequest(handler, "/v1/responses", map[string]any{
+			"model": "openai/chat-model", "input": "verdict?", "stream": stream, "text": map[string]any{"format": format},
+		})
+		if w.Code != http.StatusOK {
+			t.Fatalf("stream=%v: status=%d body=%s", stream, w.Code, w.Body.String())
+		}
+		sent := upstream.take("/o/chat/completions")
+		if sent == nil || !reflect.DeepEqual(sent["response_format"], wantChat) {
+			t.Fatalf("stream=%v: the upstream received %v, want response_format %v", stream, sent, wantChat)
+		}
+		if !stream && !strings.Contains(w.Body.String(), `"name":"verdict"`) {
+			t.Fatalf("the answer does not carry the requested format: %s", w.Body.String())
+		}
+	}
+
+	w := apiSmokeRequest(handler, "/v1/responses", map[string]any{
+		"model": "native/claude-fixture", "input": "verdict?", "text": map[string]any{"format": format},
+	})
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "text.format") {
+		t.Fatalf("status=%d body=%s, want a 400 naming text.format", w.Code, w.Body.String())
+	}
+	if sent := upstream.take("/n/v1/messages"); sent != nil {
+		t.Fatalf("a refused request reached the upstream: %v", sent)
+	}
+
+	w = apiSmokeRequest(handler, "/v1/responses", map[string]any{
+		"model": "native/claude-fixture", "input": "hi", "text": map[string]any{"format": map[string]any{"type": "text"}},
+	})
+	if w.Code != http.StatusOK || upstream.take("/n/v1/messages") == nil {
+		t.Fatalf("a text format asks for nothing: status=%d body=%s", w.Code, w.Body.String())
+	}
+}

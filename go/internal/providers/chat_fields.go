@@ -107,11 +107,8 @@ func (rt *Runtime) chatFieldsSent(providerID, model string, caller core.Caller, 
 	switch {
 	case ptype == ExtensionTypeCopilot:
 		// The daemon sends Copilot the OpenAI transport's fields and
-		// response_format, except to a model it serves over Responses,
-		// whose conversion does not carry response_format.
-		if rt.cachedOverResponses(providerID, model, caller) {
-			return openAITransportField
-		}
+		// response_format, which it carries as text.format to a model it
+		// serves over Responses.
 		return copilotChatField
 	case ptype == ExtensionTypeZenAnonymous:
 		// The daemon serves anonymous OpenCode Zen on the OpenAI wire, with
@@ -161,10 +158,10 @@ func daemonChatField(field string) bool {
 	return field != "parallel_tool_calls" && field != "thinking" && openAITransportField(field)
 }
 
-// copilotChatField reports a Chat field the daemon sends Copilot's Chat
-// Completions with: the OpenAI transport's, and response_format, which
-// Copilot takes as OpenAI does. A daemon that predates it drops
-// response_format and reports the loss.
+// copilotChatField reports a Chat field the daemon sends Copilot with: the
+// OpenAI transport's, and response_format, which Copilot takes as OpenAI
+// does. A daemon that predates it drops response_format and reports the
+// loss.
 func copilotChatField(field string) bool {
 	return field == "response_format" || openAITransportField(field)
 }
@@ -185,9 +182,11 @@ func antigravityChatField(field string) bool {
 
 // responsesAdaptedChatField reports a Chat field adaptation carries over
 // Responses: those core converts, less stop, which the conversion refuses.
+// response_format travels as the Responses text.format.
 func responsesAdaptedChatField(field string) bool {
 	switch field {
-	case "temperature", "top_p", "max_tokens", "max_completion_tokens", "tools", "tool_choice", "metadata", "reasoning_effort":
+	case "temperature", "top_p", "max_tokens", "max_completion_tokens", "tools", "tool_choice", "metadata", "reasoning_effort",
+		"response_format":
 		return true
 	}
 	return false

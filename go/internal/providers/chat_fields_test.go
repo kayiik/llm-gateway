@@ -65,7 +65,8 @@ func TestUnsentChatFieldFollowsWhatEachFacadeSends(t *testing.T) {
 	}{
 		{"OpenAI-compatible sends every field", "openai", "any", Kwargs{"response_format": jsonMode, "seed": 7.0, "top_k": 40.0, "logprobs": true}, ""},
 		{"adaptation off for a Chat model", "adapt", "chat-model", Kwargs{"response_format": jsonMode}, ""},
-		{"adaptation over Responses", "adapt", "responses-model", Kwargs{"response_format": jsonMode, "temperature": 0.2, "tools": tool}, "response_format"},
+		{"adaptation over Responses carries response_format", "adapt", "responses-model", Kwargs{"response_format": jsonMode, "temperature": 0.2, "tools": tool}, ""},
+		{"adaptation over Responses", "adapt", "responses-model", Kwargs{"response_format": jsonMode, "logprobs": true}, "logprobs"},
 		{"adaptation refuses stop", "adapt", "responses-model", Kwargs{"stop": []any{"END"}}, "stop"},
 		{"a request that turns adaptation off", "adapt", "responses-model", Kwargs{"response_format": jsonMode, "_force_api_support": false}, ""},
 		{"Bedrock sends the transport's fields", "bedrock", "any", Kwargs{"parallel_tool_calls": false, "tool_choice": "required", "reasoning_effort": "high"}, ""},
@@ -97,7 +98,7 @@ func TestUnsentChatFieldFollowsWhatEachFacadeSends(t *testing.T) {
 		{"Copilot sends the transport's fields", "copilot", "any", Kwargs{"parallel_tool_calls": false, "thinking": map[string]any{"type": "disabled"}}, ""},
 		{"Copilot sends response_format", "copilot", "chat-model", Kwargs{"response_format": jsonMode}, ""},
 		{"Copilot sends response_format to a model its catalog lacks", "copilot", "any", Kwargs{"response_format": jsonMode}, ""},
-		{"Copilot over Responses", "copilot", "responses-model", Kwargs{"response_format": jsonMode}, "response_format"},
+		{"Copilot sends response_format over Responses too", "copilot", "responses-model", Kwargs{"response_format": jsonMode}, ""},
 		{"Copilot", "copilot", "chat-model", Kwargs{"logprobs": true}, "logprobs"},
 		{"Zen sends the transport's fields", "zen", "any", Kwargs{"parallel_tool_calls": false, "tool_choice": "required", "thinking": map[string]any{"type": "disabled"}}, ""},
 		{"Zen", "zen", "any", Kwargs{"response_format": jsonMode}, "response_format"},
@@ -191,14 +192,14 @@ func TestOpenAICompatibleRefusesAFieldAdaptationWouldDrop(t *testing.T) {
 	forced := openAICompatibleFixture(t, &config.ProviderConfig{Type: "openai_compatible", BaseURL: base, ForceApiSupport: true})
 	storeOpenAICatalog(forced, ModelInfo{ID: "responses-model", SupportedSurfaces: []string{"/responses"}})
 
-	client := Kwargs{ChatFieldsAsSent: true, "response_format": map[string]any{"type": "json_object"}, "temperature": 0.2}
+	client := Kwargs{ChatFieldsAsSent: true, "logprobs": true, "temperature": 0.2}
 	_, completeErr := forced.Complete("responses-model", messages, client)
 	_, streamErr := forced.Stream("responses-model", messages, client)
 	for _, err := range []error{completeErr, streamErr} {
 		var refusal *InvocationError
 		if !errors.As(err, &refusal) || refusal.Status != http.StatusBadRequest || !InvocationFailoverEligible(err) ||
-			!strings.Contains(err.Error(), `"response_format"`) {
-			t.Fatalf("err=%v, want a 400 naming response_format", err)
+			!strings.Contains(err.Error(), `"logprobs"`) {
+			t.Fatalf("err=%v, want a 400 naming logprobs", err)
 		}
 	}
 	if calls := upstream.take(); len(calls) != 0 {
@@ -213,5 +214,32 @@ func TestOpenAICompatibleRefusesAFieldAdaptationWouldDrop(t *testing.T) {
 	}
 	if calls := upstream.take(); len(calls) != 2 || calls[0].path != "/responses" || calls[1].path != "/responses" {
 		t.Fatalf("calls=%+v", calls)
+	}
+}
+
+// A client's Chat request for a JSON schema is served over Responses with the
+// same schema as its text.format, so a model that lists only Responses
+// answers in the structure it was asked for.
+func TestOpenAICompatibleCarriesResponseFormatOverResponses(t *testing.T) {
+	upstream, base := newOpenAIUpstream(t)
+	messages := []Message{{"role": "user", "content": "verdict?"}}
+	forced := openAICompatibleFixture(t, &config.ProviderConfig{Type: "openai_compatible", BaseURL: base, ForceApiSupport: true})
+	storeOpenAICatalog(forced, ModelInfo{ID: "responses-model", SupportedSurfaces: []string{"/responses"}})
+
+	format := map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "verdict", "schema": map[string]any{"type": "object"}}}
+	if _, err := forced.Complete("responses-model", messages, Kwargs{ChatFieldsAsSent: true, "response_format": format}); err != nil {
+		t.Fatal(err)
+	}
+	calls := upstream.take()
+	if len(calls) != 1 || calls[0].path != "/responses" {
+		t.Fatalf("calls=%+v", calls)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(calls[0].body), &body); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"format": map[string]any{"type": "json_schema", "name": "verdict", "schema": map[string]any{"type": "object"}}}
+	if !reflect.DeepEqual(body["text"], want) || body["response_format"] != nil {
+		t.Fatalf("Responses body=%s, want text=%v", calls[0].body, want)
 	}
 }

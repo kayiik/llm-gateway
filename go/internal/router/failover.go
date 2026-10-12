@@ -1271,6 +1271,14 @@ func (rt *Runtime) responsesFallbackCompatibility(
 			return &providers.ConfigError{Msg: "selected provider cannot preserve Responses parallel_tool_calls"}
 		}
 	}
+	// A text.format reaches the target as response_format, which the target
+	// is weighed for as a Chat request's own is: one that would not send it
+	// would answer without the structure the request asks for.
+	if format := kw["response_format"]; format != nil {
+		if _, unsent := rt.providers().UnsentChatField(providerConfig, target.Provider, target.Model, caller, providers.Kwargs{"response_format": format}); unsent {
+			return &providers.ConfigError{Msg: "selected provider cannot preserve Responses text.format"}
+		}
+	}
 	return nil
 }
 

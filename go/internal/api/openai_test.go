@@ -446,9 +446,7 @@ func TestResponsesEndpointStreamsResponsesEvents(t *testing.T) {
 func TestResponsesFallbackRejectsUnsupportedGuaranteesAndStatefulRoutes(t *testing.T) {
 	server := setupResponsesAPITest(t)
 	for name, control := range map[string]map[string]any{
-		"structured output": {"text": map[string]any{
-			"format": map[string]any{"type": "json_schema"},
-		}},
+		"text verbosity":      {"text": map[string]any{"verbosity": "low"}},
 		"reasoning summary":   {"reasoning": map[string]any{"summary": "auto"}},
 		"encrypted reasoning": {"include": []any{"reasoning.encrypted_content"}},
 		"parallel tools":      {"parallel_tool_calls": false},

@@ -190,9 +190,10 @@ func (p *openAICompatibleProvider) StreamContext(ctx context.Context, model stri
 // Core sends every option an OpenAI-compatible instance hands it (see
 // openAICompatibleCore), so the options are chosen here: every field of a
 // client's own Chat request, and for a request translated from another
-// surface the fields the OpenAI transport forwards, so that a field only
+// surface the fields the OpenAI transport forwards and response_format,
+// which carries a Responses request's text.format, so that a field only
 // another vendor reads, such as Anthropic's output_config, never reaches
-// the upstream. Core's Bedrock still sends only the latter.
+// the upstream. Core's Bedrock still sends only the transport's fields.
 func (p *openAICompatibleProvider) chat(
 	ctx context.Context, model string, messages []Message, kw Kwargs, native openAIOperation,
 ) (core.Request, openAIOperation, error) {
@@ -200,7 +201,7 @@ func (p *openAICompatibleProvider) chat(
 	asSent := kw[ChatFieldsAsSent] == true
 	payload := make(map[string]any, len(kw)+3)
 	for key, value := range kw {
-		if asSent || strings.HasPrefix(key, "_") || openAITransportField(key) {
+		if asSent || strings.HasPrefix(key, "_") || openAITransportField(key) || key == "response_format" {
 			payload[key] = value
 		}
 	}
