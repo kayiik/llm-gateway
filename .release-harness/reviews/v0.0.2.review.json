@@ -1,0 +1,412 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "change",
+  "contract": {
+    "digest": "da05219969e051b692980ada8e8066ac909bf88d11ad6a5af6338834a8cc384f"
+  },
+  "authoring_provenance": {
+    "status": "established",
+    "path": ".release-harness/drafts/llm-gateway.record.json",
+    "digest": "e819045146db82b3754d02e0950d13ca8527706a2b478ada58c176c24e706d2b"
+  },
+  "sources": [
+    {
+      "source_id": "primary",
+      "status": "established",
+      "repository_identity": "https://github.com/kayiik/llm-gateway.git",
+      "base_ref": "v0.0.1",
+      "base_commit": "b443aeca55688272d835dafc5b742c0067fbaa67",
+      "merge_base": "b443aeca55688272d835dafc5b742c0067fbaa67",
+      "head_commit": "9149e7824041269a8387cf5713d6626e2add4e7a",
+      "head_tree": "ecc4cd2bfb5b1f8559cb6eb38fc4c35c3d92b1e2",
+      "reviewed_source_digest": "0884509762c29f6e6d99aaa678c79f80081fb5b1c842714f7a2feb658946b37b",
+      "changed_paths": [
+        {
+          "status": "modified",
+          "path": ".github/dependabot.yml",
+          "old_blob": "f0fd9ce46eccc845b3840e374458590fd1282bee",
+          "new_blob": "2cadb345b2a1be464f0ace01e13cf9b79d7c497c"
+        },
+        {
+          "status": "modified",
+          "path": ".github/workflows/ci.yml",
+          "old_blob": "e2ff3de43d660040ac5eede462ee07cc963b0638",
+          "new_blob": "f8d5cbc50d53637f253260862cabea4846083c8d"
+        },
+        {
+          "status": "modified",
+          "path": ".github/workflows/live-acceptance.yml",
+          "old_blob": "c6b5a5e00179e2ab70b01fe3eb7ae55b248c5fb2",
+          "new_blob": "7b39b62ee88e716fa172b2c881f7f7095840f2ac"
+        },
+        {
+          "status": "modified",
+          "path": ".github/workflows/pages.yml",
+          "old_blob": "9f510e7765ece0679b24252b4e1eae6c5f249996",
+          "new_blob": "4eca1ccacc00eba9c8cc06029972b7af20c935f9"
+        },
+        {
+          "status": "modified",
+          "path": ".github/workflows/provider-roster.yml",
+          "old_blob": "bbef1fdd48f9f900756527fc875686fd468a79fd",
+          "new_blob": "296a60028d90f56f93abe941a972b54d81f4e91f"
+        },
+        {
+          "status": "modified",
+          "path": ".github/workflows/release.yml",
+          "old_blob": "2f7fdc0a17d6cc13bbcd874ad91a04e27b947abc",
+          "new_blob": "ea762718b3f02efac2c92fbdc61f0c4416636a52"
+        },
+        {
+          "status": "modified",
+          "path": "docs/API.md",
+          "old_blob": "a84ff0f84b012a0ce9129c377fcd1e292f6950a5",
+          "new_blob": "0e9ddedf82d982faec97d5c5fe2190bb2fa15342"
+        },
+        {
+          "status": "modified",
+          "path": "docs/PROVIDER_ROSTER.md",
+          "old_blob": "d3574884ea7f9b668f11ff893e1bfc77a2a561ac",
+          "new_blob": "acc4fffa5945593702bca2a3d4dc7554c9fab162"
+        },
+        {
+          "status": "modified",
+          "path": "docs/UPGRADING.md",
+          "old_blob": "a1c192fe75c6f0c5cee5b0d2de9fb4a6db93ae76",
+          "new_blob": "06dc2fb780570efb5be23129de9190c5c31b1b8d"
+        },
+        {
+          "status": "modified",
+          "path": "go/go.mod",
+          "old_blob": "086b37fc9380814826fd6d843184fcb58dcd7c38",
+          "new_blob": "db6cb1c1e97a9c1b35bbda833d0325c597ac4541"
+        },
+        {
+          "status": "modified",
+          "path": "go/go.sum",
+          "old_blob": "6ebff9f9868f057aeacdffbf54a378ffb4e70d25",
+          "new_blob": "78f758357e0a1aa73bef6e9973ab68eb038445d5"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/chat_fields_test.go",
+          "old_blob": "8a0b334d051ea85e5218f2438bc1fb2bbf7e686e",
+          "new_blob": "599bce537a1fd6224a18560663b338f7602f9c5f"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/operations/secure_windows_test.go",
+          "old_blob": "d53c6a1e36541ff654a46cf01b5debfd1035a375",
+          "new_blob": "728f512061fed5d96bac62eee4ae3c73b18518e1"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/operations/secure_windows.go",
+          "old_blob": "e0f87925749c69170e7628e4358acb4712a442fa",
+          "new_blob": "4a1ba396477a396f258d4c6b4d6bb43988a0714c"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/chat_fields_test.go",
+          "old_blob": "6e6e5a815b8cb8027d40279dd819890f5801b2ee",
+          "new_blob": "2171b475a4bfe96b8b32b5b8c0462418000243f7"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/chat_fields.go",
+          "old_blob": "8852eedee7d8d36b9c7fbd3140496f9327eeeb5f",
+          "new_blob": "ea3b47b89125ca1e5413b9e5fd47b8c1edbff359"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/extension_vertical_test.go",
+          "old_blob": "abb9d6235e1a7f5186c7067b39b711ac2685da4e",
+          "new_blob": "8b2a3ecc3085efd8aaeda7d7d819456d526f0aba"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/extension_vertical.go",
+          "old_blob": "23a7f9acdf4b6b4b2c04245c70e3b4261ceb079e",
+          "new_blob": "42db1e9b73b1f9cfa6c3c5b83a7b4e614d034d38"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/roster/store_test.go",
+          "old_blob": "e764a591ab8fffbf8ad0e4f5f0c2d4b22cf3ed80",
+          "new_blob": "6264fe083637e45809f1238ac822a761c6599fa6"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/roster/store.go",
+          "old_blob": "83c6d5bc62ba2dd8a45152dffdad0cb627f4f9fa",
+          "new_blob": "f78f993409933666556e939481230cc705d0f9be"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/package-lock.json",
+          "old_blob": "842fe7ea38a919aa856f86fa05627e8ffe3e72fc",
+          "new_blob": "7426f6dabd9aff6d3326aced5a743bba41db1983"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/package.json",
+          "old_blob": "8e479ee47702073999ccbd80a0a573c3c7e39b1a",
+          "new_blob": "e72db66bce2b36c18f948edc3b501d02c11eb1ee"
+        },
+        {
+          "status": "modified",
+          "path": "README.md",
+          "old_blob": "562d2533c5061e7c27a6a0961891b25ea85c9781",
+          "new_blob": "c7a2081ce9db502ab676e3d90cb0a455c460360d"
+        },
+        {
+          "status": "modified",
+          "path": "test/live-acceptance/package-lock.json",
+          "old_blob": "d155ba46efd17241c9c703d04ff8209aab2e93c5",
+          "new_blob": "b073b3a559fd7e281a78efd4e932ec8f5d5696a1"
+        },
+        {
+          "status": "modified",
+          "path": "test/live-acceptance/package.json",
+          "old_blob": "95de64bfd7637462186acbed786544432fd40e2a",
+          "new_blob": "52ced1e08f2b88cd99b0676021a1848e5d12341f"
+        },
+        {
+          "status": "modified",
+          "path": "website/search.json",
+          "old_blob": "e9bf760e8e4a6c4d19d56fa9da97457b1e7d7a28",
+          "new_blob": "d278966e593329bb9855c14393d5f108eaf35865"
+        },
+        {
+          "status": "modified",
+          "path": "website/upgrading.html",
+          "old_blob": "624c5263cb0856e9dc715d3644485612850d3fcb",
+          "new_blob": "0e5011bad795e18478cc6af9ae3cdbd74c0d2d5f"
+        }
+      ]
+    }
+  ],
+  "facts": [
+    {
+      "id": "F1",
+      "claim": "`llmgw version` exits 0 and prints `llm-gateway 0.0.1-dev` (an unstamped local build; the release build stamps version, commit and build time).",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 9149e7824041269a8387cf5713d6626e2add4e7a",
+        "method": "ran the built binary"
+      }
+    },
+    {
+      "id": "F2",
+      "claim": "`llmgw health` exits 0 while the gateway of the same build is listening.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 9149e7824041269a8387cf5713d6626e2add4e7a",
+        "method": "ran the built binary against a local `llmgw serve` on 127.0.0.1:38787"
+      }
+    },
+    {
+      "id": "F3",
+      "claim": "GET /health without credentials returns 200 and a body containing \"status\":\"ok\".",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 9149e7824041269a8387cf5713d6626e2add4e7a",
+        "method": "curl-equivalent requests against `llmgw serve` on 127.0.0.1:38787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F4",
+      "claim": "GET /v1/models returns 200 and a body containing \"object\":\"list\".",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 9149e7824041269a8387cf5713d6626e2add4e7a",
+        "method": "curl-equivalent requests against `llmgw serve` on 127.0.0.1:38787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F5",
+      "claim": "POST /v1/chat/completions with a body that is not JSON returns 422 and an error of type invalid_request_error.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 9149e7824041269a8387cf5713d6626e2add4e7a",
+        "method": "curl-equivalent requests against `llmgw serve` on 127.0.0.1:38787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F6",
+      "claim": "POST /v1/responses with a body that is not JSON returns 422 and an error of type invalid_request_error.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 9149e7824041269a8387cf5713d6626e2add4e7a",
+        "method": "curl-equivalent requests against `llmgw serve` on 127.0.0.1:38787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F7",
+      "claim": "POST /v1/messages with a body that is not JSON returns 422 and an Anthropic-shaped body whose top-level type is \"error\".",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 9149e7824041269a8387cf5713d6626e2add4e7a",
+        "method": "curl-equivalent requests against `llmgw serve` on 127.0.0.1:38787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F8",
+      "claim": "GET /admin/api/state without credentials returns 401 \"Admin authentication required.\" while LLMGW_ALLOW_UNAUTHENTICATED_API=1 leaves the data plane open.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 9149e7824041269a8387cf5713d6626e2add4e7a",
+        "method": "curl-equivalent requests against `llmgw serve` on 127.0.0.1:38787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F9",
+      "claim": "GET /console/ returns 200 and a page titled <title>LLM Gateway Console</title>.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 9149e7824041269a8387cf5713d6626e2add4e7a",
+        "method": "curl-equivalent requests against `llmgw serve` on 127.0.0.1:38787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F10",
+      "claim": "GET /metrics returns 404 when no metrics token is configured.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 9149e7824041269a8387cf5713d6626e2add4e7a",
+        "method": "curl-equivalent requests against `llmgw serve` on 127.0.0.1:38787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F11",
+      "claim": "The Go source changes since v0.0.1 are in go/internal/providers/chat_fields.go (GitHub Copilot counts response_format as sent unless its cached catalog row serves the model over Responses), go/internal/providers/extension_vertical.go (Edge TTS synthesis sends the companion daemon an OpenAI speech JSON body with input, speed and the catalog credential), go/internal/roster/store.go (the roster cache records its feed URL and a cache of another feed is set aside), go/internal/operations/secure_windows.go (Windows renames retry sharing violations for up to two seconds), their tests, and go.mod/go.sum (golang.org/x/sys v0.48.0 to v0.49.0). No changed path is in go/cmd, go/internal/api handlers, go/internal/config or the console source.",
+      "status": "observed",
+      "evidence": {
+        "source": "git diff v0.0.1..9149e7824041269a8387cf5713d6626e2add4e7a",
+        "method": "read the changed paths and their diffs"
+      }
+    },
+    {
+      "id": "F12",
+      "claim": "The remaining changes are the console's vite 6.4.3 to 6.4.4 (npm run check:dist reports the embedded build unchanged), test/live-acceptance dependency versions, action pins in five workflows (download-artifact v8.0.2, setup-node v7.1.0, upload-artifact v7.0.2), Dependabot ignores for retracted library versions, and documentation.",
+      "status": "observed",
+      "evidence": {
+        "source": "git diff v0.0.1..9149e7824041269a8387cf5713d6626e2add4e7a",
+        "method": "read the diffs; ran npm ci and npm run check:dist in go/internal/web/console"
+      }
+    },
+    {
+      "id": "F13",
+      "claim": "go build, go vet, staticcheck v0.8.1 built with golang.org/x/tools v0.51.0, go test ./... and govulncheck v1.5.0 pass on the head commit on Windows, and the console's npm audit, lint, tests and check:dist pass.",
+      "status": "observed",
+      "evidence": {
+        "source": "working tree at commit 9149e7824041269a8387cf5713d6626e2add4e7a",
+        "method": "ran the checks AGENTS.md lists before a push"
+      }
+    },
+    {
+      "id": "F14",
+      "claim": "POST /v1/audio/speech for an edge_tts provider served through a companion daemon built from its 0.0.2 source returned 200 audio/mpeg with MP3 frame data, at speed 1.25.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 9149e7824041269a8387cf5713d6626e2add4e7a",
+        "method": "request against the local `llmgw serve` with LLMGW_EXTENSION_URL naming a local daemon on 127.0.0.1:38918"
+      }
+    }
+  ],
+  "impact": {
+    "assertions": [
+      {
+        "id": "A1",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F11"
+        ]
+      },
+      {
+        "id": "A2",
+        "impact": "unchanged",
+        "supported_by": [
+          "F2",
+          "F11"
+        ]
+      },
+      {
+        "id": "A3",
+        "impact": "unchanged",
+        "supported_by": [
+          "F3",
+          "F11"
+        ]
+      },
+      {
+        "id": "A4",
+        "impact": "unchanged",
+        "supported_by": [
+          "F4",
+          "F11"
+        ]
+      },
+      {
+        "id": "A5",
+        "impact": "unchanged",
+        "supported_by": [
+          "F5",
+          "F11"
+        ]
+      },
+      {
+        "id": "A6",
+        "impact": "unchanged",
+        "supported_by": [
+          "F6",
+          "F11"
+        ]
+      },
+      {
+        "id": "A7",
+        "impact": "unchanged",
+        "supported_by": [
+          "F7",
+          "F11"
+        ]
+      },
+      {
+        "id": "A8",
+        "impact": "unchanged",
+        "supported_by": [
+          "F8",
+          "F11"
+        ]
+      },
+      {
+        "id": "A9",
+        "impact": "unchanged",
+        "supported_by": [
+          "F9",
+          "F11"
+        ]
+      },
+      {
+        "id": "A10",
+        "impact": "unchanged",
+        "supported_by": [
+          "F10",
+          "F11"
+        ]
+      }
+    ],
+    "requires": [],
+    "possible_binding_changes": []
+  },
+  "questions": [],
+  "conclusion": {
+    "action": "reuse_contract",
+    "summary": "Every accepted assertion, A1 to A10, was exercised against a build of the exact head commit 9149e782 and held. The changes add GitHub Copilot response_format, fix Edge TTS synthesis through the companion daemon, keep provider roster rollback protection per feed, retry blocked Windows renames, and update dependencies and workflow pins; none changes what the accepted contract asserts, so it is reused for this source."
+  },
+  "proposed": {
+    "by": "kayiik",
+    "at": "2026-10-12T14:56:21.661Z"
+  }
+}
