@@ -46,6 +46,10 @@ func TestUnsentChatFieldFollowsWhatEachFacadeSends(t *testing.T) {
 		{ID: "responses-model", SupportedSurfaces: []string{"/responses"}},
 		{ID: "chat-model", SupportedSurfaces: []string{"/chat/completions"}},
 	})
+	runtime.catalogs.store(catalogCacheKey("copilot", gatewayCaller()), []ModelInfo{
+		{ID: "responses-model", SupportedSurfaces: []string{"/responses"}},
+		{ID: "chat-model", SupportedSurfaces: []string{"/chat/completions"}},
+	})
 	jsonMode := map[string]any{"type": "json_object"}
 	tool := []any{map[string]any{"type": "function", "function": map[string]any{"name": "lookup"}}}
 	asksNothing := Kwargs{
@@ -91,7 +95,10 @@ func TestUnsentChatFieldFollowsWhatEachFacadeSends(t *testing.T) {
 		{"Ollama sends its options and tools", "ollama", "any", Kwargs{"temperature": 0.2, "top_p": 0.9, "max_tokens": 64.0, "tools": tool}, ""},
 		{"Ollama", "ollama", "any", Kwargs{"stop": "END"}, "stop"},
 		{"Copilot sends the transport's fields", "copilot", "any", Kwargs{"parallel_tool_calls": false, "thinking": map[string]any{"type": "disabled"}}, ""},
-		{"Copilot", "copilot", "any", Kwargs{"response_format": jsonMode}, "response_format"},
+		{"Copilot sends response_format", "copilot", "chat-model", Kwargs{"response_format": jsonMode}, ""},
+		{"Copilot sends response_format to a model its catalog lacks", "copilot", "any", Kwargs{"response_format": jsonMode}, ""},
+		{"Copilot over Responses", "copilot", "responses-model", Kwargs{"response_format": jsonMode}, "response_format"},
+		{"Copilot", "copilot", "chat-model", Kwargs{"logprobs": true}, "logprobs"},
 		{"Zen sends the transport's fields", "zen", "any", Kwargs{"parallel_tool_calls": false, "tool_choice": "required", "thinking": map[string]any{"type": "disabled"}}, ""},
 		{"Zen", "zen", "any", Kwargs{"response_format": jsonMode}, "response_format"},
 		{"Codex sends tool_choice and parallel_tool_calls", "codex", "any", Kwargs{"reasoning_effort": "high", "tool_choice": "required", "parallel_tool_calls": false, "metadata": map[string]any{"run": "fixture"}}, ""},

@@ -329,3 +329,73 @@ func TestChatFieldsWithReservedNamesAreRefused(t *testing.T) {
 		t.Fatalf("a refused request reached the upstream: %v", sent)
 	}
 }
+
+// GitHub Copilot is sent a Chat request's response_format through the
+// companion daemon, which forwards it, so a request for a JSON answer is
+// served rather than refused, streamed or not.
+func TestChatFieldsReachGitHubCopilotThroughTheDaemon(t *testing.T) {
+	bodies := make(chan map[string]any, 2)
+	record := func(r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		bodies <- body
+	}
+	daemon := http.NewServeMux()
+	daemon.HandleFunc("GET /extension/v1/github_copilot/models", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"models": []any{map[string]any{"id": "model-a"}}})
+	})
+	daemon.HandleFunc("POST /extension/v1/github_copilot/invoke", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"id": "chatcmpl_fixture", "object": "chat.completion", "model": "model-a",
+			"choices": []any{map[string]any{"index": 0, "finish_reason": "stop", "message": map[string]any{"role": "assistant", "content": "{}"}}},
+		})
+	})
+	daemon.HandleFunc("POST /extension/v1/github_copilot/stream", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
+		w.Header().Set("Content-Type", core.ContentTypeEventStream)
+		_, _ = io.WriteString(w, `data: {"id":"chatcmpl_fixture","object":"chat.completion.chunk","model":"model-a","choices":[{"index":0,"delta":{"role":"assistant","content":"{}"},"finish_reason":"stop"}]}`+"\n\n"+
+			"data: [DONE]\n\n")
+	})
+	serveExtensionDaemon(t, daemon)
+	setupProviderCredentialAPI(t, t.TempDir())
+	providers.InstallForTests(t)
+	config.Update(func(s *config.Settings) {
+		s.Providers = map[string]*config.ProviderConfig{"copilot": {Type: "github_copilot"}}
+		s.Endpoints = map[string]*config.EndpointConfig{}
+		s.AnthropicDiscoveryAliases = false
+	})
+	providers.ResetProviders()
+	t.Cleanup(providers.ResetProviders)
+	credential, err := iam.PutGatewayProviderCredential("copilot", "github_oauth", "shared-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, principal := issueProviderTestKey(t, "structured", "service:structured", "service", credential.ID, true)
+	if rows := providers.RefreshCatalogForPrincipal("copilot", callerOf(principal)); len(rows) != 1 {
+		t.Fatalf("catalog = %+v", rows)
+	}
+	server := httptest.NewServer(NewServer(Runtime{}))
+	defer server.Close()
+
+	format := map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "verdict", "schema": map[string]any{"type": "object"}}}
+	for _, stream := range []bool{false, true} {
+		status, answer := jsonRequest(t, server.URL+"/v1/chat/completions", http.MethodPost, token, map[string]any{
+			"model": "copilot/model-a", "stream": stream, "response_format": format,
+			"messages": []map[string]any{{"role": "user", "content": "Reply in JSON."}},
+		})
+		if status != http.StatusOK {
+			t.Fatalf("stream=%v: status=%d answer=%+v", stream, status, answer)
+		}
+		select {
+		case body := <-bodies:
+			if !reflect.DeepEqual(body["response_format"], format) {
+				t.Fatalf("stream=%v: the daemon received response_format=%#v, want %#v", stream, body["response_format"], format)
+			}
+		default:
+			t.Fatalf("stream=%v: the request did not reach the daemon", stream)
+		}
+	}
+}

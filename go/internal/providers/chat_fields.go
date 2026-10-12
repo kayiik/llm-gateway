@@ -105,9 +105,17 @@ func (rt *Runtime) chatFieldsSent(providerID, model string, caller core.Caller, 
 		ptype = ExtensionTypeCodex
 	}
 	switch {
-	case ptype == ExtensionTypeCopilot, ptype == ExtensionTypeZenAnonymous:
-		// The daemon serves Copilot and anonymous OpenCode Zen on the
-		// OpenAI wire, with the fields the gateway's OpenAI transport sends.
+	case ptype == ExtensionTypeCopilot:
+		// The daemon sends Copilot the OpenAI transport's fields and
+		// response_format, except to a model it serves over Responses,
+		// whose conversion does not carry response_format.
+		if rt.cachedOverResponses(providerID, model, caller) {
+			return openAITransportField
+		}
+		return copilotChatField
+	case ptype == ExtensionTypeZenAnonymous:
+		// The daemon serves anonymous OpenCode Zen on the OpenAI wire, with
+		// the fields the gateway's OpenAI transport sends.
 		return openAITransportField
 	case ptype == ExtensionTypeCodex:
 		return codexChatField
@@ -151,6 +159,14 @@ func (rt *Runtime) cachedOverResponses(instance, model string, caller core.Calle
 // or loses one that changes the answer's structure.
 func daemonChatField(field string) bool {
 	return field != "parallel_tool_calls" && field != "thinking" && openAITransportField(field)
+}
+
+// copilotChatField reports a Chat field the daemon sends Copilot's Chat
+// Completions with: the OpenAI transport's, and response_format, which
+// Copilot takes as OpenAI does. A daemon that predates it drops
+// response_format and reports the loss.
+func copilotChatField(field string) bool {
+	return field == "response_format" || openAITransportField(field)
 }
 
 // codexChatField reports a Chat field the daemon serves Codex with: those
