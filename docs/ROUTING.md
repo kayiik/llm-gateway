@@ -51,6 +51,10 @@ Unknown IDs return `404`. Read `GET /v1/models` and select an advertised ID.
 For Chat, Responses-compatible fallback, and adapted Messages paths, endpoint
 members can advance after supported upstream failures such as throttling, server
 errors, timeouts, and [billing and request-shape refusals](#billing-and-request-shape-refusals).
+A member that cannot take the request as it was sent, such as one that cannot
+send a Chat field the request sets or one the Responses fallback cannot serve
+it through, is passed over before anything is sent to it, and the request fails
+with `400` only when no member can take it.
 
 Streaming has a hard boundary: a request can move to the next target only before
 the first response byte. Once output starts, a later failure is surfaced to the

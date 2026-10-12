@@ -130,9 +130,12 @@ refused.
 Native Responses targets preserve the Responses envelope and streaming events.
 Compatible stateless requests can fall back through a strict Chat translation.
 The fallback sends a `text.format` as `response_format` to a target that sends
-that Chat field, as listed above, and the answer carries the format back. Any
-other target refuses such a request with `400` before anything is sent; a
-`text.format` of type `text` asks for nothing and is served everywhere.
+that Chat field, as listed above, and the answer carries the format back; a
+`text.format` of type `text` asks for nothing and is served everywhere. A
+target the fallback cannot serve a request through, because the translation
+would lose part of it or the target cannot send what it carries, is sent
+nothing. In an endpoint the next member is tried, which may serve the request
+natively, and the request fails with `400` only when no member serves it.
 
 `background: true` is rejected even for native targets. Built-in tools, non-empty `include`,
 reasoning summaries, encrypted reasoning state, and other stateful behavior

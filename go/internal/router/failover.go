@@ -783,7 +783,7 @@ func (rt *Runtime) ExecuteResponsesContext(
 					Provider: target.Provider, Model: target.Model,
 					Error: truncate(lastErr.Error()),
 				})
-				return nil, stop(refusal)
+				return nil, judge(refusal, true)
 			}
 			chat, chatErr := providers.CompleteProviderContext(attemptCtx, provider, target.Model, fallback.messages, fallback.kw)
 			if chatErr == nil {
@@ -1099,7 +1099,7 @@ func (rt *Runtime) ExecuteResponsesStreamContext(
 					Provider: target.Provider, Model: target.Model,
 					Error: truncate(lastErr.Error()),
 				})
-				return nil, stop(refusal)
+				return nil, judge(refusal, true)
 			}
 			if ctxErr := ended(); ctxErr != nil {
 				release()
@@ -1167,8 +1167,11 @@ func translateResponsesFallback(payload map[string]any) responsesFallback {
 
 // responsesFallbackRefusal is why target cannot serve a request through the
 // Chat fallback, or nil: a material loss, a request that does not translate,
-// or a control the target's provider cannot preserve. A refusal ends the
-// chain with a 400.
+// or a control the target's provider cannot preserve. Nothing is sent to a
+// refused target, and the chain moves on, as the Messages chain moves past a
+// target its Chat adapter cannot take: a later target may serve the request
+// natively, or send what this one cannot. The chain ends with the refusal's
+// 400 only when no target serves.
 func (rt *Runtime) responsesFallbackRefusal(target Target, caller core.Caller, fallback responsesFallback) error {
 	if fallback.loss != nil {
 		return &providers.ConfigError{Msg: fallback.loss.Error()}

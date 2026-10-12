@@ -442,3 +442,44 @@ func TestResponsesFallbackCarriesTextFormatAsResponseFormat(t *testing.T) {
 		t.Fatalf("a text format asks for nothing: status=%d body=%s", w.Code, w.Body.String())
 	}
 }
+
+// An endpoint member the Responses fallback cannot send a text.format through
+// is skipped, as a Chat request skips one that cannot send its
+// response_format, and the next member serves the request, streamed or not.
+// The request fails with the refusal only when no member can serve it.
+func TestResponsesFallbackSkipsAnEndpointMemberThatCannotSendTextFormat(t *testing.T) {
+	handler, upstream := setupChatFieldFixture(t)
+	format := map[string]any{"type": "json_schema", "name": "verdict", "schema": map[string]any{"type": "object"}}
+	wantChat := map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "verdict", "schema": map[string]any{"type": "object"}}}
+	for _, stream := range []bool{false, true} {
+		w := apiSmokeRequest(handler, "/v1/responses", map[string]any{
+			"model": "mixed", "input": "verdict?", "stream": stream, "text": map[string]any{"format": format},
+		})
+		if w.Code != http.StatusOK {
+			t.Fatalf("stream=%v: status=%d body=%s", stream, w.Code, w.Body.String())
+		}
+		if sent := upstream.take("/n/v1/messages"); sent != nil {
+			t.Fatalf("stream=%v: the skipped member was called: %v", stream, sent)
+		}
+		if sent := upstream.take("/o/chat/completions"); sent == nil || !reflect.DeepEqual(sent["response_format"], wantChat) {
+			t.Fatalf("stream=%v: the next member received %v, want response_format %v", stream, sent, wantChat)
+		}
+	}
+
+	config.Update(func(s *config.Settings) {
+		s.Endpoints["refusing"] = &config.EndpointConfig{Failover: []config.EndpointMember{
+			{Provider: "native", Model: "claude-fixture"}, {Provider: "native", Model: "claude-other"},
+		}}
+	})
+	for _, stream := range []bool{false, true} {
+		w := apiSmokeRequest(handler, "/v1/responses", map[string]any{
+			"model": "refusing", "input": "verdict?", "stream": stream, "text": map[string]any{"format": format},
+		})
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "text.format") {
+			t.Fatalf("stream=%v: status=%d body=%s, want a 400 naming text.format", stream, w.Code, w.Body.String())
+		}
+		if sent := upstream.take("/n/v1/messages"); sent != nil {
+			t.Fatalf("stream=%v: a refused request reached the upstream: %v", stream, sent)
+		}
+	}
+}

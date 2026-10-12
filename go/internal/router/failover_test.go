@@ -720,6 +720,72 @@ func TestResponsesFallbackRejectsUnsupportedToolConstraints(t *testing.T) {
 	}
 }
 
+// A target the Responses Chat fallback refuses, for what the request carries
+// or for what the target cannot send, is sent nothing and leaves the request
+// to the next target, which may serve it natively, as the Messages chain
+// leaves a request to the next target when its Chat adapter cannot take it.
+// The chain ends with the refusal's 400 only when no target serves.
+func TestResponsesChainMovesPastATargetTheFallbackRefuses(t *testing.T) {
+	setupEcho(t)
+	answer := `{"id":"resp_fixture","object":"response","status":"completed","model":"model",` +
+		`"output":[{"type":"message","id":"msg_fixture","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],` +
+		`"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body["stream"] == true {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":" + answer + "}\n\n"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(answer))
+	}))
+	defer upstream.Close()
+	config.Update(func(s *config.Settings) {
+		s.Providers["native"] = &config.ProviderConfig{Type: "openai_compatible", RegistryID: "openai", BaseURL: upstream.URL}
+		s.Providers["anthropic"] = &config.ProviderConfig{Type: "anthropic", APIKey: "fixture-key", BaseURL: "http://127.0.0.1:1"}
+		s.Policies.Defaults = config.ProviderPolicy{RetryMaxAttempts: 1}
+	})
+	providers.ResetProviders()
+	t.Cleanup(providers.ResetProviders)
+	native := Target{Provider: "native", Model: "model"}
+	for name, testCase := range map[string]struct {
+		refused []Target
+		payload map[string]any
+	}{
+		// The fallback would lose text.verbosity on any target.
+		"for the request": {
+			[]Target{{Provider: "echo", Model: "echo-default"}, {Provider: "echo2", Model: "echo-default"}},
+			map[string]any{"input": "hi", "text": map[string]any{"verbosity": "low"}},
+		},
+		// An Anthropic target cannot send text.format as response_format.
+		"for the target": {
+			[]Target{{Provider: "anthropic", Model: "claude"}, {Provider: "anthropic", Model: "claude-other"}},
+			map[string]any{"input": "hi", "text": map[string]any{"format": map[string]any{"type": "json_object"}}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			targets := []Target{testCase.refused[0], native}
+			if _, served, err := ExecuteResponses(targets, testCase.payload, "route", anonymous); err != nil || served == nil || *served != native {
+				t.Fatalf("served=%+v err=%v, want the native target", served, err)
+			}
+			stream, served, err := ExecuteResponsesStream(targets, testCase.payload, "route", anonymous)
+			if err != nil || served == nil || *served != native || !stream.Native {
+				t.Fatalf("stream served=%+v err=%v, want the native target", served, err)
+			}
+			_ = stream.Iter.Close()
+			var failed *AllTargetsFailed
+			if _, _, err := ExecuteResponses(testCase.refused, testCase.payload, "route", anonymous); !errors.As(err, &failed) || failed.Status != http.StatusBadRequest {
+				t.Fatalf("err=%v, want the refusal's 400", err)
+			}
+			if _, _, err := ExecuteResponsesStream(testCase.refused, testCase.payload, "route", anonymous); !errors.As(err, &failed) || failed.Status != http.StatusBadRequest {
+				t.Fatalf("stream err=%v, want the refusal's 400", err)
+			}
+		})
+	}
+}
+
 func TestTargetCompatibilityPreservesClientControls(t *testing.T) {
 	setupEcho(t)
 	config.Update(func(settings *config.Settings) {
