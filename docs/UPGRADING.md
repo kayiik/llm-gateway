@@ -12,37 +12,17 @@ comparing numbers.
 
 State, keys, credentials and the optional companion daemon's pairing carry over
 unchanged, and the daemon can move before or after the gateway. Follow the
-upgrade for your installation below, offline backup included, and before
-starting a current build on an existing state directory:
+upgrade for your installation below, offline backup included, and remove
+`LLMGW_PROVIDER_ROSTER_URL` wherever it points at a previous feed, such as the
+environment, `.env` or `deploy/.env`. Take `deploy/docker-compose.prod.yml` from
+a current checkout too, because one from before the move defaults to a previous
+feed. The built-in default names the current feed.
 
-1. Stop the gateway.
-2. Delete `provider-roster-cache.json` from the state directory. It only caches
-   the public provider roster, which the gateway fetches again.
-3. Remove `LLMGW_PROVIDER_ROSTER_URL` wherever it points at a previous feed,
-   such as the environment, `.env` or `deploy/.env`, and take
-   `deploy/docker-compose.prod.yml` from a current checkout, because one from
-   before the move defaults to a previous feed. The built-in default names the
-   current feed.
-
-In the image, the state directory is the `/state` volume, and the image has no
-shell. Delete the file from a throwaway container that mounts the volume, or at
-its host path, such as `deploy/state` for the production Compose deployment.
-From a Compose installation's folder, in POSIX or PowerShell, after
-`docker compose stop` (not `down`, which removes the container whose volume
-this borrows):
-
-```bash
-docker run --rm --volumes-from "$(docker compose ps -aq gateway)" busybox rm -f /state/provider-roster-cache.json
-```
-
-A native installation's state directory is `LLMGW_STATE_DIR`, or `~/.llmgw`
-when that is unset.
-
-The roster cache refuses a feed whose revision is lower than the cached one,
-and the feed's revisions restarted with the move. A cache from before the move
-would keep the gateway on the previous roster and reject every current one. A
-gateway that records the feed in its cache sets aside a cache another feed
-wrote, so for it deleting the file is optional.
+The provider roster's revisions restarted with the move. Current releases
+record which feed their roster cache came from, and replace a cache written for
+another feed on their next refresh, so the cache needs no cleanup. If the
+provider roster reports "Roster rollback or conflicting revision rejected."
+after the move, the release predates this: update to the latest release.
 
 ## Before an upgrade
 
