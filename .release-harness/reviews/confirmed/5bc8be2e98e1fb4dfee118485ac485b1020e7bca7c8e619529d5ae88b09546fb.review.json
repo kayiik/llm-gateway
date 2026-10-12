@@ -1,0 +1,332 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "change",
+  "contract": {
+    "digest": "da05219969e051b692980ada8e8066ac909bf88d11ad6a5af6338834a8cc384f"
+  },
+  "authoring_provenance": {
+    "status": "established",
+    "path": ".release-harness/drafts/llm-gateway.record.json",
+    "digest": "e819045146db82b3754d02e0950d13ca8527706a2b478ada58c176c24e706d2b"
+  },
+  "sources": [
+    {
+      "source_id": "primary",
+      "status": "established",
+      "repository_identity": "https://github.com/kayiik/llm-gateway.git",
+      "base_ref": "v0.0.2",
+      "base_commit": "19ea342c16b02b00b7e697ff7c646abcdb8420e2",
+      "merge_base": "19ea342c16b02b00b7e697ff7c646abcdb8420e2",
+      "head_commit": "61cadf83cbc3444d0e6a7d2fc6e999c9e9095466",
+      "head_tree": "8b5bd66cafaa72d03021e99179c794adc3a1dd69",
+      "reviewed_source_digest": "1de6397a66c3ec6419c63107dbec1be378f460b8fd4a910c82ab836381286d27",
+      "changed_paths": [
+        {
+          "status": "modified",
+          "path": "docs/API.md",
+          "old_blob": "0e9ddedf82d982faec97d5c5fe2190bb2fa15342",
+          "new_blob": "00101d965b6481fd44fb4af43217d9466bbdc290"
+        },
+        {
+          "status": "modified",
+          "path": "docs/UPGRADING.md",
+          "old_blob": "06dc2fb780570efb5be23129de9190c5c31b1b8d",
+          "new_blob": "43bebb80413471eb72bc0b636fcebe348a244c1c"
+        },
+        {
+          "status": "modified",
+          "path": "go/go.mod",
+          "old_blob": "db6cb1c1e97a9c1b35bbda833d0325c597ac4541",
+          "new_blob": "674d3f54b4b8395a9b11206339dad0f7c3d9042a"
+        },
+        {
+          "status": "modified",
+          "path": "go/go.sum",
+          "old_blob": "78f758357e0a1aa73bef6e9973ab68eb038445d5",
+          "new_blob": "2a0b88c02a9f8916488eb67032eec40c5221ed4f"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/chat_fields_test.go",
+          "old_blob": "599bce537a1fd6224a18560663b338f7602f9c5f",
+          "new_blob": "4feb3f0dc57c43045af6ddc19e66f88d7899a48a"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/openai_test.go",
+          "old_blob": "91140e715248a64c900ad2c5cd075d235ca2d76f",
+          "new_blob": "8fdf8e367fe1539d4d94d9cf6b5f227930721830"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/principal_list_test.go",
+          "old_blob": "ba67cd48696c2003ba81bb630f5f57551e6ebd67",
+          "new_blob": "3e2aab5ddb8c5271ff819052e2780133535ecf44"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/key_list_test.go",
+          "old_blob": "daf656bc5b7ca790758621edbe1042aab72824ef",
+          "new_blob": "8d2f2e7158cd0ad201e23c2c3635248d35a20991"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/chat_fields_test.go",
+          "old_blob": "2171b475a4bfe96b8b32b5b8c0462418000243f7",
+          "new_blob": "ab6b8bc0fe77f235953d2fc0c2aec0b180e08989"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/chat_fields.go",
+          "old_blob": "ea3b47b89125ca1e5413b9e5fd47b8c1edbff359",
+          "new_blob": "8b75dd51096c1edc8e9d1248a961ccbe63237690"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/openai_compatible_provider.go",
+          "old_blob": "2f179991fc7cd115e59b1186c447fef79f9735d5",
+          "new_blob": "a9e8f27098f259ea7e2bbeb74058a6e2f2997b25"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/router/failover.go",
+          "old_blob": "7297aa81a550cca3d69036775c2a88994404d946",
+          "new_blob": "e933b5c477ef202a560603dc8d85a188c7144c63"
+        },
+        {
+          "status": "modified",
+          "path": "README.md",
+          "old_blob": "c7a2081ce9db502ab676e3d90cb0a455c460360d",
+          "new_blob": "61f45b81d014643223151072c0a4a047de93becb"
+        },
+        {
+          "status": "modified",
+          "path": "website/search.json",
+          "old_blob": "d278966e593329bb9855c14393d5f108eaf35865",
+          "new_blob": "56a8382f1b25a833fa6100b65d53ae9844bc1c60"
+        },
+        {
+          "status": "modified",
+          "path": "website/upgrading.html",
+          "old_blob": "0e5011bad795e18478cc6af9ae3cdbd74c0d2d5f",
+          "new_blob": "4f379ff2cf2c01f506bedbba975a4f0ea954c45c"
+        }
+      ]
+    }
+  ],
+  "facts": [
+    {
+      "id": "F1",
+      "claim": "`llmgw version` exits 0 and prints `llm-gateway 0.0.1-dev` (an unstamped local build; the release build stamps version, commit and build time).",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 61cadf83cbc3444d0e6a7d2fc6e999c9e9095466",
+        "method": "ran the built binary"
+      }
+    },
+    {
+      "id": "F2",
+      "claim": "`llmgw health` exits 0 while the gateway of the same build is listening.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 61cadf83cbc3444d0e6a7d2fc6e999c9e9095466",
+        "method": "ran the built binary against a local `llmgw serve` on 127.0.0.1:38787"
+      }
+    },
+    {
+      "id": "F3",
+      "claim": "GET /health without credentials returns 200 and a body containing \"status\":\"ok\".",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 61cadf83cbc3444d0e6a7d2fc6e999c9e9095466",
+        "method": "requests against `llmgw serve` on 127.0.0.1:38787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F4",
+      "claim": "GET /v1/models returns 200 and a body containing \"object\":\"list\".",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 61cadf83cbc3444d0e6a7d2fc6e999c9e9095466",
+        "method": "requests against `llmgw serve` on 127.0.0.1:38787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F5",
+      "claim": "POST /v1/chat/completions with a body that is not JSON returns 422 and an error of type invalid_request_error.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 61cadf83cbc3444d0e6a7d2fc6e999c9e9095466",
+        "method": "requests against `llmgw serve` on 127.0.0.1:38787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F6",
+      "claim": "POST /v1/responses with a body that is not JSON returns 422 and an error of type invalid_request_error.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 61cadf83cbc3444d0e6a7d2fc6e999c9e9095466",
+        "method": "requests against `llmgw serve` on 127.0.0.1:38787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F7",
+      "claim": "POST /v1/messages with a body that is not JSON returns 422 and an Anthropic-shaped body whose top-level type is \"error\".",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 61cadf83cbc3444d0e6a7d2fc6e999c9e9095466",
+        "method": "requests against `llmgw serve` on 127.0.0.1:38787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F8",
+      "claim": "GET /admin/api/state without credentials returns 401 \"Admin authentication required.\" while LLMGW_ALLOW_UNAUTHENTICATED_API=1 leaves the data plane open.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 61cadf83cbc3444d0e6a7d2fc6e999c9e9095466",
+        "method": "requests against `llmgw serve` on 127.0.0.1:38787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F9",
+      "claim": "GET /console/ returns 200 and a page titled <title>LLM Gateway Console</title>.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 61cadf83cbc3444d0e6a7d2fc6e999c9e9095466",
+        "method": "requests against `llmgw serve` on 127.0.0.1:38787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F10",
+      "claim": "GET /metrics returns 404 when no metrics token is configured.",
+      "status": "observed",
+      "evidence": {
+        "source": "go build ./cmd/llmgw at commit 61cadf83cbc3444d0e6a7d2fc6e999c9e9095466",
+        "method": "requests against `llmgw serve` on 127.0.0.1:38787 with LLMGW_ALLOW_UNAUTHENTICATED_API=1"
+      }
+    },
+    {
+      "id": "F11",
+      "claim": "The Go source changes since v0.0.2 are in go/internal/providers/chat_fields.go (response_format counts as sent for Chat adapted over Responses and for every GitHub Copilot model), go/internal/providers/openai_compatible_provider.go (a request translated from another surface also forwards response_format), go/internal/router/failover.go (the Responses Chat fallback refuses a text.format on a target that does not send response_format), tests, including two listing tests whose search terms no longer match random IDs, and go.mod/go.sum (llm-translate and llmgw-core 0.0.1 to 0.0.2). No changed path is in go/cmd, the API handlers, go/internal/config or the console.",
+      "status": "observed",
+      "evidence": {
+        "source": "git diff v0.0.2..61cadf83cbc3444d0e6a7d2fc6e999c9e9095466",
+        "method": "read the changed paths and their diffs"
+      }
+    },
+    {
+      "id": "F12",
+      "claim": "The remaining changes are documentation: docs/API.md, docs/UPGRADING.md, README.md, website/upgrading.html and website/search.json.",
+      "status": "observed",
+      "evidence": {
+        "source": "git diff v0.0.2..61cadf83cbc3444d0e6a7d2fc6e999c9e9095466",
+        "method": "read the diffs"
+      }
+    },
+    {
+      "id": "F13",
+      "claim": "go build, go vet, staticcheck v0.8.1 built with golang.org/x/tools v0.51.0, go test ./... and govulncheck v1.5.0 pass on Windows; the console audit, lint, tests and check:dist pass; node scripts/check-docs.mjs passes. GitHub CI passed on the parent commit 499d4b1, whose source differs only in two test files.",
+      "status": "observed",
+      "evidence": {
+        "source": "working tree at commit 61cadf83cbc3444d0e6a7d2fc6e999c9e9095466",
+        "method": "ran the checks AGENTS.md lists before a push; read the CI run of 499d4b1"
+      }
+    }
+  ],
+  "impact": {
+    "assertions": [
+      {
+        "id": "A1",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F11"
+        ]
+      },
+      {
+        "id": "A2",
+        "impact": "unchanged",
+        "supported_by": [
+          "F2",
+          "F11"
+        ]
+      },
+      {
+        "id": "A3",
+        "impact": "unchanged",
+        "supported_by": [
+          "F3",
+          "F11"
+        ]
+      },
+      {
+        "id": "A4",
+        "impact": "unchanged",
+        "supported_by": [
+          "F4",
+          "F11"
+        ]
+      },
+      {
+        "id": "A5",
+        "impact": "unchanged",
+        "supported_by": [
+          "F5",
+          "F11"
+        ]
+      },
+      {
+        "id": "A6",
+        "impact": "unchanged",
+        "supported_by": [
+          "F6",
+          "F11"
+        ]
+      },
+      {
+        "id": "A7",
+        "impact": "unchanged",
+        "supported_by": [
+          "F7",
+          "F11"
+        ]
+      },
+      {
+        "id": "A8",
+        "impact": "unchanged",
+        "supported_by": [
+          "F8",
+          "F11"
+        ]
+      },
+      {
+        "id": "A9",
+        "impact": "unchanged",
+        "supported_by": [
+          "F9",
+          "F11"
+        ]
+      },
+      {
+        "id": "A10",
+        "impact": "unchanged",
+        "supported_by": [
+          "F10",
+          "F11"
+        ]
+      }
+    ],
+    "requires": [],
+    "possible_binding_changes": []
+  },
+  "questions": [],
+  "conclusion": {
+    "action": "reuse_contract",
+    "summary": "Every accepted assertion, A1 to A10, was exercised against a build of the exact head commit 61cadf83 and held. The changes carry response_format between Chat and Responses and refuse a text.format a Chat fallback target cannot send, update llm-translate and llmgw-core, make two listing tests deterministic, and revise the moving documentation; none changes what the accepted contract asserts, so it is reused for this source."
+  },
+  "proposed": {
+    "by": "kayiik",
+    "at": "2026-10-12T17:19:50.129Z"
+  },
+  "digest": "5bc8be2e98e1fb4dfee118485ac485b1020e7bca7c8e619529d5ae88b09546fb"
+}
