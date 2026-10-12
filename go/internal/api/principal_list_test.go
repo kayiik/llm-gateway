@@ -28,7 +28,7 @@ func principalListingFixture(t *testing.T) (http.Handler, map[string]string, str
 	config.Update(func(s *config.Settings) { s.APIKey, s.AllowUnauthenticatedAPI = "fixture-gateway-token", false })
 	ids := map[string]string{}
 	for _, principal := range []struct{ kind, subject, name string }{
-		{"human", "fixture:ada", "Ada"}, {"human", "fixture:bob", "bob"}, {"human", "fixture:cy", "Cy"}, {"service", "", "Batch"},
+		{"human", "fixture:ada", "Ada"}, {"human", "fixture:bob", "bob"}, {"human", "fixture:cy", "Cy"}, {"service", "", "Batch run"},
 	} {
 		created, err := iam.CreatePrincipal(principal.kind, principal.subject, "", principal.name)
 		if err != nil {
@@ -46,7 +46,7 @@ func principalListingFixture(t *testing.T) (http.Handler, map[string]string, str
 	if err := iam.SetMembership(project.ID, ids["Ada"], "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := iam.SetMembership(project.ID, ids["Batch"], "member"); err != nil {
+	if err := iam.SetMembership(project.ID, ids["Batch run"], "member"); err != nil {
 		t.Fatal(err)
 	}
 	return NewServer(Runtime{}), ids, project.ID
@@ -76,6 +76,8 @@ func TestPrincipalListingPagesPrincipals(t *testing.T) {
 		}
 		return names, page.Total
 	}
+	// A principal's ID is random, so the search term holds a space, which an
+	// ID never does.
 	for query, want := range map[string]struct {
 		names []string
 		total int
@@ -83,9 +85,9 @@ func TestPrincipalListingPagesPrincipals(t *testing.T) {
 		"kind=human":                                    {[]string{"Ada", "bob", "Cy"}, 3},
 		"kind=human&status=active&limit=1":              {[]string{"Ada"}, 2},
 		"kind=human&sort=name&order=desc&offset=1":      {[]string{"bob", "Ada"}, 3},
-		"kind=human&kind=service&project_id=" + project: {[]string{"Ada", "Batch"}, 2},
+		"kind=human&kind=service&project_id=" + project: {[]string{"Ada", "Batch run"}, 2},
 		"id=" + ids["bob"] + "&id=" + ids["Cy"]:         {[]string{"bob", "Cy"}, 2},
-		"q=" + url.QueryEscape("BAT"):                   {[]string{"Batch"}, 1},
+		"q=" + url.QueryEscape("H R"):                   {[]string{"Batch run"}, 1},
 		"kind=human&status=disabled":                    {[]string{"Cy"}, 1},
 	} {
 		names, total := read(query)
@@ -112,7 +114,7 @@ func TestPrincipalListingPagesPrincipals(t *testing.T) {
 func TestAdminStateCountsIdentitiesAndNamesTheDefaultOwner(t *testing.T) {
 	handler, ids, project := principalListingFixture(t)
 	for _, name := range []string{"kept", "revoked"} {
-		key, err := iam.IssueKey(iam.KeyCreate{ProjectID: project, PrincipalID: ids["Batch"], Name: name})
+		key, err := iam.IssueKey(iam.KeyCreate{ProjectID: project, PrincipalID: ids["Batch run"], Name: name})
 		if err != nil {
 			t.Fatal(err)
 		}

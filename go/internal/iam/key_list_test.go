@@ -19,7 +19,7 @@ func TestListAPIKeysPageFiltersSortsAndPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bob, err := CreatePrincipal("human", "fixture:bob", "", "Bob")
+	bob, err := CreatePrincipal("human", "fixture:bob", "", "Bob Ops")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,6 +70,8 @@ func TestListAPIKeysPageFiltersSortsAndPages(t *testing.T) {
 		}
 		return out, total
 	}
+	// A key's prefix and ID are random, so the owner's search term holds a
+	// space, which neither ever does.
 	for name, check := range map[string]struct {
 		filter KeyListFilter
 		want   []string
@@ -87,7 +89,7 @@ func TestListAPIKeysPageFiltersSortsAndPages(t *testing.T) {
 		"a grant's, unrevoked":           {KeyListFilter{Grant: "coding", Status: "unrevoked", Sort: "name"}, []string{"Batch_Job", "lapsed", "notebook"}},
 		"a grant's, any status":          {KeyListFilter{Grant: "coding", Status: "all", Sort: "name"}, []string{"Batch_Job", "lapsed", "notebook", "retired"}},
 		"a search, ignoring case":        {KeyListFilter{Status: "all", Search: "batch_"}, []string{"Batch_Job"}},
-		"a search of the owner":          {KeyListFilter{Status: "all", Search: "BOB", Sort: "name"}, []string{"Batch_Job", "retired"}},
+		"a search of the owner":          {KeyListFilter{Status: "all", Search: "B O", Sort: "name"}, []string{"Batch_Job", "retired"}},
 		"a search's wildcard is literal": {KeyListFilter{Status: "all", Search: "%"}, []string{}},
 	} {
 		got, total := ids(check.filter)
