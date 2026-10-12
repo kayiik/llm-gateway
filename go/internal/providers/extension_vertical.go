@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -481,21 +482,57 @@ func (f *ExtensionProviderFacade) DefaultVoice() string {
 	return "en-US-ChristopherNeural"
 }
 
-func (f *ExtensionProviderFacade) Synthesize(voice, text, speed string) ([]byte, string, error) {
+// Synthesize speaks text in voice at rate, a prosody rate such as "+20%",
+// through the daemon. Its audio speech surface takes an OpenAI speech
+// request, as the extension protocol carries every surface's body, so the
+// voice is the request's model, the text its input and the rate its speed;
+// the daemon refuses a body of bare text. The credential is the one the
+// catalog is listed with.
+func (f *ExtensionProviderFacade) Synthesize(voice, text, rate string) ([]byte, string, error) {
 	ctx := context.Background()
+	cred, err := f.runtime.coreCredential(ctx, f.providerID, f.caller, f.instance)
+	if err != nil {
+		return nil, "", err
+	}
 	client, err := f.runtime.extensionClient()
 	if err != nil {
 		return nil, "", extensionFailure(ctx, f.instance, err)
 	}
+	speech := map[string]any{"input": text}
+	if speed, ok := rateSpeed(rate); ok {
+		speech["speed"] = speed
+	}
+	body, err := json.Marshal(speech)
+	if err != nil {
+		return nil, "", fmt.Errorf("marshal speech request: %w", err)
+	}
 	resp, err := client.Invoke(extension.WithTimeout(ctx, f.timeout), f.providerID, core.Request{
-		Surface: core.ModelSurfaceAudioSpeech,
-		Model:   voice,
-		Body:    []byte(text),
+		Surface:     core.ModelSurfaceAudioSpeech,
+		Model:       voice,
+		Body:        body,
+		ContentType: core.ContentTypeJSON,
+		Credential:  cred,
 	})
 	if err != nil {
 		return nil, "", extensionFailure(ctx, f.instance, err)
 	}
 	return resp.Body, "audio/mpeg", nil
+}
+
+// rateSpeed is the OpenAI speech speed of a prosody rate, the inverse of the
+// speed the speech API turns into one: "+20%" is 1.2 and "-50%" 0.5. A rate
+// that is not a whole signed percentage has none, and is spoken at normal
+// speed.
+func rateSpeed(rate string) (float64, bool) {
+	percent, ok := strings.CutSuffix(strings.TrimSpace(rate), "%")
+	if !ok {
+		return 0, false
+	}
+	value, err := strconv.Atoi(percent)
+	if err != nil {
+		return 0, false
+	}
+	return 1 + float64(value)/100, true
 }
 
 // extensionChat is what the Messages facade keeps of the facade: Chat and

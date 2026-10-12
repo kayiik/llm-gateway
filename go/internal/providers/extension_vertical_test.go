@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -183,8 +184,13 @@ func TestExtensionFacadeReachesTheDaemonThroughTheSharedClient(t *testing.T) {
 	})
 	mux.HandleFunc("POST /extension/v1/edge_tts/invoke", func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		if r.Header.Get("X-Surface") != string(core.ModelSurfaceAudioSpeech) || r.Header.Get("X-Model") != "en-US-Voice" || string(body) != "hello" {
-			t.Errorf("synthesize request: surface %q, model %q, body %q", r.Header.Get("X-Surface"), r.Header.Get("X-Model"), body)
+		if r.Header.Get("X-Surface") != string(core.ModelSurfaceAudioSpeech) || r.Header.Get("X-Model") != "en-US-Voice" ||
+			r.Header.Get("Content-Type") != core.ContentTypeJSON || string(body) != `{"input":"hello"}` {
+			t.Errorf("synthesize request: surface %q, model %q, content type %q, body %q",
+				r.Header.Get("X-Surface"), r.Header.Get("X-Model"), r.Header.Get("Content-Type"), body)
+		}
+		if got := r.Header.Get("X-Credential-Token"); got != "stored-access" {
+			t.Errorf("synthesize credential = %q, want the stored one", got)
 		}
 		w.Header().Set("Content-Type", "audio/mpeg")
 		_, _ = io.WriteString(w, "mp3-bytes")
@@ -206,6 +212,44 @@ func TestExtensionFacadeReachesTheDaemonThroughTheSharedClient(t *testing.T) {
 	audio, format, err := facade.Synthesize("en-US-Voice", "hello", "")
 	if err != nil || string(audio) != "mp3-bytes" || format != "audio/mpeg" {
 		t.Fatalf("synthesize = %q (%s), %v", audio, format, err)
+	}
+}
+
+// Edge TTS is spoken through the daemon's audio speech surface, which takes
+// an OpenAI speech request: the voice is its model, the text its input and
+// the prosody rate its speed. The daemon refuses a body of bare text.
+func TestExtensionSynthesisSendsAnOpenAISpeechRequest(t *testing.T) {
+	type received struct {
+		contentType, model string
+		body               map[string]any
+	}
+	requests := make(chan received, 1)
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /extension/v1/edge_tts/invoke", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		requests <- received{contentType: r.Header.Get("Content-Type"), model: r.Header.Get("X-Model"), body: body}
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = io.WriteString(w, "mp3-bytes")
+	})
+	extensionDaemon(t, mux)
+	rt := newRuntime(func(bool) (core.CredentialStore, error) { return core.NewMemoryCredentialStore(), nil })
+	facade := rt.newExtensionFacade("tts", ExtensionTypeEdgeTTS, core.Caller{}, 0).(*ExtensionProviderFacade)
+	for rate, want := range map[string]map[string]any{
+		"":     {"input": "Read <this> & that."},
+		"+0%":  {"input": "Read <this> & that.", "speed": 1.0},
+		"+25%": {"input": "Read <this> & that.", "speed": 1.25},
+		"-50%": {"input": "Read <this> & that.", "speed": 0.5},
+	} {
+		audio, format, err := facade.Synthesize("en-US-Voice", "Read <this> & that.", rate)
+		if err != nil || string(audio) != "mp3-bytes" || format != "audio/mpeg" {
+			t.Fatalf("rate %q: synthesize = %q (%s), %v", rate, audio, format, err)
+		}
+		got := <-requests
+		if got.contentType != core.ContentTypeJSON || got.model != "en-US-Voice" || !reflect.DeepEqual(got.body, want) {
+			t.Errorf("rate %q: the daemon received %q, model %q, body %v; want %q, en-US-Voice, %v",
+				rate, got.contentType, got.model, got.body, core.ContentTypeJSON, want)
+		}
 	}
 }
 
