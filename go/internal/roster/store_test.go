@@ -596,6 +596,83 @@ func TestRestartedStoreAcceptsItsCachedRevision(t *testing.T) {
 	}
 }
 
+// Each feed numbers its own revisions, so rollback protection holds against
+// the feed that wrote the cache. A gateway configured with another feed sets
+// that cache aside and accepts the new feed at a lower revision, and the
+// cache it then writes protects the new feed.
+func TestCacheOfAnotherFeedIsSetAside(t *testing.T) {
+	_, _, p := fixture(t)
+	p.Revision = 7
+	body := plainBody(t, p)
+	var calls atomic.Int32
+	dir := t.TempDir()
+	// Refreshes an hour ago, so a restarted store is past the cooldown.
+	hourAgo := func() time.Time { return time.Now().Add(-time.Hour) }
+	previous := Options{URL: "https://previous.example.com/roster.json", StateDir: dir, Client: clientFor(&body, &calls)}
+	first := New(previous)
+	first.clock = hourAgo
+	if got := first.Refresh(context.Background()); got.Revision != 7 || got.Error != "" {
+		t.Fatalf("previous feed rejected: %+v", got)
+	}
+	if got := New(previous).Snapshot(); got.Revision != 7 {
+		t.Fatalf("the previous feed's cache did not reload: %+v", got)
+	}
+
+	current := previous
+	current.URL = "https://current.example.com/roster.json"
+	moved := New(current)
+	moved.clock = hourAgo
+	if got := moved.Snapshot(); got.Revision != 0 || got.Error != "" {
+		t.Fatalf("another feed's cache was loaded: %+v", got)
+	}
+	restarted := p
+	restarted.Revision = 2
+	body = plainBody(t, restarted)
+	if got := moved.Refresh(context.Background()); got.Revision != 2 || got.Error != "" {
+		t.Fatalf("the configured feed was refused below the other feed's revision: %+v", got)
+	}
+
+	older := p
+	older.Revision = 1
+	body = plainBody(t, older)
+	if got := New(current).Refresh(context.Background()); got.Revision != 2 || got.Error == "" {
+		t.Fatalf("the new cache lost rollback protection: %+v", got)
+	}
+}
+
+// A cache written before the cache recorded its feed may have come from any
+// feed, so it is set aside too.
+func TestCacheWithoutItsFeedIsSetAside(t *testing.T) {
+	_, _, p := fixture(t)
+	p.Revision = 7
+	dir := t.TempDir()
+	legacy, err := json.Marshal(cache{Envelope: plainBody(t, p), LastSuccess: time.Now().UTC().Format(time.RFC3339)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(legacy), `"url"`) {
+		t.Fatalf("the fixture records a feed: %s", legacy)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "provider-roster-cache.json"), legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := New(Options{StateDir: dir}).Snapshot(); got.Revision != 7 {
+		t.Fatalf("without a configured feed the cache is no longer shown: %+v", got)
+	}
+
+	restarted := p
+	restarted.Revision = 1
+	body := plainBody(t, restarted)
+	var calls atomic.Int32
+	s := New(Options{URL: "https://feed.example.com/roster.json", StateDir: dir, Client: clientFor(&body, &calls)})
+	if got := s.Snapshot(); got.Revision != 0 || got.Error != "" {
+		t.Fatalf("a cache without its feed was loaded: %+v", got)
+	}
+	if got := s.Refresh(context.Background()); got.Revision != 1 || got.Error != "" {
+		t.Fatalf("the configured feed was refused below the cache's revision: %+v", got)
+	}
+}
+
 func TestPlainModeCoalescingAndCooldown(t *testing.T) {
 	_, _, p := fixture(t)
 	body := plainBody(t, p)

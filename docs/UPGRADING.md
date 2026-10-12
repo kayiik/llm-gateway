@@ -40,7 +40,9 @@ when that is unset.
 
 The roster cache refuses a feed whose revision is lower than the cached one,
 and the feed's revisions restarted with the move. A cache from before the move
-would keep the gateway on the previous roster and reject every current one.
+would keep the gateway on the previous roster and reject every current one. A
+gateway that records the feed in its cache sets aside a cache another feed
+wrote, so for it deleting the file is optional.
 
 ## Before an upgrade
 

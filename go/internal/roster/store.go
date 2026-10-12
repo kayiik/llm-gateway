@@ -50,11 +50,16 @@ type Store struct {
 type cache struct {
 	Envelope    json.RawMessage `json:"envelope"`
 	LastSuccess string          `json:"last_success"`
+	// URL is the feed the envelope came from. Each feed numbers its own
+	// revisions, so rollback protection holds against the feed that wrote
+	// the cache, and a cache another feed wrote is set aside (see loadCache).
+	URL string `json:"url,omitempty"`
 }
 
-// New loads only a bounded, validated cache. Invalid configuration or cache is
-// status data, never a startup error that could interrupt inference. When no
-// signing keys are provided, the feed is validated as plain HTTPS JSON.
+// New loads only a bounded, validated cache of the configured feed. Invalid
+// configuration or cache is status data, never a startup error that could
+// interrupt inference. When no signing keys are provided, the feed is
+// validated as plain HTTPS JSON.
 func New(o Options) *Store {
 	keys := make(map[string]ed25519.PublicKey, len(o.Keys))
 	for id, key := range o.Keys {
@@ -165,6 +170,14 @@ func (s *Store) loadCache() {
 	var c cache
 	if err != nil || len(b) > maxFeedBytes+4096 || json.Unmarshal(b, &c) != nil {
 		s.snapshot.Error = "Roster cache is invalid."
+		return
+	}
+	// A cache another feed wrote, or one written before the cache recorded
+	// its feed, holds revisions the configured feed does not share, and
+	// would refuse every revision of it below its own. It is set aside, so
+	// the configured feed's first verified answer is accepted and replaces
+	// it, and changing the feed needs no cache deletion.
+	if s.options.URL != "" && c.URL != s.options.URL {
 		return
 	}
 	p, digest, verifyErr := s.verifyFeed(c.Envelope)
@@ -299,7 +312,7 @@ func (s *Store) saveCache(raw []byte, success string) error {
 		return failed
 	}
 	defer os.Remove(f.Name())
-	if err := json.NewEncoder(f).Encode(cache{Envelope: raw, LastSuccess: success}); err != nil {
+	if err := json.NewEncoder(f).Encode(cache{Envelope: raw, LastSuccess: success, URL: s.options.URL}); err != nil {
 		f.Close()
 		return failed
 	}

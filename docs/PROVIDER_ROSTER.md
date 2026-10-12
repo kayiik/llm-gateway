@@ -219,6 +219,12 @@ auto-refresh does not disable authenticated admin manual refresh:
 Refresh failures retain the last verified cache; they do not modify providers,
 credentials, ownership, model selections, or routes.
 
+The cache records the feed it came from, and rollback protection holds against
+that feed's revisions. A gateway configured with another feed sets the cache
+aside and accepts the configured feed's first verified answer at any revision,
+so changing `LLMGW_PROVIDER_ROSTER_URL` needs no cache deletion. A cache that
+does not record its feed is set aside the same way.
+
 The deployment Compose example forwards the variables to the container.
 For direct Docker runs, pass `-e LLMGW_PROVIDER_ROSTER_AUTO_REFRESH=false` to
 disable the background updater. Signing keys are optional; when absent the feed
