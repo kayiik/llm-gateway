@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -124,7 +125,16 @@ func randomTempName(pattern string) (string, error) {
 	return pattern + suffix, nil
 }
 
-func durableRename(source, destination string) error {
+// moveRetryWindow is how long a move another process blocks is retried.
+// Antivirus scanners and search indexers open a file for a moment after it
+// is written, and until they close it a rename fails with a sharing
+// violation or access denied; Go's own toolchain retries such a failure on
+// Windows for as long.
+const moveRetryWindow = 2 * time.Second
+
+// moveFile moves source to destination with flags, retrying a failure
+// another process's open handle causes until moveRetryWindow has passed.
+func moveFile(source, destination string, flags uint32) error {
 	from, err := windows.UTF16PtrFromString(source)
 	if err != nil {
 		return err
@@ -133,19 +143,29 @@ func durableRename(source, destination string) error {
 	if err != nil {
 		return err
 	}
-	return windows.MoveFileEx(from, to, windows.MOVEFILE_WRITE_THROUGH)
+	deadline := time.Now().Add(moveRetryWindow)
+	for delay := time.Millisecond; ; delay = min(2*delay, 100*time.Millisecond) {
+		err = windows.MoveFileEx(from, to, flags)
+		if err == nil || !transientMoveError(err) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(delay)
+	}
+}
+
+// transientMoveError reports a failure that ends when the process holding
+// the file open closes it.
+func transientMoveError(err error) bool {
+	return errors.Is(err, windows.ERROR_SHARING_VIOLATION) || errors.Is(err, windows.ERROR_LOCK_VIOLATION) ||
+		errors.Is(err, windows.ERROR_ACCESS_DENIED)
+}
+
+func durableRename(source, destination string) error {
+	return moveFile(source, destination, windows.MOVEFILE_WRITE_THROUGH)
 }
 
 func replaceFile(source, destination string) error {
-	from, err := windows.UTF16PtrFromString(source)
-	if err != nil {
-		return err
-	}
-	to, err := windows.UTF16PtrFromString(destination)
-	if err != nil {
-		return err
-	}
-	return windows.MoveFileEx(from, to, windows.MOVEFILE_REPLACE_EXISTING|windows.MOVEFILE_WRITE_THROUGH)
+	return moveFile(source, destination, windows.MOVEFILE_REPLACE_EXISTING|windows.MOVEFILE_WRITE_THROUGH)
 }
 
 func durableRemove(path string) error {
