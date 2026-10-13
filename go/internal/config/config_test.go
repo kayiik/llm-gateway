@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
@@ -255,7 +256,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	Update(func(s *Settings) {
 		s.Providers = map[string]*ProviderConfig{
 			"br":  {Type: "bedrock", Region: "eu-central-1"},
-			"cop": {Type: "github_copilot", RegistryID: "github_copilot", ForceApiSupport: true},
+			"cop": {Type: "github_copilot", RegistryID: "github_copilot", ForceApiSupport: true, Extension: "home-daemon"},
 			"vertex": {
 				Type: "vertex_ai", RegistryID: "vertex_ai",
 				Project: "project-a", Location: "us-central1",
@@ -281,6 +282,15 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	cop, ok := reloaded.Providers["cop"]
 	if !ok || cop.RegistryID != "github_copilot" || !cop.ForceApiSupport {
 		t.Fatalf("force_api_support did not round-trip: %+v", cop)
+	}
+	if cop.Extension != "home-daemon" || br.Extension != "" {
+		t.Fatalf("extension did not round-trip: cop=%+v br=%+v", cop, br)
+	}
+	if encoded, err := json.Marshal(cop); err != nil || !strings.Contains(string(encoded), `"extension":"home-daemon"`) {
+		t.Fatalf("provider JSON %s err=%v, want its extension", encoded, err)
+	}
+	if encoded, err := json.Marshal(br); err != nil || strings.Contains(string(encoded), "extension") {
+		t.Fatalf("provider JSON %s err=%v, want no extension where none is named", encoded, err)
 	}
 	vertex, ok := reloaded.Providers["vertex"]
 	if !ok || vertex.Project != "project-a" || vertex.Location != "us-central1" ||
@@ -349,6 +359,9 @@ providers:
   retired:
     type: echo
     api_key: ${ENV:FIXTURE_RETIRED_KEY}
+  assistant:
+    type: github_copilot
+    extension: fixture-extension # the daemon that serves it
 endpoints:
   smart:
     failover:
@@ -427,6 +440,7 @@ func TestSavesKeepWhatTheyDoNotManage(t *testing.T) {
 		"custom_provider_setting: kept", "api_key: fixture-literal-key",
 		"custom_future_setting:", "nested: [kept, as, written]",
 		"base_url: https://moved-new.example.test/v1",
+		"extension: fixture-extension # the daemon that serves it",
 	} {
 		if !strings.Contains(text, kept) {
 			t.Errorf("the saved file lost %q", kept)
@@ -465,6 +479,10 @@ func TestSavesKeepWhatTheyDoNotManage(t *testing.T) {
 	if vertex == nil || vertex.Region != "changed-region" || vertex.ForceApiSupport || vertex.APIKey != "fixture-literal-key" ||
 		vertex.Project != "fixture-project" || vertex.PublicOAuthClientID != "fixture-public-client" {
 		t.Fatalf("vertex=%+v", vertex)
+	}
+	if assistant := after.Providers["assistant"]; assistant == nil || assistant.Extension != "fixture-extension" ||
+		before.Providers["assistant"].Extension != "fixture-extension" {
+		t.Fatalf("the extension a provider names did not load and survive the saves: %+v", assistant)
 	}
 	if after.Providers["retired"] != nil || after.Endpoints["retired-route"] != nil || after.Endpoints["shadowed"] != nil ||
 		after.Endpoints["smart"] == nil || after.Endpoints["fast"] == nil {

@@ -61,6 +61,10 @@ type ProviderConfig struct {
 	// endpoint (e.g. Responses-only gpt-5.5), translate the request instead of
 	// letting it fail. Off by default; adaptation is never native to the provider.
 	ForceApiSupport bool `yaml:"force_api_support,omitempty" json:"force_api_support,omitempty"`
+	// Extension names the extension, the companion daemon, that serves a
+	// provider of a type the daemon serves. Empty leaves it to the only
+	// extension the gateway has, which is no choice once it has several.
+	Extension string `yaml:"extension,omitempty" json:"extension,omitempty"`
 }
 
 // EndpointMember is one pinned provider/model target in a failover chain.
@@ -917,6 +921,9 @@ func applyConfig(s *Settings, payload map[string]any) error {
 			if v, ok := m["force_api_support"].(bool); ok {
 				cfg.ForceApiSupport = v
 			}
+			if v, ok := m["extension"].(string); ok {
+				cfg.Extension = strings.TrimSpace(v)
+			}
 			s.Providers[pid] = cfg
 		}
 	}
@@ -1248,6 +1255,7 @@ func providerFields(pc *ProviderConfig) []providerField {
 		{"disabled", true, pc.Disabled},
 		{"timeout", timeout, pc.Timeout != nil},
 		{"force_api_support", true, pc.ForceApiSupport},
+		{"extension", pc.Extension, pc.Extension != ""},
 	}
 }
 
