@@ -10,7 +10,6 @@ import { ProviderMark } from "../ProviderMark";
 import { EmptyState, PageHeading } from "../PageState";
 import { useDialogFocus } from "../useDialogFocus";
 import { OAuthConnectDialog } from "./OAuthConnectDialog";
-import { CompanionDaemonPanel } from "./CompanionDaemonPanel";
 import { discoveryFilters, matchesDiscoveryFilter, mergeProviderRoster, providerShelves, RosterMark, RosterMetadata, RosterStatus, rosterCandidateSetup, rosterSetupEntry, rosterSetupUnavailableReason, safeRosterURL, shelfFor, useProviderRoster } from "./ProviderRoster";
 import "./provider-hub.css";
 import { type ActionResult, ResultNotice, StatusBadge, boolValue, configuredProviderConfig, configuredProviderIDs, connectionChoices, tileStatus, useProviderLifecycle } from "./shared";
@@ -732,7 +731,6 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
           ) : undefined
         }
       />
-      {mode === "admin" ? <CompanionDaemonPanel /> : null}
       <section class="provider-toolbar surface" aria-label="Provider filters">
         <label class="search-field">
           <Search size={17} />

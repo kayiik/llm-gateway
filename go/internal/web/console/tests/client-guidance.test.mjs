@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { bundle, text } from "./hook-harness.mjs";
+import { bundle, find, findAll, mount, text } from "./hook-harness.mjs";
 
 const { clientSnippets } = await bundle(fileURLToPath(new URL("../src/pages/ModelsEndpoints.tsx", import.meta.url)));
 const { Overview } = await bundle(fileURLToPath(new URL("../src/pages/Overview.tsx", import.meta.url)));
@@ -30,4 +30,12 @@ test("the overview reads the boolean SSO flag the admin state reports", () => {
   assert.match(auth({ enabled: true }), /AuthSSO enabled/);
   assert.match(auth({ enabled: false }), /AuthGateway policy/);
   assert.match(auth(undefined), /AuthGateway policy/);
+});
+
+test("the overview shows an administrator the warnings the gateway started with", () => {
+  const data = { startup_warnings: ["LLMGW_API_KEYS holds 2 static key(s)"], providers: [], counts: { keys: 0 }, provider_connections: [], projects: [] };
+  const admin = mount(() => Overview({ data, mode: "admin", onNavigate() {} }))();
+  assert.match(text(find(admin, (node) => node.props?.role === "alert")), /Startup warning.*LLMGW_API_KEYS holds 2 static key\(s\)/);
+  const portal = mount(() => Overview({ data, mode: "portal", onNavigate() {} }))();
+  assert.equal(findAll(portal, (node) => node.props?.role === "alert").length, 0);
 });

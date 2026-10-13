@@ -157,9 +157,9 @@ test("provider hub includes configured advanced providers outside the curated re
   assert.match(hub, /return \[\.\.\.curated, \.\.\.custom\]/);
 });
 
-test("the provider hub shows administrators the companion daemon and marks the providers it serves", () => {
+test("the provider hub marks the providers the companion daemon serves", () => {
   const hub = readFileSync(resolve(root, "src/components/providers/ProviderHub.tsx"), "utf8");
-  assert.match(hub, /\{mode === "admin" \? <CompanionDaemonPanel \/> : null\}/);
+  assert.doesNotMatch(hub, /CompanionDaemonPanel/);
   assert.match(hub, /new Set\(asList\(data\.companion_daemon_providers\)/);
   assert.match(hub, /asList\(entry\.configured_provider_ids\)\.some\(\(providerID\) => daemonProviders\.has\(stringValue\(providerID\)\)\) \? " · Companion daemon" : ""/);
 });
