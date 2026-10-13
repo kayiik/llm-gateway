@@ -625,22 +625,25 @@ func handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "Credential store unavailable.")
 		return
 	}
+	// The connections people made with their own key or account, and the
+	// routes that send requests to the provider, keep it. The refusal names
+	// all of them at once: answering with the first one found left the
+	// administrator to discover the rest one failed delete at a time.
+	held, holders := 0, map[string]bool{}
 	for _, connection := range connections {
 		if connection.Status == "active" && connection.PrincipalKind != "system" {
-			writeError(w, http.StatusConflict, "provider still has active connections; revoke them before deleting the provider")
-			return
+			held++
+			holders[connection.PrincipalID] = true
 		}
 	}
-	for endpointName, endpoint := range config.Get().Endpoints {
-		if endpoint == nil {
-			continue
-		}
-		for _, member := range endpoint.Failover {
-			if member.Provider == pid {
-				writeError(w, http.StatusConflict, fmt.Sprintf("provider is still referenced by endpoint %q", endpointName))
-				return
-			}
-		}
+	if routes := endpointsUsingProvider(config.Get(), pid); held > 0 || len(routes) > 0 {
+		message := providers.SanitizeDiagnosticTextLimit(providerInUseMessage(routes, held), 2048)
+		refusal := errorPayload(message, httpExceptionType(http.StatusConflict), itoa(http.StatusConflict), w.Header().Get(requestIDHeader))
+		refusal["endpoints"] = routes
+		refusal["connections"] = held
+		refusal["principals"] = len(holders)
+		writeJSON(w, http.StatusConflict, refusal)
+		return
 	}
 	wasAutomationManaged, err := iam.AnonymousProviderManaged(pid)
 	if err != nil {
@@ -689,6 +692,56 @@ func handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+// endpointsUsingProvider names the endpoints whose failover sends requests to
+// providerID, each once and in order, so a refusal reads the same every time.
+func endpointsUsingProvider(settings *config.Settings, providerID string) []string {
+	names := []string{}
+	for name, endpoint := range settings.Endpoints {
+		if endpoint == nil {
+			continue
+		}
+		for _, member := range endpoint.Failover {
+			if member.Provider == providerID {
+				names = append(names, name)
+				break
+			}
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// providerInUseMessage says what keeps a provider from being deleted, the
+// endpoints that send requests to it and the connections people hold to it,
+// and what to change first. It is not called while neither keeps it.
+func providerInUseMessage(endpoints []string, connections int) string {
+	quoted := make([]string, len(endpoints))
+	for index, name := range endpoints {
+		quoted[index] = strconv.Quote(name)
+	}
+	var uses, changes []string
+	switch len(endpoints) {
+	case 0:
+	case 1:
+		uses = append(uses, "endpoint "+quoted[0]+" sends requests to it")
+		changes = append(changes, "remove it from that endpoint")
+	default:
+		uses = append(uses, "endpoints "+strings.Join(quoted, ", ")+" send requests to it")
+		changes = append(changes, "remove it from those endpoints")
+	}
+	switch connections {
+	case 0:
+	case 1:
+		uses = append(uses, "1 active connection uses it")
+		changes = append(changes, "revoke the connection")
+	default:
+		uses = append(uses, fmt.Sprintf("%d active connections use it", connections))
+		changes = append(changes, "revoke the connections")
+	}
+	return "provider is still in use: " + strings.Join(uses, " and ") + "; " +
+		strings.Join(changes, " and ") + " before deleting the provider"
 }
 
 // POST /admin/api/providers/{id}/enabled — toggle a configured provider in or
