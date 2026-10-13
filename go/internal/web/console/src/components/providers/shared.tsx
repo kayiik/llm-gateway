@@ -93,10 +93,16 @@ export function tileStatus(entry: JSONRecord): string {
   return stringValue(entry.status, "not_configured");
 }
 
+// badgeTone colours a status: proven ready, merely present or not in play,
+// or needing attention.
+export function badgeTone(status: string): "ready" | "muted" | "attention" {
+  if (status === "verified" || status === "catalog_synced" || status === "instances_ready") return "ready";
+  if (status === "not_configured" || status === "unavailable" || status === "client_setup" || status === "configured" || status === "disabled") return "muted";
+  return "attention";
+}
+
 export function StatusBadge({ status }: { status: string }) {
-  const ready = status === "verified" || status === "catalog_synced" || status === "instances_ready";
-  const muted = status === "not_configured" || status === "unavailable" || status === "client_setup" || status === "configured" || status === "disabled";
-  return <span class={`status-pill ${ready ? "status-pill--ready" : muted ? "status-pill--muted" : "status-pill--attention"}`}>{statusLabel(status)}</span>;
+  return <span class={`status-pill status-pill--${badgeTone(status)}`}>{statusLabel(status)}</span>;
 }
 
 export function ResultNotice({ result }: { result: ActionResult }) {

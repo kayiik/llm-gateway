@@ -9,6 +9,8 @@ import { RemoteSearchSelect } from "../DataTable";
 import { ProviderMark } from "../ProviderMark";
 import { DisabledReason, EmptyState, PageHeading } from "../PageState";
 import { useDialogFocus } from "../useDialogFocus";
+import { ExtensionShelf } from "./ExtensionShelf";
+import { daemonRegistryIDs, shelfItems, shelfShows, useExtensions } from "./extensions";
 import { OAuthConnectDialog } from "./OAuthConnectDialog";
 import { discoveryFilters, matchesDiscoveryFilter, mergeProviderRoster, providerShelves, RosterMark, RosterMetadata, RosterStatus, rosterCandidateSetup, rosterSetupEntry, rosterSetupUnavailableReason, safeRosterURL, shelfFor, useProviderRoster } from "./ProviderRoster";
 import "./provider-hub.css";
@@ -475,9 +477,18 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
   const [openShelves, setOpenShelves] = useState<Record<string, boolean>>({});
   const shelfRef = useRef<HTMLDivElement>(null);
   const roster = useProviderRoster(mode);
-  // The configured providers the companion daemon serves, which the
-  // administrator's state names.
+  const extensions = useExtensions(mode === "admin", data);
+  // An administrator finds the providers a companion daemon serves under the
+  // extension that serves them, not on the shelves of the providers the
+  // gateway reaches itself: the registry entries the daemon serves, and a
+  // configured provider of a daemon type that no registry entry claims.
   const daemonProviders = new Set(asList(data.companion_daemon_providers).map((providerID) => stringValue(providerID)));
+  const servedByExtension = (entry: JSONRecord) => {
+    if (mode !== "admin") return false;
+    if (daemonRegistryIDs.has(stringValue(entry.id))) return true;
+    const providerIDs = configuredProviderIDs(entry);
+    return boolValue(entry.custom) && providerIDs.length > 0 && providerIDs.every((providerID) => daemonProviders.has(providerID));
+  };
   const closeExpansion = () => {
     const trigger = Array.from(shelfRef.current?.querySelectorAll<HTMLButtonElement>("[data-provider-trigger]") ?? []).find((button) => button.dataset.providerTrigger === expanded);
     setExpanded("");
@@ -550,10 +561,16 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
   }, [data.provider_registry, data.provider_statuses]);
   const discoveryEntries = useMemo(() => mergeProviderRoster(entries, roster.entries), [entries, roster.state]);
   const filtered = discoveryEntries.filter((entry) => {
+    if (servedByExtension(entry)) return false;
     const haystack = `${stringValue(entry.label)} ${stringValue(entry.description)} ${stringValue(entry.id)} ${stringValue(entry.protocol)} ${shelfFor(entry)} ${configuredProviderIDs(entry).join(" ")}`.toLowerCase();
     if (search && !haystack.includes(search.toLowerCase())) return false;
     return matchesDiscoveryFilter(entry, filter);
   });
+  // An Extensions shelf with something to show answers the search too, and
+  // the provider types it shows count among the providers the hub lists.
+  const extensionShelfShows = mode === "admin" && shelfShows(extensions, data, search, filter);
+  const servedTypes = mode === "admin" ? new Set(shelfItems(extensions.extensions, data, search, filter).flatMap((item) => item.rows.map((row) => row.type))) : new Set<string>();
+  const listedCount = filtered.length + servedTypes.size;
 
   const detectLocal = async () => {
     setDetectBusy(true);
@@ -632,6 +649,13 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
       },
       mode: connectMode,
     });
+  };
+
+  // An extension's panel adds an account to one provider instance it serves,
+  // through the same sign-in as a tile's Add account.
+  const addAccount = (registryID: string, providerID: string) => {
+    const entry = entries.find((candidate) => stringValue(candidate.id) === registryID) ?? registry.find((candidate) => stringValue(candidate.id) === registryID) ?? { id: registryID };
+    setOAuthEntry({ entry, providerID });
   };
 
   // The gateway checks the endpoint itself once the provider is added. The
@@ -768,7 +792,7 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
       </section>
       <RosterStatus roster={roster} />
       <p class="provider-hub__context">
-        {filtered.length} providers · Grouped by upstream API and integration type. Click a name to expand setup.
+        {listedCount} provider{listedCount === 1 ? "" : "s"} · Grouped by upstream API and integration type. Click a name to expand setup.
         {["free", "no-key", "trial"].includes(filter) ? " Offers are source-reported and subject to provider terms." : ""}
       </p>
       <ResultNotice result={result ?? detectResult} />
@@ -792,7 +816,8 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
           </div>
         </section>
       ) : null}
-      {filtered.length === 0 ? <EmptyState title="No matching provider" detail="Adjust the search or filter to inspect another registry integration." /> : null}
+      {filtered.length === 0 && !extensionShelfShows ? <EmptyState title="No matching provider" detail="Adjust the search or filter to inspect another registry integration." /> : null}
+      {mode === "admin" ? <ExtensionShelf data={data} extensions={extensions} search={search} filter={filter} onChanged={onChanged} onAddAccount={addAccount} onOpenDetail={onOpenDetail} /> : null}
       {providerShelves.map((group) => {
         const groupEntries = filtered.filter((entry) => shelfFor(entry) === group);
         if (!groupEntries.length) return null;
@@ -902,7 +927,6 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
                         <p>
                           {configured ? `${instanceCount} instance${instanceCount === 1 ? "" : "s"}` : isClient ? "Gateway client" : "Not configured"}
                           {boolValue(entry.custom) ? " · Custom integration" : ""}
-                          {asList(entry.configured_provider_ids).some((providerID) => daemonProviders.has(stringValue(providerID))) ? " · Companion daemon" : ""}
                           {openCircuits.length ? " · Circuit open" : ""}
                         </p>
                       </div>

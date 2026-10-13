@@ -116,12 +116,14 @@ test("all modal dialogs share focus trapping, Escape close, and focus return", (
   const focus = readFileSync(resolve(root, "src/components/useDialogFocus.ts"), "utf8");
   const oauth = readFileSync(resolve(root, "src/components/providers/OAuthConnectDialog.tsx"), "utf8");
   const hub = readFileSync(resolve(root, "src/components/providers/ProviderHub.tsx"), "utf8");
+  const extensions = readFileSync(resolve(root, "src/components/providers/ExtensionShelf.tsx"), "utf8");
   const keys = readFileSync(resolve(root, "src/pages/ApiKeys.tsx"), "utf8");
   assert.match(focus, /event.key === "Escape"/);
   assert.match(focus, /event.key !== "Tab"/);
   assert.match(focus, /previousFocus\.focus\(\)/);
   assert.match(oauth, /useDialogFocus\(closeDialog\)/);
   assert.equal((hub.match(/useDialogFocus\(onClose\)/g) ?? []).length, 2);
+  assert.equal((extensions.match(/useDialogFocus\(onClose\)/g) ?? []).length, 1);
   assert.match(keys, /useDialogFocus\(onDismiss, returnFocus\)/);
   assert.match(keys, /returnFocus=\{createButtonRef\.current\}/);
 });
@@ -157,11 +159,13 @@ test("provider hub includes configured advanced providers outside the curated re
   assert.match(hub, /return \[\.\.\.curated, \.\.\.custom\]/);
 });
 
-test("the provider hub marks the providers the companion daemon serves", () => {
+test("the administrator's hub lists the companion daemon's providers under their extension", () => {
   const hub = readFileSync(resolve(root, "src/components/providers/ProviderHub.tsx"), "utf8");
   assert.doesNotMatch(hub, /CompanionDaemonPanel/);
+  assert.doesNotMatch(hub, /" · Companion daemon"/);
   assert.match(hub, /new Set\(asList\(data\.companion_daemon_providers\)/);
-  assert.match(hub, /asList\(entry\.configured_provider_ids\)\.some\(\(providerID\) => daemonProviders\.has\(stringValue\(providerID\)\)\) \? " · Companion daemon" : ""/);
+  assert.match(hub, /if \(servedByExtension\(entry\)\) return false;/);
+  assert.match(hub, /\{mode === "admin" \? <ExtensionShelf /);
 });
 
 test("configured instances are not orphaned into custom tiles by their id", () => {
