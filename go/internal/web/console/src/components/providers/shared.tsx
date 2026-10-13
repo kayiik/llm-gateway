@@ -128,6 +128,36 @@ export function configuredProviderConfig(entry: JSONRecord, data: JSONRecord): J
 
 export type LifecycleOperation = "test" | "repair" | "refresh" | "verify" | "delete";
 
+// A RemovalBlock is what a refused removal says still uses a provider: the
+// routes that send requests to it, the connections people made with their
+// own key or account, and how many people hold them.
+export type RemovalBlock = { providerID: string; endpoints: string[]; connections: number; principals: number };
+
+// removalBlockOf reads a refused removal. The gateway names the routes and
+// counts the connections beside its error; a refusal that names neither, as
+// an older gateway's does, is no block, and its message stands.
+export function removalBlockOf(providerID: string, cause: unknown): RemovalBlock | null {
+  const failure = asRecord(cause);
+  if (failure.status !== 409) return null;
+  const detail = asRecord(failure.detail);
+  const endpoints = asList(detail.endpoints).map((name) => stringValue(name)).filter(Boolean);
+  const connections = numberValue(detail.connections);
+  if (!endpoints.length && connections <= 0) return null;
+  return { providerID, endpoints, connections, principals: numberValue(detail.principals) };
+}
+
+// joinNames lists names as a sentence does: "a", "a and b", "a, b and c".
+export function joinNames<T>(names: T[], and: T, comma: T): T[] {
+  return names.flatMap((name, index) => index === 0 ? [name] : [index === names.length - 1 ? and : comma, name]);
+}
+
+// connectionsInUseText says who still connects to a provider: the people,
+// when the gateway counted them, else the connections they hold.
+export function connectionsInUseText(block: RemovalBlock): string {
+  if (block.principals > 0) return `${block.principals === 1 ? "1 person" : `${block.principals} people`} connected their own key or account.`;
+  return `${block.connections} private connection${block.connections === 1 ? " uses" : "s use"} it.`;
+}
+
 // Honest human-readable operation names. The HTTP routes keep their historical
 // names; the console describes what each action actually does.
 export const operationLabels: Record<LifecycleOperation, string> = {
@@ -140,9 +170,13 @@ export const operationLabels: Record<LifecycleOperation, string> = {
 
 // useProviderLifecycle centralizes the provider lifecycle calls shared by the
 // hub grid and the provider detail page, keyed by `${providerID}-${operation}`.
+// A removal the gateway refuses because something still uses the provider is
+// kept as blocked, for the page to show beside the provider rather than as a
+// message at the top.
 export function useProviderLifecycle(ownerID: string, onChanged: () => Promise<void>) {
   const [busy, setBusy] = useState("");
   const [result, setResult] = useState<ActionResult>(null);
+  const [blocked, setBlocked] = useState<RemovalBlock | null>(null);
 
   const runLifecycle = async (entry: JSONRecord, operation: LifecycleOperation, providerIDOverride?: string, model?: string) => {
     const providerIDs = configuredProviderIDs(entry);
@@ -156,6 +190,7 @@ export function useProviderLifecycle(ownerID: string, onChanged: () => Promise<v
     const queryText = query.toString() ? `?${query.toString()}` : "";
     if (operation === "delete" && !window.confirm(`Revoke and remove ${stringValue(entry.label, providerID)}? Existing routes may need repair.`)) return;
     setBusy(`${providerID}-${operation}`);
+    setBlocked(null);
     try {
       const payload = operation === "delete" ? await sendJSON<JSONRecord>("admin", `/providers/${encodeURIComponent(providerID)}`, "DELETE") : await sendJSON<JSONRecord>("admin", `/providers/${encodeURIComponent(providerID)}/${operation}${queryText}`, "POST", {});
       const success = operation === "delete" ? boolValue(payload.ok) : boolValue(payload.success);
@@ -166,7 +201,9 @@ export function useProviderLifecycle(ownerID: string, onChanged: () => Promise<v
       });
       await onChanged();
     } catch (cause) {
-      setResult({
+      const block = operation === "delete" ? removalBlockOf(providerID, cause) : null;
+      setBlocked(block);
+      setResult(block ? null : {
         title: `${stringValue(entry.label, providerID)} ${operationLabels[operation]}`,
         success: false,
         detail: cause instanceof Error ? cause.message : "Operation failed.",
@@ -176,5 +213,5 @@ export function useProviderLifecycle(ownerID: string, onChanged: () => Promise<v
     }
   };
 
-  return { busy, setBusy, result, setResult, runLifecycle };
+  return { busy, setBusy, result, setResult, blocked, setBlocked, runLifecycle };
 }

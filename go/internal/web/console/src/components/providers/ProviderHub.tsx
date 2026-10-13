@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Compass, LoaderCircle, Plug, RefreshCw, Search, ShieldCheck, Trash2, X, Zap } from "lucide-preact";
 import { sendForm, sendJSON, type JSONRecord } from "../../lib/api";
 import type { ConsoleMode } from "../../lib/mode";
@@ -12,6 +12,7 @@ import { useDialogFocus } from "../useDialogFocus";
 import { OAuthConnectDialog } from "./OAuthConnectDialog";
 import { discoveryFilters, matchesDiscoveryFilter, mergeProviderRoster, providerShelves, RosterMark, RosterMetadata, RosterStatus, rosterCandidateSetup, rosterSetupEntry, rosterSetupUnavailableReason, safeRosterURL, shelfFor, useProviderRoster } from "./ProviderRoster";
 import "./provider-hub.css";
+import { RemovalBlockedNotice } from "./RemovalBlockedNotice";
 import { type ActionResult, ResultNotice, StatusBadge, boolValue, configuredProviderConfig, configuredProviderIDs, connectionChoices, tileStatus, useProviderLifecycle } from "./shared";
 
 // shelfLimit is how many providers a shelf shows until the user asks for all.
@@ -498,7 +499,10 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
   const [detectResult, setDetectResult] = useState<ActionResult>(null);
   const [localCandidates, setLocalCandidates] = useState<JSONRecord[]>([]);
   const [ownerID, setOwnerID] = useState(stringValue(asRecord(data.default_owner).id));
-  const { busy, setBusy, result, setResult, runLifecycle } = useProviderLifecycle(ownerID, onChanged);
+  const { busy, setBusy, result, setResult, blocked, setBlocked, runLifecycle } = useProviderLifecycle(ownerID, onChanged);
+  // A refused removal is shown in the panel it was asked from, and goes with
+  // that panel: another expansion, or none, leaves nothing stale behind.
+  useEffect(() => setBlocked(null), [expanded]);
   const registry = asList(data.provider_registry).map(asRecord);
   const statuses = asList(data.provider_statuses).map(asRecord);
   // Tile-independent: the upsert route is keyed on the provider id alone, so a
@@ -965,6 +969,7 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
                         <span>Client setup only. No provider OAuth action is available.</span>
                       </div>
                     ) : null}
+                    {blocked && providerIDs.includes(blocked.providerID) ? <RemovalBlockedNotice block={blocked} label={label} connectionsHref={`#providers/${encodeURIComponent(id)}`} /> : null}
                     <footer>
                       {configured && mode === "admin" ? (
                         <div class="provider-actions">

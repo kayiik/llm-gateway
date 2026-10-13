@@ -13,6 +13,7 @@ import { RemoteSearchSelect, dataTable, useTableView, type TableColumn } from ".
 import { principalSearch } from "../lib/directory";
 import { ConnectDialog, PrivateAPIKeyDialog } from "../components/providers/ProviderHub";
 import { RosterMetadata, configuredInstanceFor, rosterSetupEntry, rosterSetupUnavailableReason, useProviderRoster } from "../components/providers/ProviderRoster";
+import { RemovalBlockedNotice } from "../components/providers/RemovalBlockedNotice";
 import {
   ResultNotice,
   StatusBadge,
@@ -101,7 +102,7 @@ export function ProviderDetail({ entryID, data, mode, onChanged, onBack, onOpenP
   const entry = useMemo(() => ({ ...(registryEntry ?? {}), ...(statusEntry ?? {}) }), [registryEntry, statusEntry]);
 
   const [ownerID, setOwnerID] = useState(stringValue(asRecord(data.default_owner).id));
-  const { busy, result, setResult, runLifecycle } = useProviderLifecycle(ownerID, onChanged);
+  const { busy, result, setResult, blocked, runLifecycle } = useProviderLifecycle(ownerID, onChanged);
   const [connectOpen, setConnectOpen] = useState(false);
   const [zenAPIKey, setZenAPIKey] = useState(false);
   const [privateKeyOpen, setPrivateKeyOpen] = useState(false);
@@ -266,6 +267,7 @@ export function ProviderDetail({ entryID, data, mode, onChanged, onBack, onOpenP
         </div> : null}
       </header>
       <ResultNotice result={result} />
+      {blocked ? <RemovalBlockedNotice block={blocked} label={blocked.providerID} onManageConnections={() => document.getElementById("provider-connections")?.focus()} /> : null}
       {isClient ? <section class="surface"><div class="section-heading"><div><p class="eyebrow">Gateway client</p><h2>Client setup only</h2></div></div><p class="muted-copy">This integration is a client of the gateway, not an upstream provider. Point the client at the gateway base URL with a minted gateway key; no provider connection exists to manage here.</p></section> : null}
       {unavailable ? <section class="surface"><EmptyState title="Integration not available" detail="This registry entry is planned but not yet connectable." /></section> : null}
       {configured && mode === "admin" ? <section class="surface">
@@ -306,7 +308,7 @@ export function ProviderDetail({ entryID, data, mode, onChanged, onBack, onOpenP
           {pagedModels.map((row) => <tr key={stringValue(row.id)}><td><strong class="technical">{stringValue(row.id)}</strong>{stringValue(row.display_name) ? <small class="table-subtitle">{stringValue(row.display_name)}</small> : null}</td><td>{stringValue(row.publication_state, "configured")}{row.disabled === true ? <small class="table-subtitle">Disabled for public routing</small> : null}</td><td>{Object.keys(asRecord(row.capabilities)).join(" · ") || "Not supplied"}</td><td class="technical">{asList(row.supported_surfaces ?? row.supported_endpoints).map(String).join(" · ") || "Catalog did not declare"}</td><td>{onOpenPlayground && row.disabled !== true ? <button class="button button--secondary" type="button" title="Add this model to the playground" onClick={() => onOpenPlayground(stringValue(row.id), ownerID)}><Play size={14} /> Try in Playground</button> : "Unavailable"}</td></tr>)}
         </tbody></table><Pager total={matchedModels.length} page={modelPage} pageSize={defaultPageSize} onPage={setModelPage} /></div>}
       </section> : null}
-      {configured ? <section class="surface">
+      {configured ? <section class="surface" id="provider-connections" tabIndex={-1}>
         <div class="section-heading"><div><p class="eyebrow">Private connections</p><h2>Per-principal credentials</h2></div><span>{connections.length} record{connections.length === 1 ? "" : "s"}</span></div>
         {connections.length === 0 ? <EmptyState title="No private connections" detail="Private connections override the system credential for one principal only." /> : dataTable(connectionView, connectionColumns, { label: "Private connections", rowKey: (connection) => stringValue(connection.id) })}
       </section> : null}
