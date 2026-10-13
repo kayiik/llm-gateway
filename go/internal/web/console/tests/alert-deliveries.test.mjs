@@ -11,11 +11,11 @@ const { Alerts } = await bundle(fileURLToPath(new URL("../src/pages/Alerts.tsx",
 test("a delivery's state and next attempt read as an operator needs them", () => {
   const now = Date.UTC(2026, 9, 8, 12) ;
   const seconds = now / 1000;
-  assert.deepEqual(activity.deliveryState({ status: "delivered" }, now), { label: "delivered", tone: "ready" });
-  assert.deepEqual(activity.deliveryState({ status: "failed", exhausted: true }, now), { label: "exhausted", tone: "attention" });
-  assert.deepEqual(activity.deliveryState({ status: "failed" }, now), { label: "retrying", tone: "attention" });
-  assert.deepEqual(activity.deliveryState({ status: "pending", lease_until: seconds + 60 }, now), { label: "claimed", tone: "muted" });
-  assert.deepEqual(activity.deliveryState({ status: "pending", lease_until: seconds - 60 }, now), { label: "pending", tone: "muted" });
+  assert.deepEqual(activity.deliveryState({ status: "delivered" }, now), { label: "Delivered", tone: "ready" });
+  assert.deepEqual(activity.deliveryState({ status: "failed", exhausted: true }, now), { label: "Exhausted", tone: "attention" });
+  assert.deepEqual(activity.deliveryState({ status: "failed" }, now), { label: "Retrying", tone: "attention" });
+  assert.deepEqual(activity.deliveryState({ status: "pending", lease_until: seconds + 60 }, now), { label: "Claimed", tone: "muted" });
+  assert.deepEqual(activity.deliveryState({ status: "pending", lease_until: seconds - 60 }, now), { label: "Pending", tone: "muted" });
   assert.equal(activity.nextAttemptLabel({ next_attempt_at: 0 }, now), "—");
   assert.equal(activity.nextAttemptLabel({ next_attempt_at: seconds - 1 }, now), "Due now");
   assert.equal(activity.nextAttemptLabel({ next_attempt_at: seconds + 600 }, now), new Date(now + 600000).toLocaleString());
@@ -47,14 +47,14 @@ test("the alerts page lists deliveries, filters them and pages back", async () =
   let tree = render();
   assert.deepEqual(paths.slice(0, 2).sort(), ["/alerts", "/deliveries?limit=50"]);
   const row = (id) => text(find(tree, (node) => node.type === "tr" && node.key === id));
-  assert.match(row("8"), /Key expiring.*Project one.*exhausted.*10 of 10.*—.*webhook answered 503/);
-  assert.match(row("7"), /Quota exhausted.*retrying.*2 of 10.*Due now.*timeout/);
+  assert.match(row("8"), /Key expiring.*Project one.*Exhausted.*10 of 10.*—.*webhook answered 503/);
+  assert.match(row("7"), /Quota exhausted.*Retrying.*2 of 10.*Due now.*timeout/);
 
   find(tree, (node) => node.type === "button" && text(node) === "Load older deliveries").props.onClick();
   await settle();
   tree = render();
   assert.match(paths.at(-1), /before_id=7/);
-  assert.match(row("6"), /Quota warning.*delivered.*1 of 10/);
+  assert.match(row("6"), /Quota warning.*Delivered.*1 of 10/);
   assert.equal(find(tree, (node) => node.type === "button" && text(node) === "Load older deliveries"), undefined);
 
   const statusSelect = find(tree, (node) => node.type === "select" && findAll(node, (option) => option.props?.value === "exhausted").length);

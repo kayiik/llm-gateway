@@ -4,6 +4,7 @@ import { AlertCircle, ChevronDown, ChevronUp, FileAudio, Play, RefreshCw, Send, 
 import { APIError, getJSON, requestJSON, sendJSON, streamEvents, type JSONRecord } from "../lib/api";
 import type { ConsoleMode } from "../lib/mode";
 import { asList, asRecord, numberValue, stringValue } from "../lib/records";
+import { sentenceCase } from "../lib/text";
 import { EmptyState, ErrorState, PageHeading } from "../components/PageState";
 import { RemoteSearchSelect, SearchSelect } from "../components/DataTable";
 import { principalSearch } from "../lib/directory";
@@ -815,7 +816,7 @@ export function Playground({ data, mode, principalID, onPrincipalIDChange, prese
             <div><dt>Fallback attempts</dt><dd>{trace.length}</dd></div>
             <div><dt>Transport mode</dt><dd>{stringValue(result.transport_mode, expectedTransport)}</dd></div>
           </dl>
-          {trace.length ? <div class="trace-list"><h3>Fallback and exclusion diagnostics</h3>{trace.map((attempt, index) => <div key={`${index}-${stringValue(attempt.provider)}`}><span class="route-order">{index + 1}</span><span class="technical">{stringValue(attempt.provider)}/{stringValue(attempt.model)}</span><span class={`status-pill ${stringValue(attempt.status) === "served" ? "status-pill--ready" : "status-pill--attention"}`}>{stringValue(attempt.status)}</span></div>)}</div> : <p class="form-help">No fallback was needed. Capability-incompatible route members are excluded before execution.</p>}
+          {trace.length ? <div class="trace-list"><h3>Fallback and exclusion diagnostics</h3>{trace.map((attempt, index) => <div key={`${index}-${stringValue(attempt.provider)}`}><span class="route-order">{index + 1}</span><span class="technical">{stringValue(attempt.provider)}/{stringValue(attempt.model)}</span><span class={`status-pill ${stringValue(attempt.status) === "served" ? "status-pill--ready" : "status-pill--attention"}`}>{sentenceCase(stringValue(attempt.status))}</span></div>)}</div> : <p class="form-help">No fallback was needed. Capability-incompatible route members are excluded before execution.</p>}
           <details class="raw-response" open={rawOpen} onToggle={(event) => setRawOpen((event.currentTarget as HTMLDetailsElement).open)}>
             <summary>Raw gateway response</summary>
             <pre class="technical">{JSON.stringify(result.raw_response ?? result, null, 2)}</pre>

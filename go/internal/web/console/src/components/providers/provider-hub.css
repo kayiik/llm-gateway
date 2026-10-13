@@ -50,6 +50,7 @@
 :root[data-theme="dark"] .provider-hub__context, :root[data-theme="dark"] .provider-roster-status p { color: #b2bdca; }
 :root[data-theme="dark"] .provider-hub__detail-link, :root[data-theme="dark"] .provider-hub .provider-hub__expanded a { color: #9abfed; }
 :root[data-theme="dark"] .provider-hub .provider-hub__expanded .form-error { color: #e1aaa5; }
+:root[data-theme="dark"] .evidence-list dt { color: #9aa4b1; }
 :root[data-theme="dark"] .provider-shelf__trigger:focus-visible, :root[data-theme="dark"] .provider-hub__detail-link:focus-visible, :root[data-theme="dark"] .provider-roster-links a:focus-visible { outline-color: #9abfed; }
 
 @media (min-width: 1450px) { .provider-shelf { grid-template-columns: repeat(6, minmax(0, 1fr)); } }

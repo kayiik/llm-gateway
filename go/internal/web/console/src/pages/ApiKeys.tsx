@@ -3,6 +3,7 @@ import { Ban, Check, Copy, Eye, EyeOff, Gauge, KeyRound, Pencil, Plus, Save, Tra
 import { getJSON, sendJSON, type JSONRecord } from "../lib/api";
 import type { ConsoleMode } from "../lib/mode";
 import { asList, asRecord, numberValue, stringValue } from "../lib/records";
+import { sentenceCase } from "../lib/text";
 import { EmptyState, ErrorState, LoadingState, PageHeading } from "../components/PageState";
 import { KeyScopeEditor, keyPolicySummary, keyQuotaLabels } from "../components/KeyScopeEditor";
 import { KeyLimitsDialog } from "../components/LimitUsage";
@@ -368,7 +369,7 @@ export function ApiKeys({ data, mode, onChanged, initialContext }: {
         const revoked = stringValue(key.status) === "revoked";
         const expired = keyExpired(key);
         const active = stringValue(key.status, "active") === "active";
-        return <span class={`status-pill ${revoked || expired ? "status-pill--attention" : active ? "status-pill--ready" : "status-pill--muted"}`} title={revoked ? "Permanently revoked" : expired ? "This key has expired and stays expired; create a new key to replace it." : undefined}>{keyStatus(key)}</span>;
+        return <span class={`status-pill ${revoked || expired ? "status-pill--attention" : active ? "status-pill--ready" : "status-pill--muted"}`} title={revoked ? "Permanently revoked" : expired ? "This key has expired and stays expired; create a new key to replace it." : undefined}>{sentenceCase(keyStatus(key))}</span>;
       },
     },
     { id: "created", header: "Created", sortable: true, class: "technical", cell: (key) => formatKeyTime(keyTimes(key).created, "—") },

@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { sendJSON, type JSONRecord } from "../../lib/api";
 import { asList, asRecord, numberValue, stringValue } from "../../lib/records";
+import { sentenceCase } from "../../lib/text";
 
 export type ActionResult = {
   title: string;
@@ -72,7 +73,7 @@ export function statusLabel(status: string): string {
       unavailable: "Unavailable",
       instances_ready: "All instances ready",
       instances_attention: "An instance needs attention",
-    }[status] ?? status.replaceAll("_", " ")
+    }[status] ?? sentenceCase(status)
   );
 }
 

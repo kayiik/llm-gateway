@@ -3,6 +3,7 @@ import { ArrowLeft, CheckCircle2, ExternalLink, Plug, Play, Power, RefreshCw, Se
 import { getJSON, sendJSON, type JSONRecord } from "../lib/api";
 import type { ConsoleMode } from "../lib/mode";
 import { asList, asRecord, numberValue, stringValue } from "../lib/records";
+import { sentenceCase } from "../lib/text";
 import { circuitSummary, openCircuitsOf } from "../lib/limits";
 import { verifyModelChoices } from "../lib/models";
 import { ProviderMark } from "../components/ProviderMark";
@@ -194,7 +195,7 @@ export function ProviderDetail({ entryID, data, mode, onChanged, onBack, onOpenP
     { id: "owner", header: "Human owner", sortValue: (connection) => principalName(stringValue(connection.principal_id)), cell: (connection) => principalName(stringValue(connection.principal_id)) },
     { id: "account", header: "Connected account", cell: (connection) => stringValue(connection.oauth_account_label, stringValue(connection.oauth_account_id, "Not reported")) },
     { id: "kind", header: "Kind", class: "technical", sortValue: (connection) => stringValue(connection.credential_kind), cell: (connection) => stringValue(connection.credential_kind) },
-    { id: "status", header: "Status", sortValue: (connection) => stringValue(connection.status, "active"), cell: (connection) => <span class={`status-pill ${stringValue(connection.status, "active") === "active" ? "status-pill--ready" : "status-pill--muted"}`}>{stringValue(connection.status, "active")}</span> },
+    { id: "status", header: "Status", sortValue: (connection) => stringValue(connection.status, "active"), cell: (connection) => <span class={`status-pill ${stringValue(connection.status, "active") === "active" ? "status-pill--ready" : "status-pill--muted"}`}>{sentenceCase(stringValue(connection.status, "active"))}</span> },
     { id: "last_used", header: "Last used", class: "technical", sortValue: (connection) => numberValue(connection.last_used_at), cell: (connection) => formatEpoch(connection.last_used_at) },
     { id: "action", header: "Action", cell: (connection) => stringValue(connection.status, "active") === "active" ? <button class="button button--danger" type="button" aria-label={`Disconnect ${stringValue(connection.connection_name, "connection")} of ${principalName(stringValue(connection.principal_id))}`} disabled={connectionBusy === stringValue(connection.id)} onClick={() => void disconnect(connection)}><Trash2 size={14} /> Disconnect</button> : "—" },
   ];
@@ -283,7 +284,7 @@ export function ProviderDetail({ entryID, data, mode, onChanged, onBack, onOpenP
             <td><StatusBadge status={stringValue(instance.status, "configured")} />{stringValue(instance.configuration_issue) ? <small class="table-subtitle">{stringValue(instance.configuration_issue)}</small> : null}{circuits.length ? <small class="table-subtitle">Circuit open: {circuitSummary(circuits, circuitCaller)}</small> : null}</td>
             <td><dl class="evidence-list"><div><dt>Auth</dt><dd>{evidenceLabel("authentication", instance.authentication_state)}</dd></div><div><dt>Catalog</dt><dd>{evidenceLabel("catalog", instance.catalog_evidence)}</dd></div><div><dt>Completion</dt><dd>{evidenceLabel("completion", instance.completion_evidence)}</dd></div></dl></td>
             <td>{stringValue(instance.catalog_state) === "not_discoverable" ? "Catalog not discoverable" : `${numberValue(instance.model_count)} model${numberValue(instance.model_count) === 1 ? "" : "s"} · ${stringValue(instance.catalog_state, "unknown")}`}</td>
-            <td class="technical">{stringValue(instance.catalog_refreshed, "Never synced")}</td>
+            <td class="technical">{stringValue(instance.catalog_refreshed) || "Never synced"}</td>
             <td><div class="provider-actions">
               <button class="button button--secondary" type="button" title="Take the provider in or out of service without deleting its configuration or credentials" disabled={toggleBusy === providerID} onClick={() => void toggleEnabled(providerID)}><Power size={15} /> {disabledProviderIDs.has(providerID) ? "Enable" : "Disable"}</button>
               <button class="button button--secondary" type="button" title="Confirm the endpoint answers the catalog API — does not run a completion" disabled={active(providerID, "test") || (supportsOAuth && !ownerID)} onClick={() => void runLifecycle(entry, "test", providerID)}><Plug size={15} /> Check reachability</button>

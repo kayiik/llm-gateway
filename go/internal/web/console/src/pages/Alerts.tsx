@@ -184,7 +184,7 @@ export function Alerts({ data }: { data: JSONRecord }) {
     { id: "type", header: "Type", sortValue: (rule) => kindLabel(stringValue(rule.kind)), cell: (rule) => kindLabel(stringValue(rule.kind)) },
     { id: "condition", header: "Condition", sortValue: ruleCondition, cell: ruleCondition },
     { id: "scope", header: "Scope", sortValue: ruleScope, cell: ruleScope },
-    { id: "status", header: "Status", sortValue: (rule) => (rule.enabled === true ? "enabled" : "disabled"), cell: (rule) => <span class={`status-pill ${rule.enabled === true ? "status-pill--ready" : "status-pill--muted"}`}>{rule.enabled === true ? "enabled" : "disabled"}</span> },
+    { id: "status", header: "Status", sortValue: (rule) => (rule.enabled === true ? "enabled" : "disabled"), cell: (rule) => <span class={`status-pill ${rule.enabled === true ? "status-pill--ready" : "status-pill--muted"}`}>{rule.enabled === true ? "Enabled" : "Disabled"}</span> },
     {
       id: "actions", header: "Actions", cell: (rule) => {
         const id = stringValue(rule.id);

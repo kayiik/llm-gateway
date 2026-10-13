@@ -5,6 +5,7 @@ import { quotaValueFromDraft } from "../lib/key-policy";
 import { formatKeyTime, keyTimes } from "../lib/key-dates";
 import type { PageID } from "../lib/navigation";
 import { asList, asRecord, numberValue, stringValue } from "../lib/records";
+import { sentenceCase } from "../lib/text";
 import { formatUsageMetric, usageMetricTotal, usageTotals } from "../lib/usage";
 import { EmptyState, ErrorState, LoadingState } from "../components/PageState";
 import { AddMembershipDialog } from "../components/AddMembershipDialog";
@@ -186,7 +187,7 @@ export function ProjectDetail({ projectID, data, onChanged, onNavigate, onBack }
     {
       id: "status", header: "Status", sortable: true, cell: (key) => {
         const state = keyState(key);
-        return <span class={`status-pill ${state === "active" ? "status-pill--ready" : state === "disabled" ? "status-pill--muted" : "status-pill--attention"}`}>{state}</span>;
+        return <span class={`status-pill ${state === "active" ? "status-pill--ready" : state === "disabled" ? "status-pill--muted" : "status-pill--attention"}`}>{sentenceCase(state)}</span>;
       },
     },
     { id: "last_used", header: "Last used", class: "technical", sortable: true, cell: (key) => formatKeyTime(keyTimes(key).lastUsed, "Never") },
@@ -219,7 +220,7 @@ export function ProjectDetail({ projectID, data, onChanged, onNavigate, onBack }
     {back}
     <header class="detail-heading surface">
       <div class="detail-heading__body">
-        <div class="detail-heading__title"><h1>{name}</h1><span class={`status-pill ${status === "active" ? "status-pill--ready" : "status-pill--muted"}`}>{status}</span></div>
+        <div class="detail-heading__title"><h1>{name}</h1><span class={`status-pill ${status === "active" ? "status-pill--ready" : "status-pill--muted"}`}>{sentenceCase(status)}</span></div>
         <p>A project scopes API keys, budgets and memberships. Its limits apply to every key in it, together with each key's own.</p>
         <dl class="compact-facts">
           <div><dt>Slug</dt><dd class="technical">{stringValue(project.slug, "—")}</dd></div>

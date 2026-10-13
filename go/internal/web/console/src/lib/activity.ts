@@ -94,11 +94,11 @@ export function deliveryKindLabel(kind: string): string {
 // every attempt, failed and waiting to retry, held by a worker, or waiting.
 export function deliveryState(delivery: JSONRecord, now = Date.now()): { label: string; tone: "ready" | "attention" | "muted" } {
   const status = stringValue(delivery.status);
-  if (status === "delivered") return { label: "delivered", tone: "ready" };
-  if (delivery.exhausted === true) return { label: "exhausted", tone: "attention" };
-  if (status === "failed") return { label: "retrying", tone: "attention" };
-  if (numberValue(delivery.lease_until) * 1000 > now) return { label: "claimed", tone: "muted" };
-  return { label: "pending", tone: "muted" };
+  if (status === "delivered") return { label: "Delivered", tone: "ready" };
+  if (delivery.exhausted === true) return { label: "Exhausted", tone: "attention" };
+  if (status === "failed") return { label: "Retrying", tone: "attention" };
+  if (numberValue(delivery.lease_until) * 1000 > now) return { label: "Claimed", tone: "muted" };
+  return { label: "Pending", tone: "muted" };
 }
 
 // nextAttemptLabel says when a worker may next claim a delivery: due now,

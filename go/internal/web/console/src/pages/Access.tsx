@@ -5,6 +5,7 @@ import { principalsPath } from "../lib/directory";
 import type { ConsoleMode } from "../lib/mode";
 import type { PageID } from "../lib/navigation";
 import { asList, asRecord, numberValue, stringValue } from "../lib/records";
+import { sentenceCase } from "../lib/text";
 import { AddMembershipDialog } from "../components/AddMembershipDialog";
 import { ShortID, dataTable, serverTableView, tablePageSizes, useTableView, type ServerTableState, type TableColumn } from "../components/DataTable";
 import { EmptyState, ErrorState, LoadingState, PageHeading } from "../components/PageState";
@@ -152,7 +153,7 @@ export function Access({ data, mode, detail = "", onChanged, onNavigate }: { dat
     } finally { setBusy(""); }
   };
 
-  const statusPill = (status: string) => <span class={`status-pill ${status === "active" ? "status-pill--ready" : "status-pill--muted"}`}>{status}</span>;
+  const statusPill = (status: string) => <span class={`status-pill ${status === "active" ? "status-pill--ready" : "status-pill--muted"}`}>{sentenceCase(status)}</span>;
   const projectName = (project: JSONRecord) => stringValue(project.name, stringValue(project.slug, stringValue(project.id)));
   const principalColumns: TableColumn<JSONRecord>[] = [
     {

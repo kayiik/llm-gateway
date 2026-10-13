@@ -390,7 +390,7 @@ export function RosterMetadata({ entries, revision }: { entries: JSONRecord[]; r
             marginBottom: "8px",
           }}
         >
-          <span class={`status-pill ${isAnonymous ? "status-pill--success" : "status-pill--muted"}`}>{isAnonymous ? "Free · No API key needed" : "API key required"}</span>
+          <span class={`status-pill ${isAnonymous ? "status-pill--success" : "status-pill--muted"}`}>{isAnonymous ? "Free · no API key needed" : "API key required"}</span>
           <span class="status-pill status-pill--muted">{offerLabels[stringValue(primary.offer)] || "Free tier"}</span>
         </div>
         <dl>

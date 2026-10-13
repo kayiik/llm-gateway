@@ -4,6 +4,7 @@ import { getJSON, type JSONRecord } from "../lib/api";
 import { auditActor, auditPath, auditTone, emptyAuditFilter, nextCursor, safeAuditDetail, type AuditFilter } from "../lib/activity";
 import type { ConsoleMode } from "../lib/mode";
 import { asList, asRecord, numberValue, stringValue } from "../lib/records";
+import { sentenceCase } from "../lib/text";
 import { EmptyState, ErrorState, LoadingState, PageHeading } from "../components/PageState";
 
 // AuditLog lists the retained audit history, newest first, filtered and
@@ -66,7 +67,7 @@ export function AuditLog({ mode }: { mode: ConsoleMode }) {
                 <td class="technical">{auditActor(event)}</td>
                 <td>{stringValue(event.action)}</td>
                 <td class="technical">{[stringValue(event.target_type), stringValue(event.target_id)].filter(Boolean).join(" ")}</td>
-                <td><span class={`status-pill status-pill--${auditTone(result)}`}>{result}</span></td>
+                <td><span class={`status-pill status-pill--${auditTone(result)}`}>{sentenceCase(result)}</span></td>
                 <td>{Object.keys(detail).length ? <details><summary>Detail</summary><pre class="technical">{JSON.stringify(detail, null, 2)}</pre></details> : "—"}</td>
               </tr>;
             })}</tbody>

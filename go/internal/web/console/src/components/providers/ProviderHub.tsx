@@ -680,13 +680,13 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
       const verified = numberValue(res?.verified);
       const total = numberValue(res?.total);
       setResult({
-        title: "Auto-connected Free Providers",
+        title: "Auto-connected free providers",
         success: true,
         detail: `Connected ${total} reviewed anonymous providers (${verified} verified active).`,
       });
     } catch (cause) {
       setResult({
-        title: "Auto-connect Free Providers",
+        title: "Auto-connect free providers",
         success: false,
         detail: cause instanceof Error ? cause.message : "Failed to auto-connect free providers.",
       });
@@ -852,7 +852,7 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
                           }}
                         >
                           {connecting ? <LoaderCircle class="spin" size={15} /> : <Plug size={15} />}
-                          {connecting ? "Connecting…" : isAnon ? "Connect (No Key Required)" : "Connect with API Key"}
+                          {connecting ? "Connecting…" : isAnon ? "Connect (no key required)" : "Connect with API key"}
                         </button>
                         <p class="form-help">{!setup ? rosterSetupUnavailableReason(entry, registry) : mode === "portal" ? "An administrator must configure this candidate before you can add a private connection." : ""}</p>
                       </footer>
@@ -946,7 +946,8 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
                         </div>
                         <div>
                           <dt>Catalog freshness</dt>
-                          <dd class="technical">{stringValue(entry.catalog_refreshed, "Catalog not synced")}</dd>
+                          {/* A tile never synced reports an empty time, which is a string all the same. */}
+                          <dd class="technical">{stringValue(entry.catalog_refreshed) || "Catalog not synced"}</dd>
                         </div>
                         {openCircuits.length ? (
                           <div>

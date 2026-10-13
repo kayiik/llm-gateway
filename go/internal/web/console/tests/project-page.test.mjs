@@ -66,8 +66,8 @@ test("a project's page shows its limits, keys, members and usage", async () => {
   assert.ok(policy, "the project's budgets and allowlists are edited on its page");
 
   const rows = findAll(tree, (node) => node.type === "tr").map(text);
-  assert.ok(rows.some((row) => row.startsWith("notebookllmgw_abAdaactive")), "an active key of the project is listed");
-  assert.ok(rows.some((row) => row.startsWith("retiredllmgw_cdAdarevoked")), "so is a revoked one");
+  assert.ok(rows.some((row) => row.startsWith("notebookllmgw_abAdaActive")), "an active key of the project is listed");
+  assert.ok(rows.some((row) => row.startsWith("retiredllmgw_cdAdaRevoked")), "so is a revoked one");
   assert.ok(!rows.some((row) => row.includes("elsewhere")), "another project's key is not");
   assert.ok(rows.some((row) => row.startsWith("Adahumanowner")), "the project's member is listed");
   assert.ok(!rows.some((row) => row.startsWith("Batch")), "another project's member is not");

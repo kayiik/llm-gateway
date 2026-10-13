@@ -137,7 +137,7 @@ test("the audit log filters, pages and colours results", async () => {
   assert.match(text(tree), /static key abcdef012345/);
   assert.match(text(tree), /provider old/);
   assert.doesNotMatch(text(tree), /secret_value/);
-  assert.match(find(tree, (node) => node.type === "span" && text(node) === "denied").props.class, /status-pill--attention/);
+  assert.match(find(tree, (node) => node.type === "span" && text(node) === "Denied").props.class, /status-pill--attention/);
 
   find(tree, (node) => node.type === "button" && text(node) === "Load older events").props.onClick();
   await settle();

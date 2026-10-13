@@ -3,6 +3,7 @@ import { ArrowDown, ArrowLeft, LoaderCircle, Play, Trash2 } from "lucide-preact"
 import { sendJSON, type JSONRecord } from "../lib/api";
 import type { ConsoleMode } from "../lib/mode";
 import { asList, asRecord, endpointsOf, numberValue, stringValue } from "../lib/records";
+import { sentenceCase } from "../lib/text";
 import { EmptyState, ErrorState, PageHeading } from "../components/PageState";
 import { RemoteSearchSelect, SearchSelect } from "../components/DataTable";
 import { principalSearch } from "../lib/directory";
@@ -98,7 +99,7 @@ export function RouteDetail({ routeName, data, mode, onChanged, onBack }: {
           {error ? <p class="form-error" role="alert">{error}</p> : null}
           <footer><button class="button button--primary" type="submit" disabled={busy}>{busy ? <LoaderCircle class="spin" size={16} /> : <Play size={16} />} Run route test</button></footer>
         </form>}
-        {result ? <div class="playground-result"><p class="eyebrow">Routed result</p><h2>{stringValue(served.provider)} / {stringValue(served.model)}</h2><dl class="compact-facts"><div><dt>Latency</dt><dd>{numberValue(result.latency_ms)} ms</dd></div><div><dt>Input tokens</dt><dd>{numberValue(usage.prompt_tokens, numberValue(usage.input_tokens))}</dd></div><div><dt>Output tokens</dt><dd>{numberValue(usage.completion_tokens, numberValue(usage.output_tokens))}</dd></div><div><dt>Fallback attempts</dt><dd>{trace.length}</dd></div></dl><div class="trace-list"><h3>Fallback trace</h3>{trace.map((attempt, index) => <div key={`${index}-${stringValue(attempt.provider)}`}><span class="route-order">{index + 1}</span><span class="technical">{stringValue(attempt.provider)}/{stringValue(attempt.model)}</span><span class={`status-pill ${stringValue(attempt.status) === "served" ? "status-pill--ready" : "status-pill--attention"}`}>{stringValue(attempt.status)}</span></div>)}</div></div> : null}
+        {result ? <div class="playground-result"><p class="eyebrow">Routed result</p><h2>{stringValue(served.provider)} / {stringValue(served.model)}</h2><dl class="compact-facts"><div><dt>Latency</dt><dd>{numberValue(result.latency_ms)} ms</dd></div><div><dt>Input tokens</dt><dd>{numberValue(usage.prompt_tokens, numberValue(usage.input_tokens))}</dd></div><div><dt>Output tokens</dt><dd>{numberValue(usage.completion_tokens, numberValue(usage.output_tokens))}</dd></div><div><dt>Fallback attempts</dt><dd>{trace.length}</dd></div></dl><div class="trace-list"><h3>Fallback trace</h3>{trace.map((attempt, index) => <div key={`${index}-${stringValue(attempt.provider)}`}><span class="route-order">{index + 1}</span><span class="technical">{stringValue(attempt.provider)}/{stringValue(attempt.model)}</span><span class={`status-pill ${stringValue(attempt.status) === "served" ? "status-pill--ready" : "status-pill--attention"}`}>{sentenceCase(stringValue(attempt.status))}</span></div>)}</div></div> : null}
       </section>
     </div>
   );

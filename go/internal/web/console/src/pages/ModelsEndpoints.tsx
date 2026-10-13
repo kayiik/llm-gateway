@@ -3,6 +3,7 @@ import { Check, Copy, Terminal } from "lucide-preact";
 import { getJSON, type JSONRecord } from "../lib/api";
 import type { ConsoleMode } from "../lib/mode";
 import { asList, asRecord, stringValue } from "../lib/records";
+import { sentenceCase } from "../lib/text";
 import { EmptyState, ErrorState, LoadingState, PageHeading } from "../components/PageState";
 import { ModelFilters, catalogModels, filterModels, useModelFilter } from "../components/ModelPicker";
 import { RemoteSearchSelect, dataTable, useTableView, type TableColumn } from "../components/DataTable";
@@ -85,7 +86,7 @@ export function ModelsEndpoints({ data, mode, principalID, onPrincipalIDChange }
     {
       id: "publication", header: "Publication", sortValue: (row) => stringValue(row.publication_state, "configured"), cell: (row) => {
         const state = stringValue(row.publication_state);
-        return state ? <><span class={`status-pill ${state === "verified" ? "status-pill--success" : "status-pill--warning"}`}>{state}</span>{state !== "verified" ? <small class="table-subtitle">Disabled for public routing{stringValue(row.failure_code) ? ` · ${stringValue(row.failure_code)}` : ""}</small> : null}</> : "Configured";
+        return state ? <><span class={`status-pill ${state === "verified" ? "status-pill--success" : "status-pill--attention"}`}>{sentenceCase(state)}</span>{state !== "verified" ? <small class="table-subtitle">Disabled for public routing{stringValue(row.failure_code) ? ` · ${stringValue(row.failure_code)}` : ""}</small> : null}</> : "Configured";
       },
     },
     { id: "capabilities", header: "Capabilities", cell: (row) => capabilityList(row.capabilities) || "Not supplied" },
