@@ -113,16 +113,17 @@ func (p *googleProvider) StreamContext(ctx context.Context, model string, messag
 
 // googleChatPayload is the Chat body core's Google maps: the messages, the
 // output limit as max_tokens (max_tokens, or max_completion_tokens or the
-// internal _max_output_tokens when it is unset), temperature, and the tools
-// and tool_choice, which core declares as Gemini functions. A stream also
-// carries stream_options, so that core sends the stream's usage when the
-// client asked for it. These are the fields googleChatField names.
+// internal _max_output_tokens when it is unset), temperature, the tools and
+// tool_choice, which core declares as Gemini functions, and response_format,
+// which core sends as Gemini's structured output. A stream also carries
+// stream_options, so that core sends the stream's usage when the client
+// asked for it. These are the fields googleChatField names.
 func googleChatPayload(messages []Message, kw Kwargs, stream bool) map[string]any {
 	payload := map[string]any{"messages": messages}
 	if maxTokens := chatMaxTokens(kw); maxTokens != nil {
 		payload["max_tokens"] = maxTokens
 	}
-	fields := []string{"temperature", "tools", "tool_choice"}
+	fields := []string{"temperature", "tools", "tool_choice", "response_format"}
 	if stream {
 		fields = append(fields, "stream_options")
 	}

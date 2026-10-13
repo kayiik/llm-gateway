@@ -93,6 +93,13 @@ func TestUnsentChatFieldFollowsWhatEachFacadeSends(t *testing.T) {
 		{"Google tool choice naming no declared function", "vertex", "any", Kwargs{"tools": tool, "tool_choice": map[string]any{"type": "function", "function": map[string]any{"name": "other"}}}, "tool_choice"},
 		{"Google tools that are not functions", "vertex", "any", Kwargs{"tools": []any{map[string]any{"type": "custom", "custom": map[string]any{"name": "grammar"}}}}, "tools"},
 		{"Google parallel tool calls cannot be turned off", "studio", "any", Kwargs{"tools": tool, "parallel_tool_calls": false}, "parallel_tool_calls"},
+		{"AI Studio sends a JSON response_format as structured output", "studio", "any", Kwargs{"response_format": jsonMode}, ""},
+		{"Vertex AI sends a JSON schema response_format as structured output", "vertex", "any", Kwargs{"response_format": map[string]any{
+			"type": "json_schema", "json_schema": map[string]any{"name": "verdict", "schema": map[string]any{"type": "object"}, "strict": true}}}, ""},
+		{"Google response_format without a schema object", "studio", "any", Kwargs{"response_format": map[string]any{
+			"type": "json_schema", "json_schema": map[string]any{"name": "verdict"}}}, "response_format"},
+		{"Google response_format with a member Chat does not define", "vertex", "any", Kwargs{"response_format": map[string]any{
+			"type": "json_object", "schema": map[string]any{"type": "object"}}}, "response_format"},
 		{"Ollama sends its options and tools", "ollama", "any", Kwargs{"temperature": 0.2, "top_p": 0.9, "max_tokens": 64.0, "tools": tool}, ""},
 		{"Ollama", "ollama", "any", Kwargs{"stop": "END"}, "stop"},
 		{"Copilot sends the transport's fields", "copilot", "any", Kwargs{"parallel_tool_calls": false, "thinking": map[string]any{"type": "disabled"}}, ""},

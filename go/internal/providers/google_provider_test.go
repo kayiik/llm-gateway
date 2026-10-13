@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -294,6 +295,34 @@ func TestGoogleFacadeSendsToolsAndReturnsToolCalls(t *testing.T) {
 	if call["id"] != "call_resp-fixture_0" || call["function"].(map[string]any)["arguments"] != `{"q":"crane"}` ||
 		call["extra_content"].(map[string]any)["google"].(map[string]any)["thought_signature"] != "c2ln" {
 		t.Fatalf("tool call = %+v", call)
+	}
+}
+
+// A Chat request's response_format reaches Gemini as its structured output,
+// streamed or not: JSON, and for a JSON schema the schema as written.
+func TestGoogleFacadeSendsResponseFormatAsStructuredOutput(t *testing.T) {
+	server, take := googleBodies(t, `{"candidates":[{"content":{"role":"model","parts":[{"text":"{}"}]},"finishReason":"STOP"}]}`,
+		"data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"{}\"}],\"role\": \"model\"},\"finishReason\": \"STOP\"}]}\r\n\r\n")
+	format := map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "verdict", "schema": map[string]any{"type": "object"}}}
+	provider := studioFixture(t, server.URL, "k")
+	if _, err := provider.Complete("gemini-fixture", googleChat, Kwargs{"response_format": format}); err != nil {
+		t.Fatal(err)
+	}
+	stream, err := provider.Stream("gemini-fixture", googleChat, Kwargs{"response_format": map[string]any{"type": "json_object"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, more := stream.Next(); more; _, more = stream.Next() {
+	}
+	stream.Close()
+	want := []string{
+		`/models/gemini-fixture:generateContent? {"contents":[{"parts":[{"text":"hi"}],"role":"user"}],` +
+			`"generationConfig":{"responseJsonSchema":{"type":"object"},"responseMimeType":"application/json"}}`,
+		`/models/gemini-fixture:streamGenerateContent?alt=sse {"contents":[{"parts":[{"text":"hi"}],"role":"user"}],` +
+			`"generationConfig":{"responseMimeType":"application/json"}}`,
+	}
+	if seen := take(); !reflect.DeepEqual(seen, want) {
+		t.Fatalf("upstream = %q\nwant %q", seen, want)
 	}
 }
 

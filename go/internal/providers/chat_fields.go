@@ -210,8 +210,9 @@ func anthropicChatField(field string) bool {
 // googleChatField reports a Chat field of kw the Google facade carries into
 // generateContent; see googleChatPayload. Core's Google declares only
 // function tools with a name, and maps only a tool choice of auto, none,
-// required or a declared function; it drops any other as a loss the facade
-// does not read, so such tools or tool choice count as unsent.
+// required or a declared function, and only a response format it can send
+// as structured output; it drops any other as a loss the facade does not
+// read, so such tools, tool choice or format count as unsent.
 func googleChatField(kw Kwargs) func(string) bool {
 	return func(field string) bool {
 		switch field {
@@ -221,9 +222,41 @@ func googleChatField(kw Kwargs) func(string) bool {
 			return googleFunctionNames(kw["tools"]) != nil
 		case "tool_choice":
 			return googleToolChoiceMapped(kw["tool_choice"], googleFunctionNames(kw["tools"]))
+		case "response_format":
+			return googleResponseFormatMapped(kw["response_format"])
 		}
 		return false
 	}
+}
+
+// googleResponseFormatMapped reports a response format core's Google sends
+// as Gemini's structured output: json_object, or json_schema with a JSON
+// Schema object, each with only the members Chat defines. Core refuses any
+// other as a material loss. A text format asks for nothing, so it is never
+// weighed.
+func googleResponseFormatMapped(value any) bool {
+	format, _ := value.(map[string]any)
+	switch format["type"] {
+	case "json_object":
+		return onlyMembers(format, "type")
+	case "json_schema":
+		members, _ := format["json_schema"].(map[string]any)
+		_, schema := members["schema"].(map[string]any)
+		return schema && onlyMembers(format, "type", "json_schema") &&
+			onlyMembers(members, "name", "description", "schema", "strict")
+	}
+	return false
+}
+
+// onlyMembers reports an object whose members are all among allowed, a null
+// member counting as unset, as core and llm-translate read a format.
+func onlyMembers(object map[string]any, allowed ...string) bool {
+	for key, member := range object {
+		if member != nil && !slices.Contains(allowed, key) {
+			return false
+		}
+	}
+	return true
 }
 
 // googleFunctionNames returns the names of tools, a list of function tools

@@ -181,8 +181,8 @@ Google exposes four distinct paths:
 | Integration | API grammar | Typical authentication | Distinguishing behavior |
 | --- | --- | --- | --- |
 | `gemini` | Google's OpenAI-compatible API | API key | OpenAI-shaped client compatibility. |
-| `ai_studio` | Native Gemini API | API key | Native chat with streaming and function tools; native image and Veo video support. |
-| `vertex_ai` | Native Gemini/Vertex API | Service-account JSON or eligible API key | Native chat with streaming and function tools; project and location scope; Cloud billing. `vertex_request_type: dedicated` requires matching provisioned capacity and never silently falls back. |
+| `ai_studio` | Native Gemini API | API key | Native chat with streaming, function tools and structured output; native image and Veo video support. |
+| `vertex_ai` | Native Gemini/Vertex API | Service-account JSON or eligible API key | Native chat with streaming, function tools and structured output; project and location scope; Cloud billing. `vertex_request_type: dedicated` requires matching provisioned capacity and never silently falls back. |
 | `google_antigravity` | Cloud Code Assist `v1internal` | Browser OAuth | Experimental owner-private catalog and non-streaming chat; requires an operator-provided OAuth client. |
 
 A `vertex_ai` service-account key must name `https://oauth2.googleapis.com/token`

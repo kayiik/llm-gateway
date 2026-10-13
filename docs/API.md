@@ -103,7 +103,7 @@ wire carries:
 | Azure OpenAI | Every request property of Azure's v1 Chat Completions, and `service_tier`: `audio`, `frequency_penalty`, `function_call`, `functions`, `logit_bias`, `logprobs`, `max_completion_tokens`, `max_tokens`, `metadata`, `modalities`, `n`, `parallel_tool_calls`, `prediction`, `presence_penalty`, `prompt_cache_key`, `prompt_cache_retention`, `reasoning_effort`, `response_format`, `safety_identifier`, `seed`, `service_tier`, `stop`, `store`, `temperature`, `tool_choice`, `tools`, `top_logprobs`, `top_p`, `user`, `user_security_context`, `verbosity`. |
 | Chat adapted to a Responses-only model (`force_api_support`) | `temperature`, `top_p`, `max_tokens`, `max_completion_tokens`, `tools`, `tool_choice`, `metadata`, `reasoning_effort`, and `response_format` as the Responses `text.format`. |
 | Anthropic | `temperature`, `top_p`, `max_tokens`, `stop`, `tools`, `metadata`, `thinking`, `output_config`. |
-| Google AI Studio, Vertex AI | `temperature`, `max_tokens`, `tools`, `tool_choice`. |
+| Google AI Studio, Vertex AI | `temperature`, `max_tokens`, `tools`, `tool_choice`, and a `response_format` of type `json_object` or `json_schema`, which reaches Gemini as its structured output, the schema as written. |
 | Ollama | `temperature`, `top_p`, `max_tokens`, `tools`. |
 
 Anthropic, Google and Ollama targets read `max_completion_tokens` as their

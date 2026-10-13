@@ -5,7 +5,7 @@ go 1.27.2
 require (
 	github.com/kayiik/llm-provider-auth v0.0.1
 	github.com/kayiik/llm-translate v0.0.2
-	github.com/kayiik/llmgw-core v0.0.2
+	github.com/kayiik/llmgw-core v0.0.3
 	golang.org/x/sys v0.49.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.60.1

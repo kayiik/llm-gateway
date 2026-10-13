@@ -164,3 +164,32 @@ func TestGoogleChatCompletionTakesTools(t *testing.T) {
 		t.Fatalf("a refused request reached Google: %q", seen)
 	}
 }
+
+// A Chat request for a JSON schema is served by a Google model, which is
+// sent the schema as its structured output; a format Gemini cannot be sent
+// is refused before anything reaches it.
+func TestGoogleChatCompletionAsksForStructuredOutput(t *testing.T) {
+	resetState(t)
+	take, _ := googleChatUpstream(t)
+	post := func(body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		NewServer(Runtime{}).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body)))
+		return rec
+	}
+	rec := post(`{"model":"studio/gemini-fixture","messages":[{"role":"user","content":"Reply in JSON."}],` +
+		`"response_format":{"type":"json_schema","json_schema":{"name":"verdict","schema":{"type":"object","properties":{"ok":{"type":"boolean"}}}}}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if seen := take(); len(seen) != 1 || !strings.Contains(seen[0],
+		`"generationConfig":{"responseJsonSchema":{"properties":{"ok":{"type":"boolean"}},"type":"object"},"responseMimeType":"application/json"}`) {
+		t.Fatalf("upstream = %q", seen)
+	}
+	rec = post(`{"model":"studio/gemini-fixture","messages":[{"role":"user","content":"hi"}],"response_format":{"type":"json_schema","json_schema":{"name":"verdict"}}}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "response_format") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if seen := take(); len(seen) != 0 {
+		t.Fatalf("a refused request reached Google: %q", seen)
+	}
+}
