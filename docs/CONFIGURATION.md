@@ -274,7 +274,9 @@ These variables currently have no effect:
 - `LLMGW_ALLOW_COPILOT_PROXY` and `LLMGW_EXPERIMENTAL_COPILOT_PROVIDER`.
 - `LLMGW_OPENAI_COMPATIBLE_API_KEY`.
 - `LLMGW_GITHUB_COPILOT_USE_GH_CLI`, `LLMGW_GITHUB_COPILOT_EDITOR_VERSION`, and
-  `LLMGW_GITHUB_COPILOT_INTEGRATION_ID`.
+  `LLMGW_GITHUB_COPILOT_INTEGRATION_ID`. GitHub Copilot is served by the
+  companion daemon, which never uses its host's GitHub CLI login unless it is
+  started with `-copilot-gh-cli` or `LLMGW_EXTENSION_COPILOT_GH_CLI=true`.
 
 ## Persistence and console saves
 
