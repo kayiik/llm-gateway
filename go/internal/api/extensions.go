@@ -279,11 +279,65 @@ func (s *server) handleCreateExtension(w http.ResponseWriter, r *http.Request) {
 		writeExtensionStoreError(w, err, optionalString(body.ID))
 		return
 	}
-	auditAdmin(r, "extension.create", "extension", created.ID, map[string]any{"changed": []string{"name", "url", "secret"}})
+	pinned, err := pinProvidersToTheOnlyExtension(created.ID)
+	if err != nil {
+		if _, deleteErr := iam.DeleteExtension(created.ID); deleteErr != nil {
+			log.Printf("remove the extension %q after its providers could not be pinned: %v", created.ID, deleteErr)
+		}
+		writeConfigSaveError(w, "The providers the existing extension serves could not be kept with it, so the extension was not added.", err)
+		return
+	}
+	detail := map[string]any{"changed": []string{"name", "url", "secret"}}
+	if len(pinned) > 0 {
+		detail["pinned"] = pinned
+	}
+	auditAdmin(r, "extension.create", "extension", created.ID, detail)
 	if !republishExtensions(w) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, extensionViewOf(config.Get(), created))
+}
+
+// pinProvidersToTheOnlyExtension names the only published extension in each
+// provider the companion daemon serves that names none, before the extension
+// added stops it being the only one. Such a provider has been served by that
+// extension and would otherwise be left to choose between two, and serve no
+// request until an administrator chose. It returns the providers it pinned,
+// sorted. The extension added is not published yet, so the published
+// settings still hold only the one that served them.
+func pinProvidersToTheOnlyExtension(added string) ([]string, error) {
+	settings := config.Get()
+	if len(settings.Extensions) != 1 {
+		return nil, nil
+	}
+	var only string
+	for id := range settings.Extensions {
+		only = id
+	}
+	if only == added {
+		return nil, nil
+	}
+	var pinned []string
+	for _, providerID := range providers.CompanionDaemonProviders(settings) {
+		if cfg := settings.Providers[providerID]; cfg != nil && strings.TrimSpace(cfg.Extension) == "" {
+			pinned = append(pinned, providerID)
+		}
+	}
+	if len(pinned) == 0 {
+		return nil, nil
+	}
+	slices.Sort(pinned)
+	if _, err := config.UpdateAndSave(func(s *config.Settings) error {
+		for _, providerID := range pinned {
+			if cfg := s.Providers[providerID]; cfg != nil && strings.TrimSpace(cfg.Extension) == "" {
+				cfg.Extension = only
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return pinned, nil
 }
 
 // PATCH /admin/api/extensions/{id} changes the fields the body carries; a

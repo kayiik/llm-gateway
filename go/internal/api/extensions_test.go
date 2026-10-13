@@ -584,6 +584,52 @@ func TestProvidersNameTheirExtensionWhenSaved(t *testing.T) {
 	admin.expectNoneCarry(extensionTestSecret)
 }
 
+// A provider that names no extension is served by the only one. Adding a
+// second would leave it to choose, so before the second is added it is
+// pinned to the extension that has been serving it, and it keeps working.
+func TestASecondExtensionLeavesProvidersWithTheOneThatServedThem(t *testing.T) {
+	server := useExtensionsAPI(t, true)
+	admin := &adminCalls{t: t, server: server}
+	if status, body := admin.call(http.MethodPost, "/admin/api/extensions", map[string]any{
+		"id": "home", "name": "Home", "url": "http://127.0.0.1:18888", "secret": extensionTestSecret,
+	}); status != http.StatusCreated {
+		t.Fatalf("create home: status=%d body=%+v", status, body)
+	}
+	for _, body := range []map[string]any{
+		{"registry_id": "github_copilot"},
+		{"id": "zen", "type": "opencode_zen_anonymous"},
+	} {
+		if status, answer := admin.call(http.MethodPost, "/admin/api/providers", body); status != http.StatusOK {
+			t.Fatalf("save %v: status=%d body=%+v", body, status, answer)
+		}
+	}
+	if saved := config.Get().Providers; saved["copilot"].Extension != "" || saved["zen"].Extension != "" {
+		t.Fatalf("before the second extension: copilot=%+v zen=%+v, want both naming none", saved["copilot"], saved["zen"])
+	}
+	created := expectOneAdminEvent(t, "extension.create", "admin-secret", func() {
+		if status, body := admin.call(http.MethodPost, "/admin/api/extensions", map[string]any{
+			"id": "office", "name": "Office", "url": "http://127.0.0.1:18889", "secret": extensionTestSecret,
+		}); status != http.StatusCreated {
+			t.Fatalf("create office: status=%d body=%+v", status, body)
+		}
+	})
+	if saved := config.Get().Providers; saved["copilot"].Extension != "home" || saved["zen"].Extension != "home" {
+		t.Fatalf("after the second extension: copilot=%+v zen=%+v, want both pinned to home", saved["copilot"], saved["zen"])
+	}
+	if pinned, _ := created.Detail["pinned"].([]any); !reflect.DeepEqual(pinned, []any{"copilot", "zen"}) {
+		t.Fatalf("audit detail=%+v, want the pinned providers", created.Detail)
+	}
+	_, state := admin.call(http.MethodGet, "/admin/api/state", nil)
+	if want := map[string]any{"copilot": "home", "zen": "home"}; !reflect.DeepEqual(state["provider_extensions"], want) {
+		t.Fatalf("provider_extensions=%#v, want %#v", state["provider_extensions"], want)
+	}
+	raw, err := os.ReadFile(config.ConfigFilePath())
+	if err != nil || strings.Count(string(raw), "extension: home") != 2 {
+		t.Fatalf("the configuration file does not pin both providers (err %v):\n%s", err, raw)
+	}
+	admin.expectNoneCarry(extensionTestSecret)
+}
+
 // The sign-in that configures a provider names the extension it runs
 // through, which the provider it configures then names. Without one, the
 // provider is served by the only extension, and among several it has to
