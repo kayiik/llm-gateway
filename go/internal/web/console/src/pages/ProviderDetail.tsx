@@ -6,7 +6,7 @@ import { asList, asRecord, numberValue, stringValue } from "../lib/records";
 import { circuitSummary, openCircuitsOf } from "../lib/limits";
 import { verifyModelChoices } from "../lib/models";
 import { ProviderMark } from "../components/ProviderMark";
-import { EmptyState, LoadingState, PageHeading } from "../components/PageState";
+import { DisabledReason, EmptyState, LoadingState, PageHeading } from "../components/PageState";
 import { OAuthConnectDialog } from "../components/providers/OAuthConnectDialog";
 import { Pager, defaultPageSize } from "../components/ModelPicker";
 import { RemoteSearchSelect, dataTable, useTableView, type TableColumn } from "../components/DataTable";
@@ -23,6 +23,7 @@ import {
   connectionChoices,
   evidenceLabel,
   groupFor,
+  severalInstancesReason,
   tileStatus,
   useProviderLifecycle,
 } from "../components/providers/shared";
@@ -261,7 +262,7 @@ export function ProviderDetail({ entryID, data, mode, onChanged, onBack, onOpenP
         </div>
         {mode === "admin" && !isClient && !unavailable ? <div class="detail-heading__actions">
           {supportsOAuth || configured ? <RemoteSearchSelect class="owner-select" label="Catalog owner" noun="owners" value={ownerID} emptyLabel="No private owner selected" {...principalSearch(mode, { kinds: ["human"], status: "active" })} onChange={setOwnerID} /> : null}
-          {supportsOAuth ? <button class="button button--primary" type="button" disabled={!ownerID || !oauthProviderID} title={!oauthProviderID ? "Multiple instances are configured for this integration; resolve to a single instance before adding an OAuth account." : undefined} onClick={() => setOAuthOpen(true)}><Plug size={15} /> Add account</button> : isZen ? <><button class="button button--primary" type="button" onClick={() => { setZenAPIKey(false); setConnectOpen(true); }}><Plug size={15} /> {configured ? "Edit anonymous connection" : "Connect anonymously"}</button><button class="button button--secondary" type="button" onClick={() => { setZenAPIKey(true); setConnectOpen(true); }}><ShieldCheck size={15} /> Connect with API key</button></> : <button class="button button--primary" type="button" disabled={Boolean(candidateReason)} title={candidateReason || undefined} onClick={() => setConnectOpen(true)}><Plug size={15} /> {configured ? "Edit configuration" : "Connect"}</button>}
+          {supportsOAuth ? <><button class="button button--primary" type="button" disabled={!oauthProviderID} onClick={() => setOAuthOpen(true)}><Plug size={15} /> Add account</button><DisabledReason reason={oauthProviderID ? "" : severalInstancesReason} /></> : isZen ? <><button class="button button--primary" type="button" onClick={() => { setZenAPIKey(false); setConnectOpen(true); }}><Plug size={15} /> {configured ? "Edit anonymous connection" : "Connect anonymously"}</button><button class="button button--secondary" type="button" onClick={() => { setZenAPIKey(true); setConnectOpen(true); }}><ShieldCheck size={15} /> Connect with API key</button></> : <button class="button button--primary" type="button" disabled={Boolean(candidateReason)} title={candidateReason || undefined} onClick={() => setConnectOpen(true)}><Plug size={15} /> {configured ? "Edit configuration" : "Connect"}</button>}
         </div> : mode === "portal" && !isClient && !unavailable ? <div class="detail-heading__actions">
           {supportsOAuth || configured ? <button class="button button--primary" type="button" disabled={supportsOAuth ? !oauthProviderID : providerIDs.length !== 1} title={supportsOAuth ? (!oauthProviderID ? "Multiple instances are configured for this integration; resolve to a single instance before adding an OAuth account." : undefined) : (providerIDs.length > 1 ? "Multiple instances are configured for this integration; ask an administrator to add a private connection for a specific instance." : undefined)} onClick={() => (supportsOAuth ? setOAuthOpen(true) : setPrivateKeyOpen(true))}><Plug size={15} /> {connections.length ? "Add or replace account" : "Connect"}</button> : <span class="provider-card__meta">Administrator setup required</span>}
         </div> : null}

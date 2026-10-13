@@ -88,6 +88,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .button--secondary { background: #fff; }
 .icon-button { width: 36px; min-width: 36px; height: 36px; display: inline-grid; place-items: center; padding: 0; border: 1px solid #d5dbe2; background: #fff; color: #465361; border-radius: 5px; }
 .icon-button:hover { background: #f4f6f8; }
+/* A control that cannot act now looks it, and its hover promises nothing. */
+.button:disabled, .icon-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.button:disabled:hover, .icon-button:disabled:hover { background: #fff; }
+.button--primary:disabled:hover { background: #2f65aa; }
+.button--compact { min-height: 32px; padding: 5px 10px; gap: 6px; font-size: 0.76rem; }
+.disabled-reason { display: flex; align-items: flex-start; gap: 7px; max-width: 64ch; margin: 0; color: #65707c; font-size: 0.75rem; line-height: 1.45; }
+.disabled-reason > svg { flex: 0 0 auto; margin-top: 2px; }
 .menu-button, .sidebar-close { display: none; }
 .topbar__layout { margin-left: 12px; }
 .drawer-scrim { display: none; }
@@ -263,6 +270,8 @@ tbody tr:last-child td { border-bottom: 0; }
 .owner-select select { width: 100%; min-height: 42px; padding: 10px; border: 1px solid #cfd7e0; background: #fff; color: #2e3945; border-radius: 5px; }
 .oauth-flow { display: grid; gap: 13px; padding: 16px; border: 1px solid #dce4ee; background: #f8fafc; border-radius: 5px; }
 .oauth-flow__instruction, .oauth-flow__notice { margin: 0; color: #596978; font-size: 0.78rem; line-height: 1.48; }
+.oauth-owner { display: grid; gap: 6px; }
+.oauth-owner .owner-select { margin-bottom: 0; }
 .oauth-code { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border: 1px solid #ced9e7; background: #fff; }
 .oauth-code .technical { color: #214d87; font-size: 1rem; font-weight: 750; letter-spacing: 0.08em; }
 .oauth-code a { display: inline-flex; align-items: center; gap: 5px; color: #245c9f; font-size: 0.75rem; font-weight: 650; text-decoration: none; }
@@ -549,6 +558,10 @@ td details pre { max-width: 34rem; margin: 6px 0 0; white-space: pre-wrap; font-
 :root[data-theme="dark"] .button--primary:hover { background: #5a83b3; }
 :root[data-theme="dark"] .button--danger { border-color: #704744; color: #e2aaa5; }
 :root[data-theme="dark"] .button--danger:hover { background: #312321; }
+:root[data-theme="dark"] .button:disabled:hover,
+:root[data-theme="dark"] .icon-button:disabled:hover { background: #1c2026; }
+:root[data-theme="dark"] .button--primary:disabled:hover { background: #5078a8; }
+:root[data-theme="dark"] .disabled-reason { color: #a4adb8; }
 :root[data-theme="dark"] .metric-card__icon,
 :root[data-theme="dark"] .provider-mark,
 :root[data-theme="dark"] .topbar__avatar {

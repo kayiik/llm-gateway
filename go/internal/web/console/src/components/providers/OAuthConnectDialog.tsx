@@ -8,12 +8,15 @@ import {
   LoaderCircle,
   RefreshCw,
   ShieldCheck,
+  UserPlus,
+  Users,
   X,
 } from "lucide-preact";
 import { sendJSON, type JSONRecord } from "../../lib/api";
 import type { ConsoleMode } from "../../lib/mode";
 import { principalSearch } from "../../lib/directory";
 import { asList, asRecord, numberValue, stringValue } from "../../lib/records";
+import { RemoteSearchSelect } from "../DataTable";
 import { useDialogFocus } from "../useDialogFocus";
 
 function boolValue(value: unknown): boolean {
@@ -43,7 +46,7 @@ function formatRemaining(expiresAt: number, now: number): string {
 export function OAuthConnectDialog({
   entry,
   providerID,
-  ownerID,
+  ownerID: pageOwnerID,
   data,
   mode,
   onClose,
@@ -59,13 +62,11 @@ export function OAuthConnectDialog({
   onComplete: () => Promise<void>;
   onOpenPlayground?: (modelID: string, ownerID: string) => void;
 }) {
-  // The owner is named by the server; until it answers, by its ID.
-  const [ownerName, setOwnerName] = useState(ownerID);
-  useEffect(() => {
-    setOwnerName(ownerID);
-    if (mode !== "admin" || !ownerID) return;
-    principalSearch(mode, {}).resolve(ownerID).then((name) => setOwnerName(name ?? ownerID)).catch(() => { /* The ID names the owner. */ });
-  }, [mode, ownerID]);
+  // An account belongs to a person, whom the dialog asks for: the page's
+  // catalog owner unless another is chosen here. The administrator's state
+  // names a default owner while the gateway has any active person at all.
+  const [ownerID, setOwnerID] = useState(pageOwnerID);
+  const noPeople = mode === "admin" && !stringValue(asRecord(data.default_owner).id);
   const [connectionName, setConnectionName] = useState("personal");
   const [clientID, setClientID] = useState("");
   const [clientSecret, setClientSecret] = useState("");
@@ -213,8 +214,8 @@ export function OAuthConnectDialog({
   }, [closePopup, flow, nextPollAt, poll, stage]);
 
   const start = async () => {
-    if (mode === "admin" && !ownerID) {
-      setMessage("Select an active human owner first.");
+    if (mode === "admin" && (!ownerID || noPeople)) {
+      setMessage("Choose whose account this is first.");
       return;
     }
     setStage("starting");
@@ -373,9 +374,42 @@ export function OAuthConnectDialog({
         {stage === "intro" || stage === "starting" ? (
           <div class="oauth-flow">
             {mode === "admin" ? (
-              <p class="oauth-flow__notice">
-                Human owner: {ownerName}
-              </p>
+              <>
+                {noPeople ? (
+                  <div class="notice notice--warning" role="alert">
+                    <Users size={18} aria-hidden="true" />
+                    <div>
+                      <strong>There's no person to own this account</strong>
+                      <p>Accounts belong to a person, and this gateway has none yet. Add one in Access, then come back.</p>
+                      <div class="provider-actions">
+                        <button
+                          class="button button--secondary button--compact"
+                          type="button"
+                          onClick={() => {
+                            closeDialog();
+                            window.location.hash = "access";
+                          }}
+                        >
+                          <UserPlus size={14} /> Add a person
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+                <div class="oauth-owner">
+                  <RemoteSearchSelect
+                    class="owner-select"
+                    label="Whose account is this?"
+                    noun="people"
+                    value={ownerID}
+                    emptyLabel={noPeople ? "No people yet" : "Choose a person"}
+                    disabled={noPeople || stage === "starting"}
+                    {...principalSearch(mode, { kinds: ["human"], status: "active" })}
+                    onChange={setOwnerID}
+                  />
+                  <p class="form-help">It becomes this person's private connection: their requests use it, nobody else's do.</p>
+                </div>
+              </>
             ) : (
               <p class="oauth-flow__notice">
                 This subscription remains encrypted and private to the signed-in human.
@@ -445,7 +479,7 @@ export function OAuthConnectDialog({
             <button
               class="button button--primary"
               type="button"
-              disabled={stage === "starting" || (mode === "admin" && !ownerID)}
+              disabled={stage === "starting" || (mode === "admin" && (!ownerID || noPeople))}
               onClick={() => void start()}
             >
               {stage === "starting" ? (

@@ -1,5 +1,5 @@
 import { Component, type ComponentChildren } from "preact";
-import { AlertCircle, Inbox, LoaderCircle } from "lucide-preact";
+import { AlertCircle, Inbox, Info, LoaderCircle } from "lucide-preact";
 
 type StatePanelProps = {
   title: string;
@@ -62,4 +62,11 @@ export function PageHeading({ eyebrow, title, detail, actions }: { eyebrow: stri
       {actions ? <div class="page-heading__actions">{actions}</div> : null}
     </header>
   );
+}
+
+// DisabledReason says beside controls that cannot act now why they cannot,
+// and what would let them: a disabled button cannot say so itself.
+export function DisabledReason({ reason }: { reason: string }) {
+  if (!reason) return null;
+  return <p class="disabled-reason"><Info size={14} aria-hidden="true" /><span>{reason}</span></p>;
 }

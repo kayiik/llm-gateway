@@ -7,13 +7,13 @@ import { circuitSummary, openCircuitsOf } from "../../lib/limits";
 import { principalSearch } from "../../lib/directory";
 import { RemoteSearchSelect } from "../DataTable";
 import { ProviderMark } from "../ProviderMark";
-import { EmptyState, PageHeading } from "../PageState";
+import { DisabledReason, EmptyState, PageHeading } from "../PageState";
 import { useDialogFocus } from "../useDialogFocus";
 import { OAuthConnectDialog } from "./OAuthConnectDialog";
 import { discoveryFilters, matchesDiscoveryFilter, mergeProviderRoster, providerShelves, RosterMark, RosterMetadata, RosterStatus, rosterCandidateSetup, rosterSetupEntry, rosterSetupUnavailableReason, safeRosterURL, shelfFor, useProviderRoster } from "./ProviderRoster";
 import "./provider-hub.css";
 import { RemovalBlockedNotice } from "./RemovalBlockedNotice";
-import { type ActionResult, ResultNotice, StatusBadge, boolValue, configuredProviderConfig, configuredProviderIDs, connectionChoices, tileStatus, useProviderLifecycle } from "./shared";
+import { type ActionResult, ResultNotice, StatusBadge, boolValue, configuredProviderConfig, configuredProviderIDs, connectionChoices, severalInstancesReason, tileStatus, useProviderLifecycle } from "./shared";
 
 // shelfLimit is how many providers a shelf shows until the user asks for all.
 const shelfLimit = 24;
@@ -878,6 +878,11 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
                 // through to the account flow, a mislabeled duplicate of "Add account"
                 // that adds no instance.
                 const canAddInstance = registryIDs.has(id) && methods.some((method) => CREDENTIAL_AUTH_METHODS.has(method));
+                // What keeps an action from running now is said beside it: a
+                // disabled button cannot say why itself. An account joins one
+                // instance, and an OAuth provider is checked as a person.
+                const accountReason = supportsOAuth && instanceCount > 1 ? severalInstancesReason : "";
+                const checkReason = supportsOAuth && instanceCount <= 1 && !ownerID ? "Checks run with a person's account. Choose a catalog owner at the top of the page." : "";
                 // Composition, not a rollup: a tile is an aggregator, so it reports what
                 // its instances are rather than adopting one instance's status.
                 const compositionText = Object.entries(statusCounts)
@@ -972,44 +977,50 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
                     {blocked && providerIDs.includes(blocked.providerID) ? <RemovalBlockedNotice block={blocked} label={label} connectionsHref={`#providers/${encodeURIComponent(id)}`} /> : null}
                     <footer>
                       {configured && mode === "admin" ? (
-                        <div class="provider-actions">
-                          {canAddInstance ? (
-                            <button class="button button--secondary" type="button" title="Configure another instance of this integration" onClick={() => connect(entry, "create")}>
-                              <Plug size={15} /> Add instance
-                            </button>
-                          ) : null}
-                          {supportsOAuth ? (
-                            <button class="button button--primary" type="button" disabled={!ownerID || instanceCount > 1} title={instanceCount > 1 ? "Multiple instances are configured; add an OAuth account from an unambiguous single-instance tile" : undefined} onClick={() => connect(entry)}>
-                              <Plug size={15} /> Add account
-                            </button>
-                          ) : null}
-                          {instanceCount > 1 ? (
-                            <button class="button button--secondary" type="button" title="Grid actions are ambiguous across instances; manage each instance from its own row" onClick={() => onOpenDetail(id)}>
-                              <Plug size={15} /> Manage {instanceCount} instances
-                            </button>
-                          ) : (
-                            <>
-                              <button class="button button--secondary" type="button" title="Confirm the endpoint answers the catalog API — does not run a completion" disabled={active("test") || (supportsOAuth && !ownerID)} onClick={() => void runLifecycle(entry, "test")}>
-                                <Plug size={15} /> Check reachability
+                        <>
+                          <div class="provider-actions">
+                            {canAddInstance ? (
+                              <button class="button button--secondary" type="button" title="Configure another instance of this integration" onClick={() => connect(entry, "create")}>
+                                <Plug size={15} /> Add instance
                               </button>
-                              <button class="button button--secondary" type="button" title="Refresh this provider's model catalog" disabled={active("refresh") || (supportsOAuth && !ownerID)} onClick={() => void runLifecycle(entry, "refresh")}>
-                                <RefreshCw size={15} /> Sync catalog
+                            ) : null}
+                            {supportsOAuth ? (
+                              <button class="button button--primary" type="button" disabled={instanceCount > 1} onClick={() => connect(entry)}>
+                                <Plug size={15} /> Add account
                               </button>
-                              <button class="button button--danger" type="button" disabled={active("delete")} title="Remove the configured provider and its system connection" onClick={() => void runLifecycle(entry, "delete")}>
-                                <Trash2 size={15} /> Remove
+                            ) : null}
+                            {instanceCount > 1 ? (
+                              <button class="button button--secondary" type="button" title="Grid actions are ambiguous across instances; manage each instance from its own row" onClick={() => onOpenDetail(id)}>
+                                <Plug size={15} /> Manage {instanceCount} instances
                               </button>
-                            </>
-                          )}
-                        </div>
+                            ) : (
+                              <>
+                                <button class="button button--secondary" type="button" title="Confirm the endpoint answers the catalog API — does not run a completion" disabled={active("test") || (supportsOAuth && !ownerID)} onClick={() => void runLifecycle(entry, "test")}>
+                                  <Plug size={15} /> Check reachability
+                                </button>
+                                <button class="button button--secondary" type="button" title="Refresh this provider's model catalog" disabled={active("refresh") || (supportsOAuth && !ownerID)} onClick={() => void runLifecycle(entry, "refresh")}>
+                                  <RefreshCw size={15} /> Sync catalog
+                                </button>
+                                <button class="button button--danger" type="button" disabled={active("delete")} title="Remove the configured provider and its system connection" onClick={() => void runLifecycle(entry, "delete")}>
+                                  <Trash2 size={15} /> Remove
+                                </button>
+                              </>
+                            )}
+                          </div>
+                          <DisabledReason reason={accountReason || checkReason} />
+                        </>
                       ) : mode === "portal" && !isClient ? (
                         unavailable ? (
                           <span class="provider-card__meta">Integration not available</span>
                         ) : portalRequiresAdminSetup ? (
                           <span class="provider-card__meta">Administrator setup required</span>
                         ) : (
-                          <button class="button button--primary" type="button" disabled={supportsOAuth && instanceCount > 1} title={supportsOAuth && instanceCount > 1 ? "Multiple instances are configured; add an OAuth account from an unambiguous single-instance tile" : undefined} onClick={() => connect(entry)}>
-                            <Plug size={16} /> {hasPrivateConnection ? "Add or replace account" : "Connect"}
-                          </button>
+                          <>
+                            <button class="button button--primary" type="button" disabled={Boolean(accountReason)} onClick={() => connect(entry)}>
+                              <Plug size={16} /> {hasPrivateConnection ? "Add or replace account" : "Connect"}
+                            </button>
+                            <DisabledReason reason={accountReason} />
+                          </>
                         )
                       ) : !configured && !unavailable ? (
                         <button class="button button--primary" type="button" onClick={() => connect(entry)}>

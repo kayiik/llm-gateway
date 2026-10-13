@@ -126,6 +126,10 @@ export function configuredProviderConfig(entry: JSONRecord, data: JSONRecord): J
   );
 }
 
+// An OAuth account joins one configured instance, which a provider with
+// several does not name.
+export const severalInstancesReason = "Several instances are configured, so there's no single one for an account to join. Keep one instance to add an account.";
+
 export type LifecycleOperation = "test" | "repair" | "refresh" | "verify" | "delete";
 
 // A RemovalBlock is what a refused removal says still uses a provider: the
