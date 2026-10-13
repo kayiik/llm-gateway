@@ -242,10 +242,10 @@ Only archives created in `<state>/backups` participate in
 ## Credential encryption key
 
 `LLMGW_CREDENTIAL_ENCRYPTION_KEY` encrypts the provider connections, legacy
-provider credentials, recoverable gateway keys and OAuth client profiles in
-`gateway.db`. The database records a check value sealed with that key, and every
-start verifies it before decrypting anything. A start with a different key
-fails:
+provider credentials, recoverable gateway keys, OAuth client profiles and
+extension secrets in `gateway.db`. The database records a check value sealed
+with that key, and every start verifies it before decrypting anything. A start
+with a different key fails:
 
 ```text
 initialize IAM control plane: the configured credential encryption key does not match the key this database was encrypted with
@@ -287,11 +287,12 @@ with the same environment, project and state mount, and pass it
 `LLMGW_NEW_CREDENTIAL_ENCRYPTION_KEY` as well.
 
 The command re-encrypts provider connections, legacy provider credentials,
-recoverable gateway-key copies and OAuth client profiles in one transaction,
-binds each value to the same row identity as before, and records the new key's
-check value. It prints how many values it re-encrypted in each table, never the
-values or keys. It refuses a current key that does not match the database, and
-changes nothing when any stored value fails to decrypt or any write fails.
+recoverable gateway-key copies, OAuth client profiles and extension secrets in
+one transaction, binds each value to the same row identity as before, and
+records the new key's check value. It prints how many values it re-encrypted in
+each table, never the values or keys. It refuses a current key that does not
+match the database, and changes nothing when any stored value fails to decrypt
+or any write fails.
 
 ## Backup contents
 

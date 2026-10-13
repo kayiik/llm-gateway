@@ -114,6 +114,7 @@ func TestCredentialsRekeyPrintsCountsAndTheNewKeyOpensTheState(t *testing.T) {
 	}
 	for _, line := range []string{
 		"provider_connections: 1\n", "provider_credentials: 0\n", "api_keys: 0\n", "oauth_client_profiles: 0\n",
+		"extensions: 0\n",
 	} {
 		if !strings.Contains(output.String(), line) {
 			t.Fatalf("rekey output %q lacks %q", output.String(), line)

@@ -569,6 +569,25 @@ WHERE status!='revoked'
 		version: 23,
 		sql:     `ALTER TABLE principals ADD COLUMN display_name_locked INTEGER NOT NULL DEFAULT 0;`,
 	},
+	{
+		// The companion daemons the gateway reaches the providers they serve
+		// through, which an administrator manages. The shared secret is
+		// sealed with the credential encryption key and bound to its
+		// extension's ID, as every encrypted column is bound to its row.
+		version: 24,
+		sql: `
+CREATE TABLE extensions (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    ciphertext BLOB NOT NULL,
+    nonce BLOB NOT NULL,
+    key_version INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+`,
+	},
 }
 
 func SchemaVersion() int { return len(migrations) }

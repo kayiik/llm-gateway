@@ -183,6 +183,22 @@ FROM oauth_client_profiles ORDER BY provider_id,profile`,
 			}, err
 		},
 	},
+	{
+		table: "extensions",
+		query: `
+SELECT id,ciphertext,nonce
+FROM extensions ORDER BY id`,
+		update: "UPDATE extensions SET ciphertext=?,nonce=? WHERE id=?",
+		scan: func(row rowScanner) (encryptedCredential, error) {
+			var id string
+			var ciphertext, nonce []byte
+			err := row.Scan(&id, &ciphertext, &nonce)
+			return encryptedCredential{
+				id: id, ciphertext: ciphertext, nonce: nonce, rowKey: []any{id},
+				additionalData: extensionAAD(id),
+			}, err
+		},
+	},
 }
 
 // encryptedCredentials reads every value sealed with the credential

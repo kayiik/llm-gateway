@@ -13,9 +13,10 @@ func encodedCredentialKey(key []byte) string { return base64.RawURLEncoding.Enco
 // rekeyFixture is a database with a value in every encrypted column, sealed
 // with the key configured when it was made.
 type rekeyFixture struct {
-	owner   Principal
-	issued  IssuedKey
-	profile OAuthClientProfile
+	owner     Principal
+	issued    IssuedKey
+	profile   OAuthClientProfile
+	extension Extension
 }
 
 func newRekeyFixture(t *testing.T, key []byte) rekeyFixture {
@@ -68,9 +69,15 @@ WHERE principal_id=? AND provider_id='migrated'`, ciphertext, nonce, owner.ID); 
 	if err := PutOAuthClientProfile(profile); err != nil {
 		t.Fatal(err)
 	}
+	extension, err := CreateExtension(ExtensionCreate{
+		Name: "Rekey daemon", URL: "http://127.0.0.1:18888", Secret: "fixture-extension-secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	// The command opens the database itself, as a separate process would.
 	ResetForTests()
-	return rekeyFixture{owner: owner, issued: issued, profile: profile}
+	return rekeyFixture{owner: owner, issued: issued, profile: profile, extension: extension}
 }
 
 // expectEveryValueOpensWith requires every stored encrypted value to open
@@ -111,6 +118,7 @@ func TestRekeyReencryptsEveryCredentialUnderTheNewKey(t *testing.T) {
 	}
 	want := []RekeyCount{
 		{"provider_connections", 2}, {"provider_credentials", 1}, {"api_keys", 1}, {"oauth_client_profiles", 1},
+		{"extensions", 1},
 	}
 	if !slices.Equal(counts, want) {
 		t.Fatalf("counts=%+v, want %+v", counts, want)
@@ -130,6 +138,10 @@ func TestRekeyReencryptsEveryCredentialUnderTheNewKey(t *testing.T) {
 	}
 	if profile, ok, err := OAuthClientProfileByName("google_antigravity", "consumer_manual"); err != nil || !ok || profile != fixture.profile {
 		t.Fatalf("OAuth client profile after rekey: ok=%v err=%v", ok, err)
+	}
+	if extension, ok, err := ExtensionCredentialByID(fixture.extension.ID); err != nil || !ok || extension.Err != nil ||
+		extension.Secret != "fixture-extension-secret" {
+		t.Fatalf("extension secret after rekey: ok=%v err=%v cause=%v", ok, err, extension.Err)
 	}
 	db, err := DB()
 	if err != nil {
