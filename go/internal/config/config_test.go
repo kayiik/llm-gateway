@@ -693,6 +693,40 @@ func TestPublicOAuthClientIDLoadsAndRoundTrips(t *testing.T) {
 	}
 }
 
+// The extensions come from gateway.db, which the API layer publishes into
+// the settings. Loading the configuration file keeps them, and no save
+// writes them, secret included, to the file.
+func TestExtensionsArePublishedButNeverReadOrWrittenWithTheFile(t *testing.T) {
+	keepSettings(t)
+	useTempConfig(t)
+	const file = "providers:\n  copilot:\n    type: github_copilot\n    extension: home\nextensions:\n  rogue:\n    url: http://127.0.0.1:9\n"
+	if err := os.WriteFile(ConfigFilePath(), []byte(file), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	published := map[string]Extension{"home": {ID: "home", URL: "http://127.0.0.1:18888", Secret: "fixture-extension-secret"}}
+	Update(func(s *Settings) { s.Extensions = published })
+	loaded := mustLoad(t)
+	if !reflect.DeepEqual(loaded.Extensions, published) || loaded.Providers["copilot"].Extension != "home" {
+		t.Fatalf("after a load: extensions=%v copilot=%+v, want the published extensions kept", loaded.Extensions, loaded.Providers["copilot"])
+	}
+	if _, err := UpdateAndSave(func(s *Settings) error {
+		s.Providers["copilot"].Disabled = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(ConfigFilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "fixture-extension-secret") || strings.Contains(string(raw), "http://127.0.0.1:18888") {
+		t.Fatalf("a save wrote the published extensions to the file:\n%s", raw)
+	}
+	if !reflect.DeepEqual(Get().Extensions, published) {
+		t.Fatalf("a save changed the published extensions: %v", Get().Extensions)
+	}
+}
+
 func TestAddProviderIfMissingPersistsWithoutOverwrite(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("LLMGW_STATE_DIR", dir)

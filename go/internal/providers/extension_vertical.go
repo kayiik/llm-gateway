@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
-	"os"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,10 +30,6 @@ const (
 	ExtensionTypeZenAnonymous   = "opencode_zen_anonymous"
 	ExtensionTypeAnthropicSetup = "anthropic_setup_token"
 )
-
-// defaultExtensionURL is where the extension daemon listens unless
-// LLMGW_EXTENSION_URL names another address.
-const defaultExtensionURL = "http://127.0.0.1:18888"
 
 // extensionSurfaces are the surfaces the daemon serves for providerType, the
 // only ones the extension client sends it; the facade serves natively what
@@ -57,11 +54,23 @@ func extensionSurfaces(providerType string) []core.ModelSurface {
 func isExtensionType(ptype string) bool {
 	switch strings.ToLower(strings.TrimSpace(ptype)) {
 	case ExtensionTypeCopilot, ExtensionTypeCodex, ExtensionTypeAntigravity,
-		ExtensionTypeEdgeTTS, ExtensionTypeZenAnonymous, ExtensionTypeAnthropicSetup, "extension":
+		ExtensionTypeEdgeTTS, ExtensionTypeZenAnonymous, ExtensionTypeAnthropicSetup:
 		return true
 	default:
 		return false
 	}
+}
+
+// retiredExtensionType is the type that once configured a provider as "the
+// companion daemon" without naming a provider the daemon serves. The
+// gateway refuses it in words that say what to configure instead, rather
+// than as an unknown type.
+const retiredExtensionType = "extension"
+
+func retiredExtensionTypeError(providerID string) error {
+	return &ConfigError{Msg: fmt.Sprintf(
+		"provider '%s': type 'extension' names no provider; give the provider the type of the one the companion daemon serves, such as github_copilot, and name the extension that serves it",
+		providerID)}
 }
 
 // CompanionDaemonProviders returns, sorted, the IDs of the providers
@@ -97,77 +106,171 @@ func CompanionDaemonType(cfg *config.ProviderConfig) string {
 	return ""
 }
 
-// CompanionDaemonAddress returns the address the gateway reaches the
-// companion daemon at, and whether LLMGW_EXTENSION_URL names it rather than
-// the default.
-func CompanionDaemonAddress() (string, bool) {
-	if url := strings.TrimSpace(os.Getenv("LLMGW_EXTENSION_URL")); url != "" {
-		return url, true
+// ExtensionFor returns the extension that serves providerID, a provider of a
+// type the companion daemon serves, under settings: the extension its
+// configuration names, or else the only one settings has. Any other case is
+// a configuration error naming the provider, which an administrator fixes by
+// adding an extension or choosing one. A provider not configured yet, such
+// as one a first sign-in configures, resolves as one that names none.
+func ExtensionFor(settings *config.Settings, providerID string) (config.Extension, error) {
+	var extensions map[string]config.Extension
+	named := ""
+	if settings != nil {
+		extensions = settings.Extensions
+		if cfg := settings.Providers[providerID]; cfg != nil {
+			named = strings.TrimSpace(cfg.Extension)
+		}
 	}
-	return defaultExtensionURL, false
-}
-
-// CompanionDaemonInfo asks the companion daemon which providers it serves,
-// through the client every daemon-served request shares.
-func (rt *Runtime) CompanionDaemonInfo(ctx context.Context) (extension.InfoResponse, error) {
-	client, err := rt.extensionClient()
-	if err != nil {
-		return extension.InfoResponse{}, err
+	if named != "" {
+		ext, ok := extensions[named]
+		if !ok {
+			return config.Extension{}, &ConfigError{Msg: fmt.Sprintf(
+				"provider '%s': extension '%s' is not configured; add it under Providers -> Extensions or name another extension for the provider",
+				providerID, named)}
+		}
+		ext.ID = named
+		return ext, nil
 	}
-	return client.Info(ctx)
+	switch len(extensions) {
+	case 0:
+		return config.Extension{}, &ConfigError{Msg: fmt.Sprintf(
+			"provider '%s': no extension is configured; add the companion daemon that serves it under Providers -> Extensions",
+			providerID)}
+	case 1:
+		for id, ext := range extensions {
+			ext.ID = id
+			return ext, nil
+		}
+	}
+	return config.Extension{}, &ConfigError{Msg: fmt.Sprintf(
+		"provider '%s': %d extensions are configured; choose which extension serves it", providerID, len(extensions))}
 }
 
-// CompanionDaemonSecretSet reports whether LLMGW_EXTENSION_SECRET names the
-// shared secret the gateway sends the companion daemon.
-func CompanionDaemonSecretSet() bool {
-	return extensionSecret() != ""
+// ExtensionAddress returns raw as the address of an extension, trimmed and
+// without a trailing slash, or the error that keeps the extension client
+// from using it: the client's own check, so an address the gateway stores
+// is one it can reach. The error never repeats raw, which may carry
+// credentials.
+func ExtensionAddress(raw string) (string, error) {
+	address := strings.TrimRight(strings.TrimSpace(raw), "/")
+	// The client is built only to check the address; one of its own
+	// would set up a connection pool for nothing.
+	if _, err := extension.NewClient(extension.Config{BaseURL: address, HTTPClient: http.DefaultClient}); err != nil {
+		return "", errors.New("the url must be an absolute http or https URL without credentials, query or fragment")
+	}
+	return address, nil
 }
 
-func extensionSecret() string {
-	return strings.TrimSpace(os.Getenv("LLMGW_EXTENSION_SECRET"))
-}
-
-// extensionClients holds the client of the extension daemon the environment
-// names. Each llmgw-core extension client owns its connection pool, so every
-// extension-served request shares this one, which is rebuilt only when the
-// address or the secret changes.
+// extensionClients holds the client of each extension, by ID. A client owns
+// its connection pool, so the requests to one extension share its client,
+// which is replaced when the extension's address or secret changes.
 type extensionClients struct {
-	mu     sync.Mutex
-	url    string
-	secret string
-	client *extension.Client
+	mu      sync.Mutex
+	clients map[string]*sharedExtensionClient
 }
 
-// extensionClient returns the client of the daemon at LLMGW_EXTENSION_URL,
-// authenticated with LLMGW_EXTENSION_SECRET. An address the client cannot
-// use is a configuration error, which permits failover without marking the
-// provider unhealthy.
-func (rt *Runtime) extensionClient() (*extension.Client, error) {
-	url, _ := CompanionDaemonAddress()
-	secret := extensionSecret()
+// sharedExtensionClient is the client of an extension at one address with
+// one secret, and the HTTP client it sends through, whose idle connections
+// are closed once it is replaced.
+type sharedExtensionClient struct {
+	url, secret string
+	http        *http.Client
+	client      *extension.Client
+}
 
+// newExtensionHTTPClient returns an HTTP client like the one llmgw-core's
+// extension client builds for itself: the default transport's settings and
+// no redirect followed. Built here it stays within reach, so the idle
+// connections of a replaced client can be closed. It sets no bound on how
+// long an answer takes to begin, as llmgw-core's does for an operation
+// without a timeout: every invoke and stream the gateway sends carries one
+// (see extensionTimeout), and every other operation is bounded by
+// llmgw-core's control timeout.
+func newExtensionHTTPClient() *http.Client {
+	transport := &http.Transport{}
+	if shared, ok := http.DefaultTransport.(*http.Transport); ok {
+		transport = shared.Clone()
+	}
+	return &http.Client{
+		Transport: transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+// extensionClient returns the client of ext, one of the extensions settings
+// has. A client built for another address or secret of the extension is
+// replaced, and so is the client of an extension settings no longer has;
+// their idle connections are closed, since no request reaches them again.
+// An extension the gateway cannot use, or an address the client cannot use,
+// is a configuration error, which permits failover without marking the
+// provider unhealthy; it names the extension but not its address, which may
+// carry credentials.
+func (rt *Runtime) extensionClient(settings *config.Settings, ext config.Extension) (*extension.Client, error) {
+	if ext.Unusable != "" {
+		return nil, &ConfigError{Msg: fmt.Sprintf("extension '%s' cannot be used: %s", ext.ID, ext.Unusable)}
+	}
 	cache := &rt.extensions
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
-	if cache.client != nil && cache.url == url && cache.secret == secret {
-		return cache.client, nil
+	if settings != nil {
+		for id, gone := range cache.clients {
+			if _, kept := settings.Extensions[id]; !kept {
+				gone.http.CloseIdleConnections()
+				delete(cache.clients, id)
+			}
+		}
 	}
-	client, err := extension.NewClient(extension.Config{BaseURL: url, Secret: secret})
+	current := cache.clients[ext.ID]
+	if current != nil && current.url == ext.URL && current.secret == ext.Secret {
+		return current.client, nil
+	}
+	httpClient := newExtensionHTTPClient()
+	client, err := extension.NewClient(extension.Config{BaseURL: ext.URL, Secret: ext.Secret, HTTPClient: httpClient})
 	if err != nil {
-		// The message names the variable but not its value, which may
-		// carry credentials.
-		return nil, core.NewConfigurationError(
-			"LLMGW_EXTENSION_URL is not a valid extension daemon address: it must be an absolute http or https URL without credentials, query or fragment", err)
+		// A failed rebuild leaves the last client in place, for the
+		// extension's previous address.
+		return nil, &ConfigError{Msg: fmt.Sprintf(
+			"extension '%s' has an address the gateway cannot use: it must be an absolute http or https URL without credentials, query or fragment",
+			ext.ID)}
 	}
-	cache.url, cache.secret, cache.client = url, secret, client
+	if current != nil {
+		current.http.CloseIdleConnections()
+	}
+	if cache.clients == nil {
+		cache.clients = map[string]*sharedExtensionClient{}
+	}
+	cache.clients[ext.ID] = &sharedExtensionClient{url: ext.URL, secret: ext.Secret, http: httpClient, client: client}
 	return client, nil
 }
 
+// extensionClientFor returns the client of the extension that serves
+// instance under settings.
+func (rt *Runtime) extensionClientFor(settings *config.Settings, instance string) (*extension.Client, error) {
+	ext, err := ExtensionFor(settings, instance)
+	if err != nil {
+		return nil, err
+	}
+	return rt.extensionClient(settings, ext)
+}
+
+// instanceExtensionClient is extensionClientFor under the published
+// settings, for what the facade asks the daemon outside the core Runtime:
+// its catalog and its speech.
+func (rt *Runtime) instanceExtensionClient(instance string) (*extension.Client, error) {
+	settings, _ := rt.settings.Snapshot()
+	return rt.extensionClientFor(settings, instance)
+}
+
 // extensionCoreVertical returns the coreVertical of providerType, which the
-// local extension daemon serves. The Runtime builds its verticals when it is
-// created, where an invalid LLMGW_EXTENSION_URL could not be reported, so
-// the shared client is looked up when a provider is built or a credential
-// refreshed instead.
+// companion daemon serves. The Runtime builds its verticals when it is
+// created, before any extension is known, so the client of the extension
+// that serves an instance is looked up when its provider is built or its
+// credential refreshed, under the settings of that build. The core Runtime
+// keeps both until the settings' generation changes, which every change of
+// an extension or of a provider's binding publishes, so none outlives the
+// address and secret it was built for.
 func (rt *Runtime) extensionCoreVertical(providerType string) coreVertical {
 	isOAuth := providerType == ExtensionTypeCodex || providerType == ExtensionTypeCopilot || providerType == ExtensionTypeAntigravity
 	return coreVertical{
@@ -182,16 +285,16 @@ func (rt *Runtime) extensionCoreVertical(providerType string) coreVertical {
 			}
 			return t == providerType
 		},
-		provider: func(_ *config.Settings, _ string) (core.Provider, error) {
-			client, err := rt.extensionClient()
+		provider: func(settings *config.Settings, instance string) (core.Provider, error) {
+			client, err := rt.extensionClientFor(settings, instance)
 			if err != nil {
 				return nil, err
 			}
 			return extension.NewProvider(client, extension.ProviderInfo{ID: providerType, Surfaces: extensionSurfaces(providerType)}), nil
 		},
-		refresh: func(_ *config.Settings, _ string) tokenstore.RefreshFunc {
+		refresh: func(settings *config.Settings, instance string) tokenstore.RefreshFunc {
 			return func(ctx context.Context, current tokenstore.Record) (tokenstore.Record, error) {
-				client, err := rt.extensionClient()
+				client, err := rt.extensionClientFor(settings, instance)
 				if err != nil {
 					return tokenstore.Record{}, err
 				}
@@ -467,7 +570,7 @@ func (f *ExtensionProviderFacade) ListModelsWithError() ([]ModelInfo, *Credentia
 	if err != nil {
 		return nil, nil, err
 	}
-	client, err := f.runtime.extensionClient()
+	client, err := f.runtime.instanceExtensionClient(f.instance)
 	if err != nil {
 		return nil, collector.Observation(), err
 	}
@@ -494,7 +597,7 @@ func (f *ExtensionProviderFacade) Synthesize(voice, text, rate string) ([]byte, 
 	if err != nil {
 		return nil, "", err
 	}
-	client, err := f.runtime.extensionClient()
+	client, err := f.runtime.instanceExtensionClient(f.instance)
 	if err != nil {
 		return nil, "", extensionFailure(ctx, f.instance, err)
 	}

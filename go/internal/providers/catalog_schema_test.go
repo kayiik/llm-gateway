@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"llmgw/internal/config"
 	"llmgw/internal/iam"
 
 	core "github.com/kayiik/llmgw-core"
@@ -74,6 +75,8 @@ func TestCurrentSchemaCatalogEntriesSurviveAReload(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("LLMGW_STATE_DIR", dir)
 	resetCatalogForTest(t)
+	// Copilot, if configured, is served by the gateway's only extension.
+	useExtensions(t, config.Extension{ID: "fixture-daemon", URL: "http://127.0.0.1:1", Secret: "test-secret"})
 
 	owner := core.Caller{ID: "prn_owner", Kind: core.CallerHuman}
 	Current().catalogs.store(catalogCacheKey("copilot", owner), []ModelInfo{

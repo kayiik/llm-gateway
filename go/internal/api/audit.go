@@ -87,6 +87,7 @@ func providerConfigChanges(before, after *config.ProviderConfig) []string {
 		{"vertex_request_type", before.VertexRequestType, after.VertexRequestType},
 		{"public_oauth_client_id", before.PublicOAuthClientID, after.PublicOAuthClientID},
 		{"force_api_support", before.ForceApiSupport, after.ForceApiSupport},
+		{"extension", before.Extension, after.Extension},
 	} {
 		if field.before != field.after {
 			changed = append(changed, field.name)

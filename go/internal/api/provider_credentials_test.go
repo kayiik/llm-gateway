@@ -389,13 +389,26 @@ func issueHumanProviderTestKeyForModels(
 	}
 }
 
-// serveExtensionDaemon serves mux as the extension daemon, which serves
-// Copilot and Codex for the gateway.
+// serveExtensionDaemon serves mux as the companion daemon of the gateway's
+// only extension, which serves Copilot and Codex for the gateway.
 func serveExtensionDaemon(t *testing.T, mux *http.ServeMux) {
 	t.Helper()
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
-	t.Setenv("LLMGW_EXTENSION_URL", server.URL)
+	useExtensions(t, config.Extension{ID: "daemon", URL: server.URL, Secret: "fixture-extension-secret"})
+}
+
+// useExtensions publishes extensions as the gateway's until the test ends,
+// as publishExtensions publishes the ones gateway.db stores.
+func useExtensions(t *testing.T, extensions ...config.Extension) {
+	t.Helper()
+	published := map[string]config.Extension{}
+	for _, extension := range extensions {
+		published[extension.ID] = extension
+	}
+	previous := config.Get().Extensions
+	config.Update(func(s *config.Settings) { s.Extensions = published })
+	t.Cleanup(func() { config.Update(func(s *config.Settings) { s.Extensions = previous }) })
 }
 
 func assertModelIDs(t *testing.T, baseURL, token string, want []string) {

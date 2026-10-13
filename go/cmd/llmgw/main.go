@@ -146,6 +146,12 @@ func serve() error {
 			log.Printf("close IAM database: %v", err)
 		}
 	}()
+	// The providers the companion daemon serves reach it through the
+	// extensions gateway.db stores, which the settings carry once
+	// published: before any warning is reported or request served.
+	if err := api.PublishExtensions(); err != nil {
+		return fmt.Errorf("load extensions: %w", err)
+	}
 	// The runtimes own the provider and routing state. Code that does not take
 	// them explicitly yet reaches them as the installed ones, so they are
 	// installed before anything that could use them starts.

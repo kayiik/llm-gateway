@@ -1,9 +1,14 @@
 package providers
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
+	"llmgw/internal/config"
+
+	"github.com/kayiik/llm-provider-auth/tokenstore"
+	"github.com/kayiik/llmgw-core/extension"
 	"github.com/kayiik/llmgw-core/oauthflow"
 )
 
@@ -67,15 +72,109 @@ func OAuthManualConfig(params map[string]string) ProviderAuthManualConfig {
 // instance whose registry auth adapter is adapterID. These are the flows the
 // console offers: device authorization for Copilot and Codex, the Codex CLI's
 // browser sign-in, whose loopback redirect the owner pastes back, and
-// Antigravity's gateway callback and consumer_manual profile. Each calls
-// llm-provider-auth exactly as the adapter's own flow methods do.
+// Antigravity's gateway callback and consumer_manual profile. The companion
+// daemon runs each of them, through the extension a step finds when it runs
+// (see extensionSignIn).
 func (rt *Runtime) OAuthDriver(adapterID, providerID string, method oauthflow.Method) (oauthflow.Driver, error) {
 	if isExtensionType(adapterID) {
-		client, err := rt.extensionClient()
-		if err != nil {
-			return nil, err
-		}
-		return client.OAuthDriver(adapterID), nil
+		return extensionSignIn{runtime: rt, provider: adapterID, instance: providerID}, nil
 	}
 	return nil, fmt.Errorf("provider %q does not offer %s authorization", providerID, method)
+}
+
+// oauthParamExtension is the start parameter that names the extension a
+// sign-in runs through.
+const oauthParamExtension = "extension"
+
+// WithSignInExtension returns params naming extensionID as the extension a
+// sign-in runs through from its start to its completion, whatever serves its
+// instance meanwhile, as when the sign-in configures the instance. An empty
+// extensionID names none.
+func WithSignInExtension(params map[string]string, extensionID string) map[string]string {
+	if extensionID = strings.TrimSpace(extensionID); extensionID != "" {
+		params[oauthParamExtension] = extensionID
+	} else {
+		delete(params, oauthParamExtension)
+	}
+	return params
+}
+
+// SignInExtension returns the extension WithSignInExtension named in a
+// sign-in's parameters, or "".
+func SignInExtension(params map[string]string) string {
+	return strings.TrimSpace(params[oauthParamExtension])
+}
+
+// extensionSignIn runs a daemon provider's sign-in. A flow outlives the
+// settings it started under, and its first step may come before its
+// instance is configured, so each step finds its extension when it runs:
+// the one the flow's parameters name, or else the one that serves the
+// instance. A step that finds none fails with the configuration error that
+// says why, before anything reaches a daemon.
+type extensionSignIn struct {
+	runtime  *Runtime
+	provider string
+	instance string
+}
+
+var (
+	_ oauthflow.DeviceDriver = extensionSignIn{}
+	_ oauthflow.CodeDriver   = extensionSignIn{}
+)
+
+// driver returns the daemon's driver for a step of a flow with params.
+func (s extensionSignIn) driver(params map[string]string) (*extension.OAuthDriver, error) {
+	settings, _ := s.runtime.settings.Snapshot()
+	ext, err := s.extensionOf(settings, params)
+	if err != nil {
+		return nil, err
+	}
+	client, err := s.runtime.extensionClient(settings, ext)
+	if err != nil {
+		return nil, err
+	}
+	return client.OAuthDriver(s.provider), nil
+}
+
+// extensionOf returns the extension a step of a flow with params runs
+// through under settings.
+func (s extensionSignIn) extensionOf(settings *config.Settings, params map[string]string) (config.Extension, error) {
+	named := SignInExtension(params)
+	if named == "" {
+		return ExtensionFor(settings, s.instance)
+	}
+	ext, ok := settings.Extensions[named]
+	if !ok {
+		return config.Extension{}, &ConfigError{Msg: fmt.Sprintf(
+			"the sign-in runs through extension '%s', which is no longer configured; start it again", named)}
+	}
+	ext.ID = named
+	return ext, nil
+}
+
+// Start implements oauthflow.Driver.
+func (s extensionSignIn) Start(ctx context.Context, request oauthflow.StartRequest) (oauthflow.Authorization, error) {
+	driver, err := s.driver(request.Params)
+	if err != nil {
+		return oauthflow.Authorization{}, err
+	}
+	return driver.Start(ctx, request)
+}
+
+// Poll implements oauthflow.DeviceDriver.
+func (s extensionSignIn) Poll(ctx context.Context, flow oauthflow.Flow) (oauthflow.PollResult, error) {
+	driver, err := s.driver(flow.Secrets.Params)
+	if err != nil {
+		return oauthflow.PollResult{}, err
+	}
+	return driver.Poll(ctx, flow)
+}
+
+// Exchange implements oauthflow.CodeDriver.
+func (s extensionSignIn) Exchange(ctx context.Context, flow oauthflow.Flow, code string) (tokenstore.Record, error) {
+	driver, err := s.driver(flow.Secrets.Params)
+	if err != nil {
+		return tokenstore.Record{}, err
+	}
+	return driver.Exchange(ctx, flow, code)
 }

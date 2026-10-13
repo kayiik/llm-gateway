@@ -29,6 +29,7 @@ type providerCache struct {
 var ProviderTypes = []string{
 	"openai_compatible", "anthropic", "bedrock", "github_copilot", "ollama", "litellm", "edge_tts",
 	"ai_studio", "vertex_ai", "azure_openai", "google_antigravity", "elevenlabs", "mimo",
+	"opencode_zen_anonymous", "anthropic_setup_token",
 }
 
 // instantiate builds the facade of providerID, configured as cfg, for
@@ -52,6 +53,11 @@ func (rt *Runtime) instantiate(
 	if strings.EqualFold(strings.TrimSpace(cfg.RegistryID), ExtensionTypeCodex) {
 		extensionType = ExtensionTypeCodex
 	}
+	if ptype == retiredExtensionType {
+		return nil, retiredExtensionTypeError(providerID)
+	}
+	// The facade resolves the extension that serves it on each request, so
+	// one built before its extension was configured serves once it is.
 	if isExtensionType(extensionType) {
 		return rt.newExtensionFacade(providerID, extensionType, caller, extensionTimeout(settings, extensionType, cfg)), nil
 	}
@@ -118,9 +124,6 @@ func (rt *Runtime) instantiate(
 		return rt.newAudioProviderFacade(settings, providerID, ptype)
 	case "echo":
 		return EchoProvider{}, nil
-	case "google_antigravity", "github_copilot", "openai_codex", "edge_tts", "opencode_zen_anonymous":
-		extensionType := strings.ToLower(strings.TrimSpace(cfg.Type))
-		return rt.newExtensionFacade(providerID, extensionType, caller, extensionTimeout(settings, extensionType, cfg)), nil
 	}
 	return nil, &ConfigError{Msg: fmt.Sprintf("provider '%s': unknown type '%s'", providerID, cfg.Type)}
 }

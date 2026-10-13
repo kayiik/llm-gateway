@@ -42,6 +42,9 @@ func populatedSettings() *Settings {
 		},
 	}
 	s.Savings.PriceCatalog = map[string]map[string]float64{"model-a": {"input": 0.5, "output": 1.5}}
+	s.Extensions = map[string]Extension{
+		"fixture": {ID: "fixture", URL: "http://127.0.0.1:18888", Secret: "fixture-extension-secret"},
+	}
 	return s
 }
 

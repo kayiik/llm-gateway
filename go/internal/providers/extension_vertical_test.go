@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"llmgw/internal/config"
 
@@ -19,8 +22,22 @@ import (
 	"github.com/kayiik/llmgw-core/oauthflow"
 )
 
-// extensionDaemon serves mux as the extension daemon the environment names,
-// which admits only requests that carry the shared secret test-secret.
+// useExtensions publishes extensions as the gateway's until the test ends,
+// as the API layer publishes the ones gateway.db stores.
+func useExtensions(t *testing.T, extensions ...config.Extension) {
+	t.Helper()
+	published := map[string]config.Extension{}
+	for _, extension := range extensions {
+		published[extension.ID] = extension
+	}
+	previous := config.Get().Extensions
+	config.Update(func(s *config.Settings) { s.Extensions = published })
+	t.Cleanup(func() { config.Update(func(s *config.Settings) { s.Extensions = previous }) })
+}
+
+// extensionDaemon serves mux as the companion daemon of the gateway's only
+// extension, which admits only requests that carry the extension's shared
+// secret, test-secret.
 func extensionDaemon(t *testing.T, mux *http.ServeMux) {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,8 +49,7 @@ func extensionDaemon(t *testing.T, mux *http.ServeMux) {
 		mux.ServeHTTP(w, r)
 	}))
 	t.Cleanup(server.Close)
-	t.Setenv("LLMGW_EXTENSION_URL", server.URL)
-	t.Setenv("LLMGW_EXTENSION_SECRET", "test-secret")
+	useExtensions(t, config.Extension{ID: "fixture-daemon", URL: server.URL, Secret: "test-secret"})
 }
 
 func writeExtensionJSON(t *testing.T, w http.ResponseWriter, status int, value any) {
@@ -89,7 +105,7 @@ func TestExtensionVerticalServesThroughTheDaemon(t *testing.T) {
 	extensionDaemon(t, mux)
 
 	vertical := (&Runtime{}).extensionCoreVertical(ExtensionTypeCodex)
-	provider, err := vertical.provider(nil, "instance")
+	provider, err := vertical.provider(config.Get(), "instance")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +152,7 @@ func TestExtensionVerticalServesThroughTheDaemon(t *testing.T) {
 		t.Errorf("models = %+v, %v", models, err)
 	}
 
-	refresh := vertical.refresh(nil, "instance")
+	refresh := vertical.refresh(config.Get(), "instance")
 	refreshed, err := refresh(context.Background(), tokenstore.Record{AccessToken: "old-access", RefreshToken: "old-refresh"})
 	if err != nil || refreshed.AccessToken != "refreshed-access" {
 		t.Errorf("refresh = %v, %v", refreshed, err)
@@ -154,7 +170,7 @@ func TestExtensionVerticalServesThroughTheDaemon(t *testing.T) {
 // Each provider type lists the surfaces the daemon serves for it, which are
 // the only ones the gateway sends it.
 func TestExtensionProvidersListTheSurfacesTheDaemonServes(t *testing.T) {
-	t.Setenv("LLMGW_EXTENSION_URL", "")
+	useExtensions(t, config.Extension{ID: "unused", URL: "http://127.0.0.1:1", Secret: "test-secret"})
 	chat := []core.ModelSurface{core.ModelSurfaceChatCompletions}
 	for providerType, want := range map[string][]core.ModelSurface{
 		ExtensionTypeCodex:          {core.ModelSurfaceChatCompletions, core.ModelSurfaceResponses},
@@ -164,7 +180,7 @@ func TestExtensionProvidersListTheSurfacesTheDaemonServes(t *testing.T) {
 		ExtensionTypeEdgeTTS:        {core.ModelSurfaceAudioSpeech},
 		ExtensionTypeAnthropicSetup: {core.ModelSurfaceMessages},
 	} {
-		provider, err := (&Runtime{}).extensionCoreVertical(providerType).provider(nil, providerType)
+		provider, err := (&Runtime{}).extensionCoreVertical(providerType).provider(config.Get(), providerType)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -494,56 +510,311 @@ func TestExtensionServesMessagesNativelyWhereTheDaemonDoes(t *testing.T) {
 	}
 }
 
-func TestExtensionClientIsSharedUntilTheEnvironmentChanges(t *testing.T) {
-	t.Setenv("LLMGW_EXTENSION_URL", "")
-	t.Setenv("LLMGW_EXTENSION_SECRET", "one")
-	rt := &Runtime{}
-	first, err := rt.extensionClient()
+// publishedExtensions is settings holding extensions, as the API layer
+// publishes them.
+func publishedExtensions(extensions ...config.Extension) *config.Settings {
+	published := map[string]config.Extension{}
+	for _, ext := range extensions {
+		published[ext.ID] = ext
+	}
+	return &config.Settings{Extensions: published}
+}
+
+// The requests to one extension share its client, which is replaced once
+// the extension's address or secret changes, and dropped with the
+// extension.
+func TestExtensionClientsAreSharedUntilTheirExtensionChanges(t *testing.T) {
+	rt := newRuntime(func(bool) (core.CredentialStore, error) { return core.NewMemoryCredentialStore(), nil })
+	home := config.Extension{ID: "home", URL: "http://127.0.0.1:18888", Secret: "one"}
+	office := config.Extension{ID: "office", URL: "http://127.0.0.1:18889", Secret: "one"}
+	clientOf := func(settings *config.Settings, ext config.Extension) any {
+		t.Helper()
+		client, err := rt.extensionClient(settings, ext)
+		if err != nil {
+			t.Fatalf("client of %s: %v", ext.ID, err)
+		}
+		return client
+	}
+	first := clientOf(publishedExtensions(home, office), home)
+	if again := clientOf(publishedExtensions(home, office), home); again != first {
+		t.Fatalf("client of an unchanged extension = %p, want the shared %p", again, first)
+	}
+	if other := clientOf(publishedExtensions(home, office), office); other == first {
+		t.Fatal("two extensions share a client")
+	}
+	home.Secret = "two"
+	newSecret := clientOf(publishedExtensions(home, office), home)
+	if newSecret == first {
+		t.Fatal("the client outlived a secret change")
+	}
+	home.URL = "http://127.0.0.1:18890"
+	newURL := clientOf(publishedExtensions(home, office), home)
+	if newURL == newSecret {
+		t.Fatal("the client outlived an address change")
+	}
+
+	// An address the client cannot use is a configuration error wherever
+	// the client is needed. It names the extension and not the address.
+	broken := home
+	broken.URL = "http://owner:not-a-secret@127.0.0.1:18890"
+	refused := func(where string, err error) {
+		t.Helper()
+		if !IsConfig(err) || !strings.Contains(err.Error(), "'home'") || strings.Contains(err.Error(), "not-a-secret") {
+			t.Fatalf("%s for an unusable address: %v, want a configuration error naming the extension", where, err)
+		}
+	}
+	_, err := rt.extensionClient(publishedExtensions(broken, office), broken)
+	refused("client", err)
+	_, err = rt.extensionCoreVertical(ExtensionTypeCodex).provider(publishedExtensions(broken), "codex")
+	refused("provider", err)
+	useExtensions(t, broken)
+	driver, err := rt.OAuthDriver(ExtensionTypeCodex, "codex", oauthflow.MethodDevice)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// An unset address is the default one, so naming it keeps the client.
-	t.Setenv("LLMGW_EXTENSION_URL", defaultExtensionURL)
-	if again, err := rt.extensionClient(); err != nil || again != first {
-		t.Fatalf("client for the default address = %p (err %v), want the shared %p", again, err, first)
+	_, err = driver.Start(context.Background(), oauthflow.StartRequest{Method: oauthflow.MethodDevice})
+	refused("sign-in", err)
+
+	// The failed rebuild leaves the last client in place, and an extension
+	// the settings no longer have loses its own.
+	if again := clientOf(publishedExtensions(home), home); again != newURL {
+		t.Fatalf("client after an unusable address = %p, want the shared %p", again, newURL)
+	}
+	rt.extensions.mu.Lock()
+	_, kept := rt.extensions.clients["office"]
+	rt.extensions.mu.Unlock()
+	if kept {
+		t.Fatal("the client of a removed extension was kept")
 	}
 
-	t.Setenv("LLMGW_EXTENSION_SECRET", "two")
-	newSecret, err := rt.extensionClient()
-	if err != nil || newSecret == first {
-		t.Fatalf("client after a secret change = %p (err %v), want a new one", newSecret, err)
+	// An extension the gateway cannot use, such as one whose secret does
+	// not decrypt, is a configuration error that says why.
+	unusable := config.Extension{ID: "attic", URL: "http://127.0.0.1:18891", Unusable: "its secret does not decrypt"}
+	if _, err := rt.extensionClient(publishedExtensions(unusable), unusable); !IsConfig(err) ||
+		!strings.Contains(err.Error(), "its secret does not decrypt") {
+		t.Fatalf("client of an unusable extension: %v", err)
 	}
-	t.Setenv("LLMGW_EXTENSION_URL", "http://127.0.0.1:18889")
-	newURL, err := rt.extensionClient()
-	if err != nil || newURL == newSecret {
-		t.Fatalf("client after an address change = %p (err %v), want a new one", newURL, err)
-	}
-	if again, err := rt.extensionClient(); err != nil || again != newURL {
-		t.Fatalf("client for an unchanged environment = %p (err %v), want the shared %p", again, err, newURL)
-	}
+}
 
-	// An address the client cannot use is a configuration error wherever the
-	// client is needed, and its message does not repeat the address.
-	t.Setenv("LLMGW_EXTENSION_URL", "http://owner:not-a-secret@127.0.0.1:18889")
-	var providerError *core.ProviderError
-	_, err = rt.extensionClient()
-	if !errors.As(err, &providerError) || providerError.Class != core.ProviderErrorConfiguration {
-		t.Fatalf("invalid address error = %v, want a configuration error", err)
+// A provider the companion daemon serves is served by the extension its
+// configuration names, or else by the gateway's only extension. Any other
+// case is a configuration error that names the provider and says what to
+// do.
+func TestProvidersResolveTheExtensionThatServesThem(t *testing.T) {
+	home := config.Extension{ID: "home", URL: "http://127.0.0.1:18888", Secret: "s"}
+	office := config.Extension{ID: "office", URL: "http://127.0.0.1:18889", Secret: "s"}
+	naming := func(named string, extensions ...config.Extension) *config.Settings {
+		settings := publishedExtensions(extensions...)
+		settings.Providers = map[string]*config.ProviderConfig{"copilot": {Type: ExtensionTypeCopilot, Extension: named}}
+		return settings
 	}
-	if strings.Contains(err.Error(), "not-a-secret") {
-		t.Fatalf("invalid address error repeats the address: %q", err)
+	for name, test := range map[string]struct {
+		settings *config.Settings
+		provider string
+		want     string
+		problem  []string
+	}{
+		"named":                {naming("office", home, office), "copilot", "office", nil},
+		"the only one":         {naming("", home), "copilot", "home", nil},
+		"named, the only one":  {naming("home", home), "copilot", "home", nil},
+		"not configured yet":   {naming("", office), "codex", "office", nil},
+		"none":                 {naming(""), "copilot", "", []string{"provider 'copilot'", "no extension is configured"}},
+		"no settings":          {nil, "copilot", "", []string{"provider 'copilot'", "no extension is configured"}},
+		"several, none named":  {naming("", home, office), "copilot", "", []string{"provider 'copilot'", "2 extensions are configured", "choose which extension serves it"}},
+		"named, not available": {naming("garage", home), "copilot", "", []string{"provider 'copilot'", "extension 'garage' is not configured"}},
+	} {
+		got, err := ExtensionFor(test.settings, test.provider)
+		if test.want != "" {
+			if err != nil || got.ID != test.want {
+				t.Errorf("%s: extension %q err=%v, want %q", name, got.ID, err, test.want)
+			}
+			continue
+		}
+		if !IsConfig(err) {
+			t.Errorf("%s: err=%v, want a configuration error", name, err)
+			continue
+		}
+		for _, part := range test.problem {
+			if !strings.Contains(err.Error(), part) {
+				t.Errorf("%s: %q does not say %q", name, err, part)
+			}
+		}
 	}
-	if _, err := rt.extensionCoreVertical(ExtensionTypeCodex).provider(nil, "codex"); !errors.As(err, &providerError) || providerError.Class != core.ProviderErrorConfiguration {
-		t.Fatalf("provider for an invalid address: %v, want a configuration error", err)
-	}
-	if _, err := rt.OAuthDriver(ExtensionTypeCodex, "codex", oauthflow.MethodDevice); !errors.As(err, &providerError) || providerError.Class != core.ProviderErrorConfiguration {
-		t.Fatalf("sign-in driver for an invalid address: %v, want a configuration error", err)
-	}
+}
 
-	// The failed rebuild leaves the last client in place.
-	t.Setenv("LLMGW_EXTENSION_URL", "http://127.0.0.1:18889")
-	if again, err := rt.extensionClient(); err != nil || again != newURL {
-		t.Fatalf("client after an invalid address = %p (err %v), want the shared %p", again, err, newURL)
+// What keeps a provider from its extension is its configuration issue,
+// which the console shows as setup to complete, and its catalog is not read
+// meanwhile.
+func TestAProviderWithoutAnExtensionHasAConfigurationIssue(t *testing.T) {
+	configured := config.Get().Providers
+	config.Update(func(s *config.Settings) {
+		s.Providers = map[string]*config.ProviderConfig{
+			"copilot": {Type: ExtensionTypeCopilot},
+			"plain":   {Type: "openai_compatible", BaseURL: "http://127.0.0.1:9/v1"},
+		}
+	})
+	t.Cleanup(func() { config.Update(func(s *config.Settings) { s.Providers = configured }) })
+	useExtensions(t)
+	if issue := ProviderConfigurationIssue("copilot"); !strings.Contains(issue, "no extension is configured") {
+		t.Fatalf("issue without an extension = %q", issue)
+	}
+	if issue := ProviderConfigurationIssue("plain"); issue != "" {
+		t.Fatalf("a provider no daemon serves has the issue %q", issue)
+	}
+	rt := newRuntime(func(bool) (core.CredentialStore, error) { return core.NewMemoryCredentialStore(), nil })
+	_, _, err := rt.ListProviderModelsForPrincipalWithError("copilot", gatewayCaller())
+	if code, detail, _ := CatalogFailure(err); code != "catalog_configuration_incomplete" || !strings.Contains(detail, "no extension is configured") {
+		t.Fatalf("catalog without an extension: %s %q", code, detail)
+	}
+	useExtensions(t, config.Extension{ID: "home", URL: "http://127.0.0.1:18888", Secret: "s"})
+	if issue := ProviderConfigurationIssue("copilot"); issue != "" {
+		t.Fatalf("issue with the only extension = %q", issue)
+	}
+}
+
+// The type "extension" stood for the companion daemon without naming a
+// provider it serves. A provider still configured with it is refused with a
+// configuration error that says what to configure instead.
+func TestTheRetiredExtensionTypeIsAConfigurationError(t *testing.T) {
+	configured := config.Get().Providers
+	config.Update(func(s *config.Settings) {
+		s.Providers = map[string]*config.ProviderConfig{"daemon": {Type: "extension"}}
+	})
+	t.Cleanup(func() { config.Update(func(s *config.Settings) { s.Providers = configured }) })
+	useExtensions(t, config.Extension{ID: "home", URL: "http://127.0.0.1:18888", Secret: "s"})
+	if served := CompanionDaemonProviders(config.Get()); len(served) != 0 {
+		t.Fatalf("the daemon serves %v, want none", served)
+	}
+	rt := newRuntime(func(bool) (core.CredentialStore, error) { return core.NewMemoryCredentialStore(), nil })
+	_, err := rt.GetProvider("daemon")
+	if !IsConfig(err) || !strings.Contains(err.Error(), "type 'extension'") || !strings.Contains(err.Error(), "github_copilot") {
+		t.Fatalf("provider of the retired type: %v", err)
+	}
+	if issue := ProviderConfigurationIssue("daemon"); !strings.Contains(issue, "type 'extension'") {
+		t.Fatalf("issue of the retired type = %q", issue)
+	}
+}
+
+// A request after an extension moves reaches its new address, through every
+// path that keeps a client, without a restart: the provider the core
+// Runtime built, and the facade's catalog. The replaced client's idle
+// connections are closed.
+func TestARequestAfterAnExtensionMovesReachesItsNewAddress(t *testing.T) {
+	daemon := func(calls *atomic.Int32) http.Handler {
+		mux := http.NewServeMux()
+		mux.HandleFunc("POST /extension/v1/openai_codex/invoke", func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			writeExtensionJSON(t, w, http.StatusOK, map[string]any{"choices": []any{}})
+		})
+		mux.HandleFunc("GET /extension/v1/openai_codex/models", func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			writeExtensionJSON(t, w, http.StatusOK, map[string]any{"models": []core.ModelInfo{{ID: "gpt-test"}}})
+		})
+		return mux
+	}
+	var oldCalls, newCalls atomic.Int32
+	closed := make(chan struct{}, 16)
+	old := httptest.NewUnstartedServer(daemon(&oldCalls))
+	old.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateClosed {
+			closed <- struct{}{}
+		}
+	}
+	old.Start()
+	defer old.Close()
+	moved := httptest.NewServer(daemon(&newCalls))
+	defer moved.Close()
+	useExtensions(t, config.Extension{ID: "home", URL: old.URL, Secret: "test-secret"})
+	facade := extensionFacadeFixture(t, ExtensionTypeCodex, "codex")
+	messages := []Message{{"role": "user", "content": "hi"}}
+	serve := func() {
+		t.Helper()
+		if _, err := facade.Complete("gpt-test", messages, nil); err != nil {
+			t.Fatal(err)
+		}
+		if models, _, err := facade.ListModelsWithError(); err != nil || len(models) != 1 {
+			t.Fatalf("models = %+v, %v", models, err)
+		}
+	}
+	serve()
+	if oldCalls.Load() != 2 || len(closed) != 0 {
+		t.Fatalf("before the move: old address answered %d, %d connections closed", oldCalls.Load(), len(closed))
+	}
+	// As the API layer publishes the extension's new address.
+	config.Update(func(s *config.Settings) {
+		s.Extensions = map[string]config.Extension{"home": {ID: "home", URL: moved.URL, Secret: "test-secret"}}
+	})
+	serve()
+	if oldCalls.Load() != 2 || newCalls.Load() != 2 {
+		t.Fatalf("after the move: old address answered %d, new %d; want only the new one", oldCalls.Load(), newCalls.Load())
+	}
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the replaced client kept its idle connection to the old address")
+	}
+}
+
+// A sign-in runs through the extension its start named, from its start to
+// its completion, whatever serves its provider meanwhile. One that names
+// none runs through the extension that serves its provider.
+func TestExtensionSignInRunsThroughTheExtensionItsStartNamed(t *testing.T) {
+	steps := make(chan string, 8)
+	daemon := func(name string) *httptest.Server {
+		mux := http.NewServeMux()
+		mux.HandleFunc("POST /extension/v1/openai_codex/oauth/start", func(w http.ResponseWriter, r *http.Request) {
+			steps <- name + " start"
+			writeExtensionJSON(t, w, http.StatusOK, map[string]any{"authorization": oauthflow.Authorization{
+				UserCode: "USER-1", VerificationURI: "https://example.test/verify", Secrets: oauthflow.Secrets{DeviceCode: "device-1"},
+			}})
+		})
+		mux.HandleFunc("POST /extension/v1/openai_codex/oauth/poll", func(w http.ResponseWriter, r *http.Request) {
+			steps <- name + " poll"
+			writeExtensionJSON(t, w, http.StatusOK, map[string]any{"result": oauthflow.PollResult{Status: oauthflow.PollPending}})
+		})
+		server := httptest.NewServer(mux)
+		t.Cleanup(server.Close)
+		return server
+	}
+	home, office := daemon("home"), daemon("office")
+	useExtensions(t,
+		config.Extension{ID: "home", URL: home.URL, Secret: "s"},
+		config.Extension{ID: "office", URL: office.URL, Secret: "s"},
+	)
+	rt := newRuntime(func(bool) (core.CredentialStore, error) { return core.NewMemoryCredentialStore(), nil })
+	driver, err := rt.OAuthDriver(ExtensionTypeCodex, "codex", oauthflow.MethodDevice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	params := WithSignInExtension(map[string]string{"credential_kind": "oauth"}, "office")
+	if SignInExtension(params) != "office" {
+		t.Fatalf("params %v do not name the extension", params)
+	}
+	if _, err := driver.Start(ctx, oauthflow.StartRequest{Method: oauthflow.MethodDevice, Params: params}); err != nil {
+		t.Fatal(err)
+	}
+	flow := oauthflow.Flow{Secrets: oauthflow.Secrets{DeviceCode: "device-1", Params: params}}
+	if _, err := driver.(oauthflow.DeviceDriver).Poll(ctx, flow); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"office start", "office poll"} {
+		if got := <-steps; got != want {
+			t.Fatalf("the daemons saw %q, want %q", got, want)
+		}
+	}
+	// Two extensions and none named: the provider has to choose.
+	if _, err := driver.Start(ctx, oauthflow.StartRequest{Method: oauthflow.MethodDevice}); !IsConfig(err) ||
+		!strings.Contains(err.Error(), "choose which extension serves it") {
+		t.Fatalf("start naming no extension among several: %v", err)
+	}
+	// The extension the flow started through is gone.
+	useExtensions(t, config.Extension{ID: "home", URL: home.URL, Secret: "s"})
+	if _, err := driver.(oauthflow.DeviceDriver).Poll(ctx, flow); !IsConfig(err) || !strings.Contains(err.Error(), "'office'") {
+		t.Fatalf("poll through a removed extension: %v", err)
+	}
+	if len(steps) != 0 {
+		t.Fatalf("a refused step reached a daemon: %q", <-steps)
 	}
 }
 
@@ -557,7 +828,7 @@ func TestExtensionDaemonErrorsAreBounded(t *testing.T) {
 	})
 	extensionDaemon(t, mux)
 
-	provider, err := (&Runtime{}).extensionCoreVertical(ExtensionTypeCodex).provider(nil, "codex")
+	provider, err := (&Runtime{}).extensionCoreVertical(ExtensionTypeCodex).provider(config.Get(), "codex")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -610,7 +881,9 @@ func TestExtensionOAuthDriverSignsInThroughTheDaemon(t *testing.T) {
 	})
 	extensionDaemon(t, mux)
 
-	driver, err := (&Runtime{}).OAuthDriver(ExtensionTypeCodex, "codex", oauthflow.MethodDevice)
+	driver, err := newRuntime(func(bool) (core.CredentialStore, error) {
+		return core.NewMemoryCredentialStore(), nil
+	}).OAuthDriver(ExtensionTypeCodex, "codex", oauthflow.MethodDevice)
 	if err != nil {
 		t.Fatal(err)
 	}

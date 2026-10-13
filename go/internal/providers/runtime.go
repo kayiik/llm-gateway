@@ -45,9 +45,14 @@ type Runtime struct {
 	// so the cache lives here, where tokens outlive those rebuilds.
 	gcpTokens     gcpauth.TokenCache
 	quotaAdapters quotaAdapterRegistry
-	// extensions is the client of the extension daemon, kept here so every
-	// extension-served request shares its connection pool.
+	// extensions holds the client of each extension, kept here so the
+	// requests to one extension share its connection pool.
 	extensions extensionClients
+	// settings is where the Runtime reads the published settings: the source
+	// the core Runtime notices a change through, which also serves the
+	// operations of a daemon-served provider core does not perform, its
+	// catalog, speech and sign-in steps.
+	settings coreruntime.SettingsSource[*config.Settings]
 	// catalogRefreshes are the catalog refreshes requests leave to the
 	// background; see refreshCatalogInBackground.
 	catalogRefreshes catalogRefreshes
@@ -68,6 +73,7 @@ func newRuntime(open func(oauth bool) (core.CredentialStore, error)) *Runtime {
 	runtime.instances.instances = map[string]Provider{}
 	runtime.quotaAdapters.values = map[string]QuotaAdapter{}
 	runtime.openCredentials = open
+	runtime.settings = config.Source{}
 	if s, err := open(true); err == nil {
 		runtime.credentials = s
 	}

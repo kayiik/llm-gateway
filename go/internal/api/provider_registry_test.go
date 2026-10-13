@@ -150,7 +150,7 @@ func TestOAuthProviderCreationRejectsEndpointNameCollision(t *testing.T) {
 			"CODEX": {Failover: []config.EndpointMember{{Provider: "echo", Model: "echo-default"}}},
 		}
 	})
-	if err := ensureOAuthProviderConfig("codex", "openai_codex"); err == nil {
+	if err := ensureOAuthProviderConfig("codex", "openai_codex", ""); err == nil {
 		t.Fatal("OAuth setup accepted a provider colliding with an endpoint")
 	}
 	if _, exists := config.Provider("codex"); exists {
@@ -203,7 +203,7 @@ func TestOAuthStartReportsConfigurationSaveFailures(t *testing.T) {
 		return nil
 	})
 	unchanged("provider setup", func() error {
-		if err := ensureOAuthProviderConfig("codex", "openai_codex"); !errors.As(err, new(*configSaveError)) {
+		if err := ensureOAuthProviderConfig("codex", "openai_codex", ""); !errors.As(err, new(*configSaveError)) {
 			return fmt.Errorf("err=%v", err)
 		}
 		return nil

@@ -67,6 +67,25 @@ type ProviderConfig struct {
 	Extension string `yaml:"extension,omitempty" json:"extension,omitempty"`
 }
 
+// Extension is a companion daemon the gateway reaches the providers it
+// serves through: where it listens, and the secret it shares with the
+// gateway. Extensions are stored in gateway.db, not in the configuration
+// file. The API layer publishes them into the settings when the gateway
+// starts and after every change, so a provider resolves its extension from
+// the same snapshot as the rest of its settings, and the change takes effect
+// through the generation every consumer of the settings already watches.
+type Extension struct {
+	ID  string
+	URL string
+	// Secret is the shared secret the gateway sends the daemon as a bearer
+	// token.
+	Secret string
+	// Unusable says why the gateway cannot use the extension, such as a
+	// secret the configured key does not decrypt. It is empty when the
+	// gateway can.
+	Unusable string
+}
+
 // EndpointMember is one pinned provider/model target in a failover chain.
 type EndpointMember struct {
 	Provider        string `yaml:"provider" json:"provider"`
@@ -184,6 +203,10 @@ type Settings struct {
 	Endpoints map[string]*EndpointConfig `yaml:"endpoints"`
 	Policies  BackendPolicies            `yaml:"policies"`
 	Savings   SavingsConfig              `yaml:"savings"`
+	// Extensions are the companion daemons, by ID; see Extension. They
+	// carry their secrets, so they are never read from or written to the
+	// configuration file.
+	Extensions map[string]Extension `yaml:"-" json:"-"`
 
 	// provider-type defaults
 	OpenAICompatibleBaseURL        string  `yaml:"openai_compatible_base_url"`
@@ -420,6 +443,7 @@ func cloneSettings(source *Settings) *Settings {
 		}
 		next.Savings.PriceCatalog[model] = copy
 	}
+	next.Extensions = maps.Clone(source.Extensions)
 	return &next
 }
 
@@ -729,6 +753,9 @@ func Load() (*Settings, error) {
 		return nil, fmt.Errorf("parse configuration %s: %w", ConfigFilePath(), err)
 	}
 	applyEnv(s)
+	// The extensions come from gateway.db, not from the file, so a load
+	// keeps the ones published.
+	s.Extensions = maps.Clone(state.Load().settings.Extensions)
 	publishLocked(s)
 	return s, nil
 }

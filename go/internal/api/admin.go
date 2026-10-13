@@ -294,6 +294,7 @@ func handleState(w http.ResponseWriter, r *http.Request) {
 		"provider_registry":            providers.ProviderRegistry(),
 		"provider_statuses":            statusSnapshots,
 		"companion_daemon_providers":   providers.CompanionDaemonProviders(s),
+		"provider_extensions":          providerExtensions(s),
 		"startup_warnings":             StartupWarnings(ListenHost()),
 		"projects":                     projects,
 		"provider_credentials":         credentials,
@@ -327,6 +328,10 @@ type providerBody struct {
 	PublicOAuthClientID string   `json:"public_oauth_client_id"`
 	ClearPublicOAuthID  *bool    `json:"clear_public_oauth_client_id"`
 	ForceApiSupport     flexBool `json:"force_api_support"`
+	// Extension names the extension that serves a provider the companion
+	// daemon serves. Left out, a saved provider keeps the one it names;
+	// empty, it names none and is served by the only extension.
+	Extension *string `json:"extension"`
 }
 
 // POST /admin/api/providers
@@ -396,6 +401,28 @@ func handleUpsertProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "unknown provider type "+body.Type)
 		return
 	}
+	served := providers.CompanionDaemonType(&config.ProviderConfig{Type: body.Type, RegistryID: registryID}) != ""
+	// The extension is checked and saved while no extension changes, so a
+	// provider never comes to name one a delete is removing.
+	extensionMutationMu.Lock()
+	defer extensionMutationMu.Unlock()
+	if body.Extension != nil {
+		named := strings.TrimSpace(*body.Extension)
+		if named != "" {
+			if !served {
+				writeError(w, 400, "extension is only valid for a provider the companion daemon serves")
+				return
+			}
+			if _, found, err := iam.ExtensionByID(named); err != nil {
+				writeError(w, 500, "Extension store unavailable.")
+				return
+			} else if !found {
+				writeError(w, 400, fmt.Sprintf("extension %q is not configured", named))
+				return
+			}
+		}
+		body.Extension = &named
+	}
 	if body.VertexRequestType != nil {
 		value := strings.ToLower(strings.TrimSpace(*body.VertexRequestType))
 		if body.Type != "vertex_ai" && value != "" {
@@ -445,12 +472,15 @@ func handleUpsertProvider(w http.ResponseWriter, r *http.Request) {
 		// dialog offers one credential field, so detect the document here:
 		// stored as an API key it would be sent as x-goog-api-key and rejected
 		// by Google, reporting a bad key when the real fault is the wrong kind.
+		// A setup token serves Anthropic, directly or through the companion
+		// daemon.
+		setupTokenType := strings.EqualFold(body.Type, "anthropic") || body.Type == providers.ExtensionTypeAnthropicSetup
 		setupTokenLooking := strings.HasPrefix(raw, "sk-ant-oat")
-		if setupTokenLooking && !strings.EqualFold(body.Type, "anthropic") {
-			writeError(w, 400, "an Anthropic setup token is only usable by an anthropic provider")
+		if setupTokenLooking && !setupTokenType {
+			writeError(w, 400, "an Anthropic setup token is only usable by an anthropic or anthropic_setup_token provider")
 			return
 		}
-		if strings.EqualFold(body.Type, "anthropic") && setupTokenLooking {
+		if setupTokenType && setupTokenLooking {
 			detectedKind, err := DetectAnthropicKind(body.APIKey)
 			if err != nil {
 				writeError(w, 400, err.Error())
@@ -458,8 +488,8 @@ func handleUpsertProvider(w http.ResponseWriter, r *http.Request) {
 			}
 			credentialKind = detectedKind
 		} else if credentialKind == "setup_token" {
-			if !strings.EqualFold(body.Type, "anthropic") {
-				writeError(w, 400, "an Anthropic setup token is only usable by an anthropic provider")
+			if !setupTokenType {
+				writeError(w, 400, "an Anthropic setup token is only usable by an anthropic or anthropic_setup_token provider")
 				return
 			}
 			if err := ValidateAnthropicSetupToken(body.APIKey); err != nil {
@@ -529,9 +559,15 @@ func handleUpsertProvider(w http.ResponseWriter, r *http.Request) {
 			if body.VertexRequestType == nil {
 				next.VertexRequestType = previous.VertexRequestType
 			}
+			if body.Extension == nil && served {
+				next.Extension = previous.Extension
+			}
 		}
 		if body.VertexRequestType != nil {
 			next.VertexRequestType = *body.VertexRequestType
+		}
+		if body.Extension != nil {
+			next.Extension = *body.Extension
 		}
 		s.Providers[pid] = next
 		return nil

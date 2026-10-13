@@ -76,7 +76,7 @@ func TestExtensionFailuresAreInvocationErrors(t *testing.T) {
 			}
 			extensionDaemon(t, mux)
 			if test.answer == nil {
-				t.Setenv("LLMGW_EXTENSION_URL", unreachable.URL)
+				useExtensions(t, config.Extension{ID: "fixture-daemon", URL: unreachable.URL, Secret: "test-secret"})
 			}
 			facade := extensionFacadeFixture(t, ExtensionTypeCodex, "codex")
 			messages := []Message{{"role": "user", "content": "hi"}}
@@ -108,10 +108,11 @@ func TestExtensionFailuresAreInvocationErrors(t *testing.T) {
 	})
 }
 
-// A daemon address the gateway cannot use is the gateway's configuration,
-// which no retry or other member changes.
+// An extension address the gateway cannot use, and a provider no extension
+// serves, are the gateway's configuration, which no retry or other member
+// changes.
 func TestExtensionConfigurationErrorsStayConfigErrors(t *testing.T) {
-	t.Setenv("LLMGW_EXTENSION_URL", "http://owner:not-a-secret@127.0.0.1:1")
+	useExtensions(t, config.Extension{ID: "fixture-daemon", URL: "http://owner:not-a-secret@127.0.0.1:1", Secret: "test-secret"})
 	_, err := extensionFacadeFixture(t, ExtensionTypeCodex, "codex").Complete("gpt-test", nil, nil)
 	var configErr *ConfigError
 	if !errors.As(err, &configErr) || IsInvocation(err) {
@@ -119,6 +120,11 @@ func TestExtensionConfigurationErrorsStayConfigErrors(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "not-a-secret") {
 		t.Fatalf("error repeats the address: %q", err)
+	}
+	useExtensions(t)
+	_, err = extensionFacadeFixture(t, ExtensionTypeCodex, "codex").Complete("gpt-test", nil, nil)
+	if !errors.As(err, &configErr) || IsInvocation(err) || !strings.Contains(err.Error(), "no extension is configured") {
+		t.Fatalf("error without an extension = %T %v, want a ConfigError saying so", err, err)
 	}
 }
 

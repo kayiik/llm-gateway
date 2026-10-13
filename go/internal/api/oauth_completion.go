@@ -57,7 +57,9 @@ func storeOAuthConnection(ctx context.Context, done oauthflow.Completion) (strin
 		return "", completion.fail("Could not store the private OAuth connection.")
 	}
 	if manual {
-		if detail := finishManualOAuthConnection(completion.providerRef, params[oauthParamPersistProfile] == "true", create, client); detail != "" {
+		if detail := finishManualOAuthConnection(
+			completion.providerRef, params[oauthParamPersistProfile] == "true", create, client, providers.SignInExtension(params),
+		); detail != "" {
 			revokeOAuthConnection(principalID, done.Instance, connection.Name)
 			return "", completion.fail(detail)
 		}
@@ -71,8 +73,9 @@ func storeOAuthConnection(ctx context.Context, done oauthflow.Completion) (strin
 // finishManualOAuthConnection saves what a manual sign-in settled besides the
 // connection: the consumer_manual client an administrator entered, and the
 // provider, which a manual start leaves unconfigured until the owner signs
-// in. It returns what the owner is told when either fails.
-func finishManualOAuthConnection(providerRef string, persistProfile bool, create iam.OAuthConnectionCreate, client providers.ProviderAuthManualConfig) string {
+// in, served by the extension the start named, if any. It returns what the
+// owner is told when either fails.
+func finishManualOAuthConnection(providerRef string, persistProfile bool, create iam.OAuthConnectionCreate, client providers.ProviderAuthManualConfig, extensionID string) string {
 	if persistProfile && create.OAuthProfile == antigravityManualProfile {
 		if err := iam.PutOAuthClientProfile(iam.OAuthClientProfile{
 			ProviderID: "google_antigravity", Profile: antigravityManualProfile,
@@ -83,7 +86,7 @@ func finishManualOAuthConnection(providerRef string, persistProfile bool, create
 		}
 	}
 	if _, configured := config.Get().Providers[create.ProviderID]; !configured {
-		if err := ensureOAuthProviderConfig(create.ProviderID, providerRef); err != nil {
+		if err := ensureOAuthProviderConfig(create.ProviderID, providerRef, extensionID); err != nil {
 			return err.Error()
 		}
 	}

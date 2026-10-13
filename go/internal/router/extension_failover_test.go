@@ -15,19 +15,20 @@ import (
 )
 
 // useCodexDaemon configures the codex instance, an OpenAI Codex provider the
-// companion daemon at address serves, with one attempt per target.
+// companion daemon at address serves as the gateway's only extension, with
+// one attempt per target.
 func useCodexDaemon(t *testing.T, address string) {
 	t.Helper()
-	t.Setenv("LLMGW_EXTENSION_URL", address)
-	t.Setenv("LLMGW_EXTENSION_SECRET", "")
 	policy := config.Get().Policies.Defaults
+	extensions := config.Get().Extensions
 	config.Update(func(s *config.Settings) {
 		s.Providers["codex"] = &config.ProviderConfig{Type: "openai_compatible", RegistryID: "openai_codex"}
 		s.Policies.Defaults = config.ProviderPolicy{RetryMaxAttempts: 1}
+		s.Extensions = map[string]config.Extension{"daemon": {ID: "daemon", URL: address, Secret: "fixture-secret"}}
 	})
 	providers.ResetProviders()
 	t.Cleanup(func() {
-		config.Update(func(s *config.Settings) { s.Policies.Defaults = policy })
+		config.Update(func(s *config.Settings) { s.Policies.Defaults, s.Extensions = policy, extensions })
 		providers.ResetProviders()
 	})
 }

@@ -172,6 +172,7 @@ func TestHumanCopilotCatalogReusesPrincipalScopedEntry(t *testing.T) {
 	t.Setenv("LLMGW_STATE_DIR", dir)
 	iam.ResetForTests()
 	t.Cleanup(iam.ResetForTests)
+	useExtensions(t, config.Extension{ID: "fixture-daemon", URL: "http://127.0.0.1:1", Secret: "test-secret"})
 	key := make([]byte, 32)
 	config.Update(func(s *config.Settings) {
 		s.CredentialEncryptionKey = base64.RawURLEncoding.EncodeToString(key)
@@ -196,6 +197,7 @@ func TestCopilotCatalogRevalidatesBoundCredential(t *testing.T) {
 	t.Setenv("LLMGW_STATE_DIR", dir)
 	iam.ResetForTests()
 	t.Cleanup(iam.ResetForTests)
+	useExtensions(t, config.Extension{ID: "fixture-daemon", URL: "http://127.0.0.1:1", Secret: "test-secret"})
 	key := make([]byte, 32)
 	config.Update(func(s *config.Settings) {
 		s.CredentialEncryptionKey = base64.RawURLEncoding.EncodeToString(key)

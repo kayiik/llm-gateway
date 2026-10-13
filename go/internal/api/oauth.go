@@ -110,7 +110,10 @@ func oauthAdapterFor(providerRef string) (string, string, providers.ProviderAuth
 	return providerID, adapter.CredentialKind(), adapter, nil
 }
 
-func ensureOAuthProviderConfig(providerID, providerRef string) error {
+// ensureOAuthProviderConfig configures providerID on its first sign-in, as
+// the registry entry providerRef names, served by the extension the sign-in
+// named, if any; without one it is served by the only extension.
+func ensureOAuthProviderConfig(providerID, providerRef, extensionID string) error {
 	endpointMutationMu.Lock()
 	defer endpointMutationMu.Unlock()
 	if _, exists := config.Get().Providers[providerID]; exists {
@@ -130,13 +133,50 @@ func ensureOAuthProviderConfig(providerID, providerRef string) error {
 	if !found || entry.ClientOnly {
 		return nil
 	}
+	// The extension the sign-in ran through cannot be deleted while the
+	// provider comes to name it.
+	extensionMutationMu.Lock()
+	defer extensionMutationMu.Unlock()
+	if extensionID != "" {
+		if _, configured := config.Get().Extensions[extensionID]; !configured {
+			return fmt.Errorf("extension %q is no longer configured", extensionID)
+		}
+	}
 	_, err := config.AddProviderIfMissing(providerID, &config.ProviderConfig{
 		Type: entry.RuntimeType, RegistryID: entry.ID, BaseURL: entry.DefaultBaseURL, Region: entry.DefaultRegion,
+		Extension: extensionID,
 	})
 	if err != nil {
 		return configNotSaved("Could not persist the OAuth provider configuration.", err)
 	}
 	return nil
+}
+
+// signInExtension checks the extension an administrator's sign-in start
+// names, if any, and returns the one the flow's parameters are to carry: an
+// extension that exists, and for a provider already configured the one that
+// serves it, since a start does not change that; the provider's settings do.
+func signInExtension(providerID, requested string) (string, error) {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return "", nil
+	}
+	settings := config.Get()
+	if _, configured := settings.Providers[providerID]; configured {
+		resolved, err := providers.ExtensionFor(settings, providerID)
+		if err != nil {
+			return "", err
+		}
+		if resolved.ID != requested {
+			return "", fmt.Errorf("provider %q is served by extension %q; name another extension in the provider's settings to sign in through it",
+				providerID, resolved.ID)
+		}
+		return requested, nil
+	}
+	if _, configured := settings.Extensions[requested]; !configured {
+		return "", fmt.Errorf("extension %q is not configured", requested)
+	}
+	return requested, nil
 }
 
 // configSaveError is an OAuth step that failed because the configuration
@@ -227,7 +267,7 @@ func codexClientParams(providerRef string, params map[string]string) map[string]
 
 func (s *server) startOAuthFlow(
 	principal iam.Principal, providerRef, clientID string, allowClientIDUpdate bool,
-	request *http.Request, connectionName, source, preferredFlow string,
+	request *http.Request, connectionName, source, preferredFlow, extensionID string,
 ) (response map[string]any, err error) {
 	previousCodexClientID := config.Get().OpenAICodexClientID
 	rollbackCodexClientID := oauthRegistryIDForRef(providerRef) == "openai_codex" &&
@@ -253,6 +293,9 @@ func (s *server) startOAuthFlow(
 	if !providerConfigured && !allowClientIDUpdate {
 		return nil, fmt.Errorf("Only an administrator can configure this OAuth provider.")
 	}
+	if extensionID, err = signInExtension(providerID, extensionID); err != nil {
+		return nil, err
+	}
 	_, browserSupported := adapter.(providers.BrowserProviderAuthAdapter)
 	_, deviceSupported := adapter.(providers.DeviceProviderAuthAdapter)
 	useBrowser := preferredFlow == "browser" || (!deviceSupported && browserSupported)
@@ -269,13 +312,14 @@ func (s *server) startOAuthFlow(
 		if err != nil {
 			return nil, err
 		}
+		params := codexClientParams(providerRef, oauthConnectionParams(connectionName, source, kind))
 		view, err := s.oauth.Start(ctx, oauthCaller(principal), providerID, oauthflow.MethodBrowser,
-			oauthflow.WithRedirectURI(redirectURI), oauthflow.WithParams(codexClientParams(providerRef, oauthConnectionParams(connectionName, source, kind))))
+			oauthflow.WithRedirectURI(redirectURI), oauthflow.WithParams(providers.WithSignInExtension(params, extensionID)))
 		if err != nil {
 			return nil, err
 		}
 		if !providerConfigured {
-			if err := ensureOAuthProviderConfig(providerID, providerRef); err != nil {
+			if err := ensureOAuthProviderConfig(providerID, providerRef, extensionID); err != nil {
 				return nil, err
 			}
 		}
@@ -289,13 +333,14 @@ func (s *server) startOAuthFlow(
 		return nil, fmt.Errorf("provider %q does not support device authorization", providerRef)
 	}
 	// The poll that completes a device flow names its connection.
+	params := codexClientParams(providerRef, map[string]string{oauthParamKind: kind})
 	view, err := s.oauth.Start(ctx, oauthCaller(principal), providerID, oauthflow.MethodDevice,
-		oauthflow.WithParams(codexClientParams(providerRef, map[string]string{oauthParamKind: kind})))
+		oauthflow.WithParams(providers.WithSignInExtension(params, extensionID)))
 	if err != nil {
 		return nil, err
 	}
 	if !providerConfigured {
-		if err := ensureOAuthProviderConfig(providerID, providerRef); err != nil {
+		if err := ensureOAuthProviderConfig(providerID, providerRef, extensionID); err != nil {
 			return nil, err
 		}
 	}
@@ -368,7 +413,7 @@ func manualOAuthParams(connectionName, source, kind string, client providers.Pro
 
 func (s *server) startManualOAuthFlow(
 	principal iam.Principal, providerRef, connectionName, source string,
-	input providers.ProviderAuthManualConfig, persistConfig bool,
+	input providers.ProviderAuthManualConfig, persistConfig bool, extensionID string,
 ) (map[string]any, error) {
 	providerID, kind, adapter, err := oauthAdapterFor(providerRef)
 	if err != nil {
@@ -381,9 +426,15 @@ func (s *server) startManualOAuthFlow(
 	if err != nil {
 		return nil, err
 	}
+	// The completion configures the provider, with the extension the
+	// flow's parameters carry to it.
+	if extensionID, err = signInExtension(providerID, extensionID); err != nil {
+		return nil, err
+	}
+	params := manualOAuthParams(connectionName, source, kind, configured, persistConfig)
 	startedAt := s.now()
 	view, err := s.oauth.Start(context.Background(), oauthCaller(principal), providerID, oauthflow.MethodManual,
-		oauthflow.WithParams(manualOAuthParams(connectionName, source, kind, configured, persistConfig)))
+		oauthflow.WithParams(providers.WithSignInExtension(params, extensionID)))
 	if err != nil {
 		return nil, err
 	}
@@ -394,7 +445,7 @@ func (s *server) startManualOAuthFlow(
 	}, nil
 }
 
-func (s *server) startCodexBrowserFlow(principal iam.Principal, providerRef, clientID string, allowClientIDUpdate bool, connectionName, source string) (response map[string]any, err error) {
+func (s *server) startCodexBrowserFlow(principal iam.Principal, providerRef, clientID string, allowClientIDUpdate bool, connectionName, source, extensionID string) (response map[string]any, err error) {
 	providerID, _, _, adapterErr := oauthAdapterFor(providerRef)
 	if adapterErr != nil {
 		return nil, adapterErr
@@ -402,6 +453,12 @@ func (s *server) startCodexBrowserFlow(principal iam.Principal, providerRef, cli
 	_, providerConfigured := config.Get().Providers[providerID]
 	if !providerConfigured && !allowClientIDUpdate {
 		return nil, fmt.Errorf("Only an administrator can configure this OAuth provider.")
+	}
+	// The completion configures the provider, with the extension the
+	// flow's parameters carry to it.
+	extensionID, extensionErr := signInExtension(providerID, extensionID)
+	if extensionErr != nil {
+		return nil, extensionErr
 	}
 	previousClientID := config.Get().OpenAICodexClientID
 	rollbackClientID := allowClientIDUpdate && strings.TrimSpace(clientID) != "" && strings.TrimSpace(clientID) != strings.TrimSpace(previousClientID)
@@ -431,7 +488,7 @@ func (s *server) startCodexBrowserFlow(principal iam.Principal, providerRef, cli
 	params := providers.WithOAuthClientID(manualOAuthParams(connectionName, source, kind, capturedConfig, false), capturedConfig.ClientID)
 	startedAt := s.now()
 	view, err := s.oauth.Start(context.Background(), oauthCaller(principal), providerID, oauthflow.MethodManual,
-		oauthflow.WithParams(params))
+		oauthflow.WithParams(providers.WithSignInExtension(params, extensionID)))
 	if err != nil {
 		return nil, err
 	}
@@ -795,6 +852,9 @@ type oauthStartRequest struct {
 	ClientMode     string `json:"client_mode"`
 	RedirectURI    string `json:"redirect_uri"`
 	ConnectionName string `json:"connection_name"`
+	// Extension names the extension an administrator's sign-in runs
+	// through, and that serves the provider the sign-in configures.
+	Extension string `json:"extension"`
 }
 
 func oauthStartInput(r *http.Request) oauthStartRequest {
@@ -808,6 +868,7 @@ func oauthStartInput(r *http.Request) oauthStartRequest {
 	body.ClientMode = strings.ToLower(strings.TrimSpace(body.ClientMode))
 	body.RedirectURI = strings.TrimSpace(body.RedirectURI)
 	body.ConnectionName = strings.TrimSpace(body.ConnectionName)
+	body.Extension = strings.TrimSpace(body.Extension)
 	return body
 }
 
@@ -832,12 +893,14 @@ func (s *server) handleUserOAuthStart(w http.ResponseWriter, r *http.Request) {
 	input := oauthStartInput(r)
 	var response map[string]any
 	var err error
+	// A user signs in to a provider an administrator configured, through
+	// the extension its settings name, so the user's start names none.
 	if input.Flow == "browser" && oauthRegistryIDForRef(r.PathValue("provider_id")) == "openai_codex" {
-		response, err = s.startCodexBrowserFlow(principal, r.PathValue("provider_id"), "", false, input.ConnectionName, iam.ConnectionSourceUser)
+		response, err = s.startCodexBrowserFlow(principal, r.PathValue("provider_id"), "", false, input.ConnectionName, iam.ConnectionSourceUser, "")
 	} else if input.Profile == antigravityManualProfile {
-		response, err = s.startManualOAuthFlow(principal, r.PathValue("provider_id"), input.ConnectionName, iam.ConnectionSourceUser, providers.ProviderAuthManualConfig{}, false)
+		response, err = s.startManualOAuthFlow(principal, r.PathValue("provider_id"), input.ConnectionName, iam.ConnectionSourceUser, providers.ProviderAuthManualConfig{}, false, "")
 	} else {
-		response, err = s.startOAuthFlow(principal, r.PathValue("provider_id"), "", false, r, input.ConnectionName, iam.ConnectionSourceUser, input.Flow)
+		response, err = s.startOAuthFlow(principal, r.PathValue("provider_id"), "", false, r, input.ConnectionName, iam.ConnectionSourceUser, input.Flow, "")
 	}
 	if err != nil {
 		writeOAuthStartError(w, err)
@@ -903,14 +966,14 @@ func (s *server) handlePrincipalOAuthStart(w http.ResponseWriter, r *http.Reques
 	previousCodexClientID := config.Get().OpenAICodexClientID
 	var response map[string]any
 	if input.Flow == "browser" && oauthRegistryIDForRef(r.PathValue("provider_id")) == "openai_codex" {
-		response, err = s.startCodexBrowserFlow(principal, r.PathValue("provider_id"), input.ClientID, true, input.ConnectionName, iam.ConnectionSourceAdmin)
+		response, err = s.startCodexBrowserFlow(principal, r.PathValue("provider_id"), input.ClientID, true, input.ConnectionName, iam.ConnectionSourceAdmin, input.Extension)
 	} else if input.Profile == antigravityManualProfile {
 		response, err = s.startManualOAuthFlow(principal, r.PathValue("provider_id"), input.ConnectionName, iam.ConnectionSourceAdmin, providers.ProviderAuthManualConfig{
 			ClientID: input.ClientID, ClientSecret: input.ClientSecret,
 			ClientMode: input.ClientMode, RedirectURI: input.RedirectURI,
-		}, input.ClientID != "" || input.ClientSecret != "" || input.ClientMode != "" || input.RedirectURI != "")
+		}, input.ClientID != "" || input.ClientSecret != "" || input.ClientMode != "" || input.RedirectURI != "", input.Extension)
 	} else {
-		response, err = s.startOAuthFlow(principal, r.PathValue("provider_id"), input.ClientID, true, r, input.ConnectionName, iam.ConnectionSourceAdmin, input.Flow)
+		response, err = s.startOAuthFlow(principal, r.PathValue("provider_id"), input.ClientID, true, r, input.ConnectionName, iam.ConnectionSourceAdmin, input.Flow, input.Extension)
 	}
 	auditCodexClientID(r, previousCodexClientID)
 	if err != nil {

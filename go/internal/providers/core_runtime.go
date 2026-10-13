@@ -62,11 +62,10 @@ func (rt *Runtime) coreVerticals() map[string]coreVertical {
 // each through the vertical of the instance, and the catalog service that
 // keeps its own catalogs.
 func newCoreRuntime(rt *Runtime) (*coreruntime.Runtime[*config.Settings], error) {
-	settings := config.Source{}
 	return coreruntime.New(coreruntime.Options[*config.Settings]{
-		Settings:    settings,
+		Settings:    rt.settings,
 		Providers:   rt.coreProvider,
-		Credentials: coreCredentials{runtime: rt, settings: settings},
+		Credentials: coreCredentials{runtime: rt, settings: rt.settings},
 		Refresh:     rt.coreRefresh,
 		Evidence:    credentialEvidence{},
 		// The gateway reads its catalogs through the service itself, keyed

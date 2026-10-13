@@ -20,6 +20,8 @@ func TestCatalogSnapshotSeesPrincipalScopedEntries(t *testing.T) {
 	t.Setenv("LLMGW_STATE_DIR", t.TempDir())
 	ResetProviders()
 	t.Cleanup(ResetProviders)
+	// Copilot, if configured, is served by the gateway's only extension.
+	useExtensions(t, config.Extension{ID: "fixture-daemon", URL: "http://127.0.0.1:1", Secret: "test-secret"})
 	ForgetCatalog("copilot")
 	ForgetCatalog("other")
 

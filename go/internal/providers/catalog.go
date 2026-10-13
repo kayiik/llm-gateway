@@ -85,6 +85,16 @@ func ProviderConfigurationIssue(providerID string) string {
 	if !ok {
 		return ""
 	}
+	if strings.EqualFold(strings.TrimSpace(cfg.Type), retiredExtensionType) {
+		return retiredExtensionTypeError(providerID).Error()
+	}
+	// A provider the companion daemon serves reaches it only through an
+	// extension, so one that has none can serve nothing.
+	if CompanionDaemonType(cfg) != "" {
+		if _, err := ExtensionFor(settings, providerID); err != nil {
+			return err.Error()
+		}
+	}
 	registryID := EffectiveRegistryID(providerID, cfg.RegistryID, cfg.Type)
 	entry, _ := RegistryProviderByID(registryID)
 	if entry.RequiresBaseURL && strings.TrimSpace(cfg.BaseURL) == "" {

@@ -275,7 +275,12 @@ func (s *server) handler() http.Handler {
 	mux.HandleFunc("POST /admin/api/detect", handleDetect)
 	mux.HandleFunc("GET /admin/api/usage", s.handleUsage)
 	mux.HandleFunc("GET /admin/api/telemetry", s.handleTelemetry)
-	mux.HandleFunc("GET /admin/api/companion-daemon", s.handleCompanionDaemon)
+	mux.HandleFunc("GET /admin/api/extensions", s.handleListExtensions)
+	mux.HandleFunc("POST /admin/api/extensions", s.handleCreateExtension)
+	mux.HandleFunc("POST /admin/api/extensions/check", s.handleCheckExtensionAddress)
+	mux.HandleFunc("PATCH /admin/api/extensions/{id}", s.handleUpdateExtension)
+	mux.HandleFunc("DELETE /admin/api/extensions/{id}", s.handleDeleteExtension)
+	mux.HandleFunc("POST /admin/api/extensions/{id}/check", s.handleCheckExtension)
 	mux.HandleFunc("GET /admin/api/requests", handleRequests)
 
 	return securityHeaders(assignRequestIDs(aliasMiddleware(s.observe(mux, requestLogMiddleware(anthropicErrors(limitRequestBodies(mux)))))))
