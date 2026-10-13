@@ -91,10 +91,16 @@ runtime type, beside the LiteLLM card.
 The `github_copilot`, `openai_codex`, `google_antigravity`, `edge_tts`,
 `opencode_zen_anonymous`, and `anthropic_setup_token` provider types are served
 by an optional companion daemon that is distributed separately. The gateway
-reaches it at `LLMGW_EXTENSION_URL` and authenticates with
-`LLMGW_EXTENSION_SECRET`; both are described in
-[Configuration](CONFIGURATION.md#providers-and-discovery). Without the daemon,
-those provider types are unavailable. Other provider types do not use it.
+reaches each daemon as an extension: the address it listens at and the shared
+secret it was started with, which an administrator adds on the console's
+**Providers** page or with `POST /admin/api/extensions`. The secret is stored
+only encrypted, so adding an extension needs
+[`LLMGW_CREDENTIAL_ENCRYPTION_KEY`](CONFIGURATION.md#credential-and-identity-boundary).
+A provider of one of those types is served by the extension its configuration
+names, or by the only extension there is; without one, it is unavailable.
+Other provider types do not use a daemon. The gateway no longer reads
+`LLMGW_EXTENSION_URL` or `LLMGW_EXTENSION_SECRET`, and warns at startup while
+either is set.
 
 The gateway sends each of those providers only the surfaces the daemon serves
 for it. Codex answers Chat Completions and Responses natively, so a Responses
@@ -105,14 +111,17 @@ anonymous OpenCode Zen answer Chat Completions, over which the gateway serves
 Responses and Messages. Edge TTS answers speech, and the setup-token Anthropic
 provider answers non-streaming Messages natively and no Chat Completions.
 
-The console's **Providers** page shows the daemon to administrators once a
-configured provider depends on it or `LLMGW_EXTENSION_URL` names it: where the
-gateway reaches it, whether the shared secret is set, which providers depend on
-it, whether it answers, with its version and the provider types it serves, and
-what keeps a dependent provider from working, such as a missing secret or a
-provider type the daemon does not serve. `GET /admin/api/companion-daemon`
-returns the same report. The **Overview** page lists the warnings the gateway
-logged when it started.
+For administrators, the console's **Providers** page lists the extensions
+first. Each row says what its daemon serves, its version, and whether it
+answers. Opened, an extension shows its address and last check, what needs
+attention, such as a daemon that answers without its secret, one older than
+the gateway expects, or providers that cannot serve requests while it does not
+answer, and the providers it serves, each with its state in the gateway and
+the step it still needs: adding it, an account, or a token. Those providers
+are listed there rather than on the page's other shelves. An extension is added
+or changed in place, after a check that tries the address and secret as typed,
+and is removed once no provider uses it. The **Overview** page lists the
+warnings the gateway logged when it started.
 
 ## Connection resolution
 
