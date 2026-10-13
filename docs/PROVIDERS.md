@@ -98,6 +98,8 @@ only encrypted, so adding an extension needs
 [`LLMGW_CREDENTIAL_ENCRYPTION_KEY`](CONFIGURATION.md#credential-and-identity-boundary).
 A provider of one of those types is served by the extension its configuration
 names, or by the only extension there is; without one, it is unavailable.
+Adding a second extension names the first in the providers it has been serving,
+so they keep working.
 Other provider types do not use a daemon. The gateway no longer reads
 `LLMGW_EXTENSION_URL` or `LLMGW_EXTENSION_SECRET`, and warns at startup while
 either is set.
