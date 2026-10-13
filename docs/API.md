@@ -95,8 +95,11 @@ wire carries:
 | --- | --- |
 | OpenAI-compatible, OpenAI, LiteLLM | Every field. |
 | Bedrock | `temperature`, `top_p`, `max_tokens`, `max_completion_tokens`, `stop`, `tools`, `tool_choice`, `reasoning_effort`, `metadata`, `parallel_tool_calls`, `thinking`. |
-| GitHub Copilot | The same, and `response_format`, which reaches a model Copilot serves over Responses as its `text.format`. A companion daemon that does not forward `response_format` yet drops it; update the daemon with the gateway. |
-| OpenAI Codex, Google Antigravity, anonymous OpenCode Zen, Anthropic setup token | The same, without `parallel_tool_calls` and `thinking`. |
+| Anonymous OpenCode Zen | The same. |
+| GitHub Copilot | The same, and `response_format`, which reaches a model Copilot serves over Responses as its `text.format`. |
+| OpenAI Codex | The Bedrock fields but `thinking`, and `response_format`, which reaches Codex as the Responses `text.format`. |
+| Google Antigravity | The Bedrock fields but `parallel_tool_calls`, `thinking` and `tool_choice`, and `response_format`, which reaches Antigravity as Gemini's structured output. |
+| Anthropic setup token | The Bedrock fields but `parallel_tool_calls` and `thinking`. |
 | Azure OpenAI | Every request property of Azure's v1 Chat Completions, and `service_tier`: `audio`, `frequency_penalty`, `function_call`, `functions`, `logit_bias`, `logprobs`, `max_completion_tokens`, `max_tokens`, `metadata`, `modalities`, `n`, `parallel_tool_calls`, `prediction`, `presence_penalty`, `prompt_cache_key`, `prompt_cache_retention`, `reasoning_effort`, `response_format`, `safety_identifier`, `seed`, `service_tier`, `stop`, `store`, `temperature`, `tool_choice`, `tools`, `top_logprobs`, `top_p`, `user`, `user_security_context`, `verbosity`. |
 | Chat adapted to a Responses-only model (`force_api_support`) | `temperature`, `top_p`, `max_tokens`, `max_completion_tokens`, `tools`, `tool_choice`, `metadata`, `reasoning_effort`, and `response_format` as the Responses `text.format`. |
 | Anthropic | `temperature`, `top_p`, `max_tokens`, `stop`, `tools`, `metadata`, `thinking`, `output_config`. |
@@ -109,6 +112,10 @@ only, and a `tool_choice` of `auto`, `none`, `required`, or a function the
 request declares; tool calls come back with Gemini's thought signature at
 `extra_content.google.thought_signature`, which a client returns on its next
 turn.
+
+The companion daemon's providers send these fields from its matching release
+on. An older daemon drops or refuses `response_format`; the console's
+**Extensions** shelf marks it **Update needed**.
 
 A request that sets a field whose loss would change the answer, and that its
 target does not send, fails with `400` naming the field before anything is sent;

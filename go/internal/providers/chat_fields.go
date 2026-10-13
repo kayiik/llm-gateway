@@ -167,17 +167,22 @@ func copilotChatField(field string) bool {
 }
 
 // codexChatField reports a Chat field the daemon serves Codex with: those
-// daemonChatField names, and parallel_tool_calls, which it carries over
-// Responses with tool_choice.
+// daemonChatField names, parallel_tool_calls, which it carries over
+// Responses with tool_choice, and response_format, which it sends as the
+// Responses text.format. A daemon that predates that refuses a
+// response_format as unsupported, which an endpoint moves past.
 func codexChatField(field string) bool {
-	return field == "parallel_tool_calls" || daemonChatField(field)
+	return field == "parallel_tool_calls" || field == "response_format" || daemonChatField(field)
 }
 
 // antigravityChatField reports a Chat field the daemon serves Antigravity
 // with: those daemonChatField names but tool_choice, which Cloud Code Assist
-// is not sent, so one other than "auto" would be lost.
+// is not sent, so one other than "auto" would be lost; and response_format,
+// which it sends as Gemini's structured output. A daemon that predates that
+// drops a response_format and reports the loss, which the extensions shelf
+// warns of by marking such a daemon as needing an update.
 func antigravityChatField(field string) bool {
-	return field != "tool_choice" && daemonChatField(field)
+	return field == "response_format" || (field != "tool_choice" && daemonChatField(field))
 }
 
 // responsesAdaptedChatField reports a Chat field adaptation carries over
