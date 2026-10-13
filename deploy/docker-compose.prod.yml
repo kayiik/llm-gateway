@@ -37,8 +37,6 @@ services:
       LLMGW_GITHUB_COPILOT_CACHE_DIR: /state/cache
       # Optional companion daemon serving the extension provider types; start
       # it with the same secret.
-      LLMGW_EXTENSION_URL: ${LLMGW_EXTENSION_URL:-}
-      LLMGW_EXTENSION_SECRET: ${LLMGW_EXTENSION_SECRET:-}
       # Discovery-only updates; registered providers and credentials are never reconciled.
       LLMGW_PROVIDER_ROSTER_AUTO_REFRESH: ${LLMGW_PROVIDER_ROSTER_AUTO_REFRESH:-true}
       LLMGW_PROVIDER_ROSTER_URL: ${LLMGW_PROVIDER_ROSTER_URL:-https://kayiik.github.io/llm-gateway/roster/payload.json}

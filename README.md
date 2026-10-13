@@ -64,9 +64,11 @@ The full first-run journey and Windows commands are in
 
 Releases and images now come from `github.com/kayiik/llm-gateway` and
 `ghcr.io/kayiik/llm-gateway`. Release numbering restarted, so builds from before
-the move carry higher numbers than current releases. State, keys, credentials
-and the optional companion daemon's pairing carry over unchanged, and the
-daemon can move before or after the gateway.
+the move carry higher numbers than current releases. State, keys and credentials
+carry over unchanged. The optional companion daemon is now added as an
+extension rather than through `LLMGW_EXTENSION_URL` and `LLMGW_EXTENSION_SECRET`;
+[companion daemon extensions](docs/UPGRADING.md#companion-daemon-extensions)
+has the steps.
 
 Remove `LLMGW_PROVIDER_ROSTER_URL` if it points at a previous feed; the built-in
 default names the current feed. The feed's revisions restarted with the move,

@@ -10,8 +10,10 @@ the current one from the
 [latest release](https://github.com/kayiik/llm-gateway/releases/latest), not by
 comparing numbers.
 
-State, keys, credentials and the optional companion daemon's pairing carry over
-unchanged, and the daemon can move before or after the gateway. Follow the
+State, keys and credentials carry over unchanged. The optional companion daemon
+is no longer paired through environment variables: add it as an extension after
+the upgrade, as [companion daemon extensions](#companion-daemon-extensions)
+describes. Follow the
 upgrade for your installation below, offline backup included, and remove
 `LLMGW_PROVIDER_ROSTER_URL` wherever it points at a previous feed, such as the
 environment, `.env` or `deploy/.env`. Take `deploy/docker-compose.prod.yml` from
@@ -110,6 +112,43 @@ After clearing stale shell overrides, rebuild from that clone:
 ```bash
 docker compose --env-file .env up -d --build
 ```
+
+## Companion daemon extensions
+
+The gateway no longer reads `LLMGW_EXTENSION_URL` or `LLMGW_EXTENSION_SECRET`.
+The optional companion daemon, which serves GitHub Copilot, OpenAI Codex, Google
+Antigravity, Edge TTS, anonymous OpenCode Zen and Anthropic setup tokens, is
+added as an **extension** instead: an address and a shared secret that the
+gateway stores encrypted. Until it is added, the providers it serves report that
+no extension serves them, and while either variable is still set the gateway
+logs a startup warning.
+
+An installation that used the daemon, after the offline backup and the upgrade
+above:
+
+1. Note the two values; an unset `LLMGW_EXTENSION_URL` meant
+   `http://127.0.0.1:18888`. Then remove both variables wherever they are set:
+   the environment, `.env`, `deploy/.env`, and any Compose file that passes them
+   through.
+2. Keep `LLMGW_CREDENTIAL_ENCRYPTION_KEY` set; the gateway stores the secret
+   only encrypted.
+3. Add the daemon on the console's **Providers** page, under **Extensions → Add
+   extension**, with that address and secret, or with the admin API:
+
+```bash
+curl -fsS https://<gateway-host>/admin/api/extensions \
+  -H "Authorization: Bearer <administrator key>" \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "Companion daemon", "url": "<the old LLMGW_EXTENSION_URL>", "secret": "<the old LLMGW_EXTENSION_SECRET>"}'
+```
+
+4. Upgrade the daemon to the release that the gateway's release notes name. The
+   console marks an older daemon **Update needed**.
+
+With one extension, every provider the daemon serves uses it. With several, each
+provider names the extension that serves it, and adding a second extension keeps
+the existing providers with the first. A rollback to a release from before
+extensions needs the two variables again.
 
 ## Current compatibility aliases
 

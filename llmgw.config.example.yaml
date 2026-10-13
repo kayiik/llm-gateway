@@ -5,32 +5,37 @@
 # plaintext owner-only secrets.json seed; protect state and backups accordingly.
 
 providers:
-  copilot:
-    type: github_copilot            # sign in as a human owner via the console
   openrouter:
     type: openai_compatible
     base_url: https://openrouter.ai/api/v1
-    # api_key: ${ENV:OPENROUTER_API_KEY}   # or enter it in the /admin panel
+    # api_key: ${ENV:OPENROUTER_API_KEY}   # or enter it in the console
   anthropic-direct:
     type: anthropic
     base_url: https://api.anthropic.com
   ollama:
     type: ollama                    # uses LLMGW_OLLAMA_BASE_URL (default :11434)
+  # GitHub Copilot, OpenAI Codex and the other providers of the optional
+  # companion daemon serve requests once the daemon is added as an extension
+  # on the console's Providers page, where a person also signs in:
+  # copilot:
+  #   type: github_copilot
+  #   extension: <extension-id>     # only needed when there are several
 
 # Endpoints = named, ordered failover chains of real, pinned models. Request an
 # endpoint name and it cascades on 429/5xx/timeout. You can also address any real
-# model directly as "<provider>/<model>" (e.g. copilot/gpt-4o-mini).
+# model directly as "<provider>/<model>" (e.g. openrouter/<model-id>).
 #
 # "endpoints:" is the canonical key. The pre-rename "categories:" key remains
 # a compatibility alias for older config files; no removal release is scheduled.
 endpoints:
   smart:
     failover:
-      - { provider: copilot, model: <copilot-model-id> }
+      - { provider: anthropic-direct, model: <anthropic-model-id> }
       - { provider: openrouter, model: <openrouter-model-id> }
   cheap:
     failover:
-      - { provider: copilot, model: <small-model-id> }
+      - { provider: ollama, model: <local-model-id> }
+      - { provider: openrouter, model: <small-model-id> }
 
 policies:
   defaults:
@@ -38,7 +43,7 @@ policies:
     circuit_failure_threshold: 4
     circuit_cooldown_seconds: 30
   overrides:
-    copilot:
+    openrouter:
       circuit_failure_threshold: 3
       circuit_cooldown_seconds: 60
 
