@@ -40,7 +40,7 @@ func setupCancellationTest(t *testing.T, upstreamURL string) *config.Principal {
 			"cancel-route": {Failover: []config.EndpointMember{
 				{Provider: "first", Model: "model"},
 				{Provider: "second", Model: "model"},
-			}},
+			}, Ingress: []string{"/v1/chat/completions", "/v1/responses", "/v1/messages"}, AllowAdaptation: true},
 		}
 		settings.Policies.Defaults = config.ProviderPolicy{
 			RetryMaxAttempts: 3, RetryInitialBackoffSeconds: 0.01,
@@ -218,8 +218,7 @@ func TestAdaptedCodingStreamsCancelWithoutFailover(t *testing.T) {
 	tests := []struct {
 		name, path, body, upstreamPath, surface, partial string
 		terminals                                        []string
-		// served is a stream that opened before the client left: Chat over
-		// Responses opens only once the whole Responses answer arrived.
+		// served marks the incremental stream that opens before the client leaves.
 		served bool
 	}{
 		{
@@ -228,6 +227,7 @@ func TestAdaptedCodingStreamsCancelWithoutFailover(t *testing.T) {
 			upstreamPath: "/responses", surface: "/responses",
 			partial:   `data: {"type":"response.output_text.delta","sequence_number":1,"response_id":"resp_1","item_id":"msg_1","output_index":0,"content_index":0,"delta":"partial"}` + "\n\n",
 			terminals: []string{"[DONE]"},
+			served:    true,
 		},
 		{
 			name: "Responses to Chat", path: "/v1/responses",

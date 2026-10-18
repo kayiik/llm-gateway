@@ -282,7 +282,8 @@ func TestCompleteTranslatesGeminiShape(t *testing.T) {
 
 	choices, _ := out["choices"].([]any)
 	message, _ := choices[0].(map[string]any)["message"].(map[string]any)
-	if message["content"] != "VERTEX OK" || out["model"] != "gemini-3.5-flash" || out["id"] != "chatcmpl-google" {
+	id, _ := out["id"].(string)
+	if message["content"] != "VERTEX OK" || out["model"] != "gemini-3.5-flash" || id == "" {
 		t.Fatalf("completion = %+v", out)
 	}
 	// The completion is decoded JSON now, so its numbers are float64.

@@ -177,6 +177,7 @@ backup, recovery, release verification, and rollback.
 - [Limitations](docs/LIMITATIONS.md)
 - [Security policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
+- [Fast local testing](docs/TESTING.md)
 - [Release notes](https://github.com/kayiik/llm-gateway/releases): each
   release's changes, upgrade notes and verified artifacts
 

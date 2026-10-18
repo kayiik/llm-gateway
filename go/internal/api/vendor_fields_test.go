@@ -16,11 +16,8 @@ import (
 	"llmgw/internal/router"
 )
 
-// Gemini attaches a thought signature to each tool call and needs it back on
-// the next turn. The gateway is stateless: the client keeps the history and
-// replays it to whichever target serves the next turn, and no other surface
-// has a place for a signature. These tests pin that a history or a response
-// carrying one is still served across surfaces instead of being rejected.
+// Gemini signatures are replay state. Native Chat can preserve them, while a
+// conversion with no reviewed carrier must refuse rather than silently drop it.
 
 // signatureToolCall carries a signature in each place a Gemini-backed
 // provider puts one.
@@ -130,7 +127,7 @@ func setupVendorFieldFixture(t *testing.T) (http.Handler, *vendorFieldUpstream) 
 	return NewServer(Runtime{}), upstream
 }
 
-func TestChatHistoryWithThoughtSignaturesIsServedByTranslatedTargets(t *testing.T) {
+func TestChatHistoryWithThoughtSignaturesRefusesLossyTargets(t *testing.T) {
 	handler, upstream := setupVendorFieldFixture(t)
 	tools := []any{map[string]any{"type": "function", "function": map[string]any{
 		"name": "lookup", "parameters": map[string]any{"type": "object"},
@@ -150,22 +147,21 @@ func TestChatHistoryWithThoughtSignaturesIsServedByTranslatedTargets(t *testing.
 		{"chat to responses stream", "adapt/responses-only", "/r/responses", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			w := apiSmokeRequest(handler, "/v1/chat/completions", map[string]any{
+			w := apiSmokeRequestWithCompatibility(handler, "/v1/chat/completions", map[string]any{
 				"model": tc.model, "stream": tc.stream, "messages": history, "tools": tools,
-			})
-			if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"content":"ok"`) {
+			}, "allow")
+			if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "thought_signature") {
 				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 			}
-			sent, _ := json.Marshal(upstream.take(tc.path))
-			if !strings.Contains(string(sent), "call_fixture") {
-				t.Fatalf("the tool call did not reach the upstream: %s", sent)
+			if sent := upstream.take(tc.path); sent != nil {
+				t.Fatalf("lossy history reached the upstream: %v", sent)
 			}
 		})
 	}
 }
 
-func TestChatResponseWithThoughtSignaturesIsServedToTranslatedClients(t *testing.T) {
-	handler, _ := setupVendorFieldFixture(t)
+func TestChatResponseWithThoughtSignaturesRefusesLossyConversions(t *testing.T) {
+	handler, upstream := setupVendorFieldFixture(t)
 	for _, tc := range []struct {
 		name, path, want string
 		payload          map[string]any
@@ -180,14 +176,13 @@ func TestChatResponseWithThoughtSignaturesIsServedToTranslatedClients(t *testing
 		{"responses", "/v1/responses", `"type":"function_call"`, map[string]any{
 			"model": "chat/gemini-fixture", "input": "Look it up",
 			"tools": []any{map[string]any{
-				"type": "function", "name": "lookup", "parameters": map[string]any{"type": "object"},
+				"type": "function", "name": "lookup", "parameters": map[string]any{"type": "object"}, "strict": false,
 			}},
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			w := apiSmokeRequest(handler, tc.path, tc.payload)
-			if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), tc.want) ||
-				!strings.Contains(w.Body.String(), "call_fixture") {
+			w := apiSmokeRequestWithCompatibility(handler, tc.path, tc.payload, "allow")
+			if w.Code != http.StatusBadRequest || strings.Contains(w.Body.String(), tc.want) || upstream.take("/c/chat/completions") == nil {
 				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 			}
 		})
@@ -210,13 +205,13 @@ func TestChatSystemCacheControlReachesAnthropicAsSystemBlocks(t *testing.T) {
 		{"no breakpoint", []any{stable, volatile}, "Stable instructions\nVolatile note"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			w := apiSmokeRequest(handler, "/v1/chat/completions", map[string]any{
+			w := apiSmokeRequestWithCompatibility(handler, "/v1/chat/completions", map[string]any{
 				"model": "native/claude-fixture",
 				"messages": []any{
 					map[string]any{"role": "system", "content": tc.system},
 					map[string]any{"role": "user", "content": "hi"},
 				},
-			})
+			}, "allow")
 			if w.Code != http.StatusOK {
 				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 			}
@@ -224,5 +219,19 @@ func TestChatSystemCacheControlReachesAnthropicAsSystemBlocks(t *testing.T) {
 				t.Fatalf("system=%#v, want %#v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestNativeChatKeepsThoughtSignatures(t *testing.T) {
+	handler, upstream := setupVendorFieldFixture(t)
+	response := apiSmokeRequest(handler, "/v1/chat/completions", map[string]any{
+		"model": "chat/gemini-fixture", "messages": []any{map[string]any{"role": "assistant", "content": nil, "tool_calls": []any{signatureToolCall()}}},
+	})
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "fixture-signature") {
+		t.Fatalf("native response state changed: status=%d body=%s", response.Code, response.Body.String())
+	}
+	sent, _ := json.Marshal(upstream.take("/c/chat/completions"))
+	if !strings.Contains(string(sent), "fixture-signature") {
+		t.Fatalf("native request state changed: %s", sent)
 	}
 }

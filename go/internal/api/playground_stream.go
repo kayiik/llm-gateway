@@ -23,7 +23,7 @@ import (
 func streamPlayground(
 	w http.ResponseWriter, r *http.Request, payload map[string]any, body playgroundBody,
 	principal *config.Principal, project iam.Project, source string, surface core.ModelSurface,
-	targets []router.Target, started time.Time,
+	prepared *router.PreparedRequest, started time.Time,
 ) {
 	ctx, sink := router.WithAttemptTrace(r.Context())
 	relay := &playgroundRelay{
@@ -31,32 +31,15 @@ func streamPlayground(
 		sink: sink, started: started, assembler: newPlaygroundAssembler(surface),
 	}
 	endpoint := "playground." + playgroundSurfaceName(surface)
-	switch surface {
-	case core.ModelSurfaceResponses:
-		streamResponsesSSE(relay, ctx, targets, payload, payload, body.Model, principal, started, endpoint)
-	case core.ModelSurfaceMessages:
-		var request anthropicRequest
-		raw, _ := json.Marshal(payload)
-		_ = json.Unmarshal(raw, &request)
-		native, msgs, kw, lossErr := messagesStreamPlan(targets, principal, payload, &request)
-		if lossErr != nil {
-			writeError(w, http.StatusBadRequest, "Streaming cannot preserve Anthropic request: "+lossErr.Error())
-			return
-		}
-		if native {
-			streamNativeMessagesSSE(relay, ctx, targets, payload, body.Model, principal, started, endpoint)
-		} else {
-			streamMessagesSSE(relay, ctx, targets, msgs, body.Model, principal, kw, started, endpoint)
-		}
-	default:
-		var request chatRequest
-		raw, _ := json.Marshal(payload)
-		_ = json.Unmarshal(raw, &request)
-		if len(request.Messages) == 0 {
-			writeError(w, http.StatusBadRequest, "at least one message is required")
-			return
-		}
-		streamChatSSE(relay, ctx, targets, providerMessages(request.Messages), body.Model, principal, chatKwargs(&request), endpoint, started)
+	stream, served, trace, err := prepared.Stream(governed(ctx, principal), body.Model)
+	if err != nil {
+		recordFailureUsage(endpoint, body.Model, principal, upstreamErrorStatus(err), "upstream", started)
+		writeUpstreamError(relay, err)
+	} else {
+		relay.served = *served
+		input := preparedInput{endpoint: endpoint, model: body.Model, surface: surface, payload: payload, publicPayload: payload, stream: true, started: started}
+		setPreparedDiagnostics(relay, input, prepared, served, trace, "")
+		streamPreparedInference(relay, r.WithContext(ctx), stream, served, principal, input)
 	}
 	detail := map[string]any{"model": body.Model, "surface": playgroundSurfacePath(surface), "source": source, "stream": true}
 	switch relay.finish() {
@@ -222,7 +205,7 @@ func (p *playgroundRelay) route() map[string]any {
 	path := playgroundSurfacePath(p.surface)
 	return map[string]any{
 		"served":         map[string]any{"provider": p.served.Provider, "model": p.served.Model},
-		"transport_mode": targetTransportMode(p.served, callerOf(p.principal), path),
+		"transport_mode": p.header.Get(transportModeHeader),
 		"surface":        path,
 	}
 }

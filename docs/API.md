@@ -69,6 +69,32 @@ credential and policy. It is not a global list of every model a provider sells.
 
 ## Chat Completions
 
+### Native and compatible execution
+
+Direct `provider/model` requests and bare aliases default to the deployment's
+actual native API. An OpenAI-shaped adapter in front of Google `generateContent`
+or Ollama `/api/chat` is an adaptation, even when ordinary text converts without
+loss. A deployment implementing Chat Completions itself is native regardless of
+its provider brand. Unknown underlying APIs are not assumed to be native.
+
+`X-LLMGW-Compatibility: allow` explicitly permits an assessed conversion for a
+direct request; `deny` requires native execution. Named routes instead use their
+configured `ingress` and `allow_adaptation` contract. Request `allow` cannot
+broaden that contract, while `deny` can tighten it. Repeated, empty, combined or
+invalid policy values fail before inference. These rules also apply to the
+built-in playground.
+
+`X-LLMGW-Transport-Mode: transparent` is a separate, stronger requirement for an
+exact, catalog-confirmed target and wire-preserving transport. It cannot be
+combined with compatibility `allow`; transparent streaming remains unsupported.
+Actual-native execution does not itself promise byte-for-byte wire preservation.
+
+Preparation checks the concrete payload before consuming an inference request
+slot. Execution uses that selected API and mapping, bound to the caller,
+credential scope and configuration generation. A changed binding requires a new
+request. It does not silently switch APIs or strip rejected controls. Once a
+stream opens, a failure cannot replay it against another target.
+
 The core profile supports non-streaming and SSE streaming, ordinary chat
 messages, function tools, tool calls, usage normalization, vision filtering, and
 request cancellation. A streaming request's `stream_options` reaches the
@@ -78,9 +104,10 @@ starts. Chat Completions, Responses, and Messages accept request-level controls
 for the failover deadline and member order; see
 [failover budget and affinity](ROUTING.md#failover-budget-and-affinity).
 
-Opt-in Chat-to-Responses adaptation uses `force_api_support` and catalog
-`supported_surfaces`. Adapted non-streaming responses include
-`X-LLMGW-Adapted`. Do not assume every streaming path includes that header.
+`force_api_support` is a legacy endpoint-rewrite control, not compatibility
+authorization. It cannot override native-only policy. `X-LLMGW-Transport-Mode`
+describes the selected native or translated execution; a model listing or an
+empty conversion-loss report does not prove native support.
 
 ### Request fields
 
@@ -101,7 +128,7 @@ wire carries:
 | Google Antigravity | The Bedrock fields but `parallel_tool_calls`, `thinking` and `tool_choice`, and `response_format`, which reaches Antigravity as Gemini's structured output. |
 | Anthropic setup token | The Bedrock fields but `parallel_tool_calls` and `thinking`. |
 | Azure OpenAI | Every request property of Azure's v1 Chat Completions, and `service_tier`: `audio`, `frequency_penalty`, `function_call`, `functions`, `logit_bias`, `logprobs`, `max_completion_tokens`, `max_tokens`, `metadata`, `modalities`, `n`, `parallel_tool_calls`, `prediction`, `presence_penalty`, `prompt_cache_key`, `prompt_cache_retention`, `reasoning_effort`, `response_format`, `safety_identifier`, `seed`, `service_tier`, `stop`, `store`, `temperature`, `tool_choice`, `tools`, `top_logprobs`, `top_p`, `user`, `user_security_context`, `verbosity`. |
-| Chat adapted to a Responses-only model (`force_api_support`) | `temperature`, `top_p`, `max_tokens`, `max_completion_tokens`, `tools`, `tool_choice`, `metadata`, `reasoning_effort`, and `response_format` as the Responses `text.format`. |
+| Explicitly permitted Chat adaptation to a Responses-only model | `temperature`, `top_p`, `max_tokens`, `max_completion_tokens`, `tools`, `tool_choice`, `metadata`, `reasoning_effort`, and `response_format` as the Responses `text.format`, subject to assessment of their concrete values. |
 | Anthropic | `temperature`, `top_p`, `max_tokens`, `stop`, `tools`, `metadata`, `thinking`, `output_config`. |
 | Google AI Studio, Vertex AI | `temperature`, `max_tokens`, `tools`, `tool_choice`, and a `response_format` of type `json_object` or `json_schema`, which reaches Gemini as its structured output, the schema as written. |
 | Ollama | `temperature`, `top_p`, `max_tokens`, `tools`. |
@@ -120,11 +147,12 @@ on. An older daemon drops or refuses `response_format`; the console's
 A request that sets a field whose loss would change the answer, and that its
 target does not send, fails with `400` naming the field before anything is sent;
 for example `response_format`, `n` above 1, `logprobs`, `stop`, or `tools` on a
-target that cannot carry them. Advisory fields are dropped for such targets, as
-earlier releases dropped them, and do not refuse the request: `user`,
-`metadata`, `store`, `service_tier`, `prompt_cache_key`, `safety_identifier`,
-`seed`, `top_p`, `presence_penalty`, `frequency_penalty`, and
-`reasoning_effort`. A value that asks for nothing does not count either:
+target that cannot carry them. Compatibility permission does not authorize loss
+of schema constraints, billing/cache controls, or opaque continuation state.
+Unassessed required semantics also refuse an adapting target. Native unknown
+fields may pass through for upstream validation; that is not a guarantee of
+model support. Display-only reasoning omissions may remain advisory. A value
+that asks for nothing does not count either:
 `null`, `false`, an empty value, `n: 1`, a zero `top_logprobs`, a
 `response_format` of type `text`, text-only `modalities`, `tool_choice: "auto"`,
 and `parallel_tool_calls: true`. In an endpoint, a member that cannot send a
@@ -135,7 +163,9 @@ refused.
 ## Responses
 
 Native Responses targets preserve the Responses envelope and streaming events.
-Compatible stateless requests can fall back through a strict Chat translation.
+Explicitly compatible stateless requests can select a strict Chat translation
+during preparation. An unavailable selected Responses endpoint is an upstream
+failure, not permission to discover and retry a different API after dispatch.
 The fallback sends a `text.format` as `response_format` to a target that sends
 that Chat field, as listed above, and the answer carries the format back; a
 `text.format` of type `text` asks for nothing and is served everywhere. A
@@ -156,15 +186,48 @@ Native Anthropic targets receive non-streaming Messages payloads directly after
 resolved-model and gateway-preamble changes. Adapted targets reject unsupported
 or lossy fields before dispatch.
 
-A stream whose every target is a native Anthropic target is sent the same way,
+A stream served by a native Anthropic member is sent the same way,
 with `stream: true`, and each record the target sends reaches the client
 unchanged, `ping` and thinking deltas included. Its usage is read from those
 records: input and cache tokens from `message_start`, output tokens from
-`message_delta`. A stream with any adapted target, such as an endpoint that
-mixes native and adapted members, is translated and uses a narrower
+`message_delta`. Other members do not force this native member through a
+conversion. A stream served by an explicitly permitted adapted member uses a narrower
 compatibility profile: adaptive/enabled thinking, `redacted_thinking`, cache
 controls, structured output, documents, unsupported images, error tool results,
 and unknown fields fail closed when they cannot be preserved.
+
+## Source usage evidence
+
+Recorded request listings include optional `source_usage` evidence for prepared
+operations. Older rows and providers without an observation interface omit it.
+Its versioned object contains accounting bases, incomplete/invalid flags, a
+bounded attempt history and the `selected_attempt` index used by the legacy
+aggregate counters. Attempts retain the actual upstream API, provider/model,
+source completion quality and cancellation state. If a later target fails before
+making a native attempt, earlier history remains available with
+`selection_unavailable: true` and `selected_attempt: -1`; it is not relabeled as
+that later target's measured usage. Counts preserve presence,
+provenance and source paths for totals, cache/reasoning, audio/prediction details
+and reported web-tool requests. Detail counters are not added to their parent
+totals again.
+
+Reported zero is distinct from absence and overrides an estimate. Client
+`include_usage` controls target wire emission, not collection for accounting.
+When native Messages omits cache categories, inclusive input remains absent;
+the legacy input aggregate may use observed base/cache counts as an explicitly
+incomplete lower bound. Reported cumulative output on a failed or truncated
+source is likewise marked partial rather than presented as a final total.
+Estimates remain labeled when no native count was reported.
+
+Invalid provider counts/relationships are retained diagnostically without
+settling token, money or credit counters. Evidence contains recognized counts
+and fixed scalar usage fields; arbitrary provider payloads are excluded.
+History and raw truncation are explicit. Native retry/fallback observations stay
+separate rather than being summed as cumulative frames or priced as though they
+all belonged to the selected model. A response-conversion failure retains the
+original attempt's usage and source completion independently of delivery status.
+Final stream observations are recorded after closure, not fabricated in
+stream-open HTTP headers.
 
 ## Token counting
 

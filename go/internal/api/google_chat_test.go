@@ -18,7 +18,7 @@ import (
 // googleChatUpstream is a synthetic Gemini API: a stream answers with one
 // function call event, as Gemini streams one, and any other call with the
 // answer it holds. It records each body it receives.
-func googleChatUpstream(t *testing.T) (func() []string, string) {
+func googleChatUpstream(t *testing.T, signed ...bool) (func() []string, string) {
 	t.Helper()
 	var mu sync.Mutex
 	var bodies []string
@@ -29,8 +29,12 @@ func googleChatUpstream(t *testing.T) (func() []string, string) {
 		mu.Unlock()
 		if strings.HasSuffix(r.URL.Path, ":streamGenerateContent") {
 			w.Header().Set("Content-Type", "text/event-stream")
-			_, _ = io.WriteString(w, `data: {"candidates": [{"content": {"parts": [{"functionCall": {"name": "lookup","args": {"q": "crane"}},`+
-				`"thoughtSignature": "c2lnbmF0dXJl"}],"role": "model"},"finishReason": "STOP","index": 0}],`+
+			signature := `,"thoughtSignature":"c2lnbmF0dXJl"`
+			if len(signed) > 0 && !signed[0] {
+				signature = ""
+			}
+			_, _ = io.WriteString(w, `data: {"candidates": [{"content": {"parts": [{"functionCall": {"name": "lookup","args": {"q": "crane"}}`+signature+
+				`}],"role": "model"},"finishReason": "STOP","index": 0}],`+
 				`"usageMetadata": {"promptTokenCount": 11,"candidatesTokenCount": 5,"totalTokenCount": 16},"modelVersion": "gemini-fixture","responseId": "resp-fixture"}`+"\r\n\r\n")
 			return
 		}
@@ -58,6 +62,12 @@ func googleChatUpstream(t *testing.T) (func() []string, string) {
 
 const googleLookupTool = `"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object","properties":{"q":{"type":"string"}}}}}]`
 
+func googleCompatibleRequest(path string, body io.Reader) *http.Request {
+	request := httptest.NewRequest(http.MethodPost, path, body)
+	request.Header.Set(compatibilityHeader, "allow")
+	return request
+}
+
 // A Chat stream to a Google model streams, its tools declared to Gemini,
 // and Gemini's function call reaches the client as a tool call delta with
 // its thought signature, the finish reason tool_calls, the usage the client
@@ -66,7 +76,7 @@ func TestGoogleChatCompletionStreamsToolCalls(t *testing.T) {
 	resetState(t)
 	take, _ := googleChatUpstream(t)
 	rec := httptest.NewRecorder()
-	NewServer(Runtime{}).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader([]byte(
+	NewServer(Runtime{}).ServeHTTP(rec, googleCompatibleRequest("/v1/chat/completions", bytes.NewReader([]byte(
 		`{"model":"studio/gemini-fixture","stream":true,"stream_options":{"include_usage":true},`+
 			`"messages":[{"role":"user","content":"What is a crane?"}],`+googleLookupTool+`,"tool_choice":"auto"}`))))
 	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/event-stream") {
@@ -105,7 +115,7 @@ func TestGoogleChatCompletionStreamsToolCalls(t *testing.T) {
 // each stream ends as its protocol ends one.
 func TestGoogleStreamsServeMessagesAndResponses(t *testing.T) {
 	resetState(t)
-	take, _ := googleChatUpstream(t)
+	take, _ := googleChatUpstream(t, false)
 	for _, call := range []struct {
 		path, body string
 		want       []string
@@ -118,7 +128,7 @@ func TestGoogleStreamsServeMessagesAndResponses(t *testing.T) {
 		}},
 	} {
 		rec := httptest.NewRecorder()
-		NewServer(Runtime{}).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, call.path, strings.NewReader(call.body)))
+		NewServer(Runtime{}).ServeHTTP(rec, googleCompatibleRequest(call.path, strings.NewReader(call.body)))
 		if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/event-stream") {
 			t.Fatalf("%s: status=%d body=%s", call.path, rec.Code, rec.Body.String())
 		}
@@ -133,6 +143,25 @@ func TestGoogleStreamsServeMessagesAndResponses(t *testing.T) {
 	}
 }
 
+func TestGoogleSignedToolStreamsRejectOpaqueStateLoss(t *testing.T) {
+	resetState(t)
+	take, _ := googleChatUpstream(t)
+	for _, call := range []struct{ path, body, terminal string }{
+		{"/v1/messages", `{"model":"studio/gemini-fixture","stream":true,"max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`, "message_stop"},
+		{"/v1/responses", `{"model":"studio/gemini-fixture","stream":true,"input":"hi"}`, "response.completed"},
+	} {
+		recorder := httptest.NewRecorder()
+		NewServer(Runtime{}).ServeHTTP(recorder, googleCompatibleRequest(call.path, strings.NewReader(call.body)))
+		body := recorder.Body.String()
+		if recorder.Code != http.StatusOK || !strings.Contains(body, "event: error") && !strings.Contains(body, "event: response.failed") || strings.Contains(body, call.terminal) || strings.Contains(body, `"name":"lookup"`) {
+			t.Fatalf("%s status=%d body=%s", call.path, recorder.Code, body)
+		}
+		if seen := take(); len(seen) != 1 {
+			t.Fatalf("%s replayed inference after response-state loss: %q", call.path, seen)
+		}
+	}
+}
+
 // A Chat request that calls tools is served by a Google model, and a tool
 // choice Gemini cannot be sent is refused before anything reaches it.
 func TestGoogleChatCompletionTakesTools(t *testing.T) {
@@ -140,7 +169,7 @@ func TestGoogleChatCompletionTakesTools(t *testing.T) {
 	take, _ := googleChatUpstream(t)
 	post := func(body string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		NewServer(Runtime{}).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body)))
+		NewServer(Runtime{}).ServeHTTP(rec, googleCompatibleRequest("/v1/chat/completions", strings.NewReader(body)))
 		return rec
 	}
 	rec := post(`{"model":"studio/gemini-fixture","messages":[{"role":"user","content":"What is a crane?"}],` + googleLookupTool + `,"tool_choice":"none"}`)
@@ -173,7 +202,7 @@ func TestGoogleChatCompletionAsksForStructuredOutput(t *testing.T) {
 	take, _ := googleChatUpstream(t)
 	post := func(body string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		NewServer(Runtime{}).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body)))
+		NewServer(Runtime{}).ServeHTTP(rec, googleCompatibleRequest("/v1/chat/completions", strings.NewReader(body)))
 		return rec
 	}
 	rec := post(`{"model":"studio/gemini-fixture","messages":[{"role":"user","content":"Reply in JSON."}],` +

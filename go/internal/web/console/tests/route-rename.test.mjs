@@ -84,6 +84,30 @@ test("an update or a create writes only the named route", async () => {
   assert.equal(outcome, "Route saved in the selected failover order.");
 });
 
+test("every route save retains explicit ingress and adaptation, including rename", async () => {
+  for (const plan of [{ kind: "create", name: "coding" }, { kind: "update", name: "coding" }, { kind: "rename", name: "next", from: "coding" }]) {
+    const bodies = [];
+    const contract = { ingress: ["/v1/chat/completions", "/v1/messages"], allow_adaptation: true };
+    await routes.commitRouteSave(plan, [{ provider: "p", model: "m" }], "", async (_path, method, body) => {
+      if (method === "POST") bodies.push(body);
+    }, contract);
+    contract.ingress.push("/v1/responses");
+    assert.deepEqual(bodies[0], {
+      name: plan.name, failover: [{ provider: "p", model: "m" }],
+      ingress: ["/v1/chat/completions", "/v1/messages"], allow_adaptation: true,
+    });
+  }
+});
+
+test("saving native-only policy preserves explicit false rather than inheriting adaptation", async () => {
+  let saved;
+  await routes.commitRouteSave({ kind: "update", name: "coding" }, [], "", async (_path, _method, body) => { saved = body; }, {
+    ingress: ["/v1/chat/completions"], allow_adaptation: false,
+  });
+  assert.deepEqual(saved.ingress, ["/v1/chat/completions"]);
+  assert.equal(saved.allow_adaptation, false);
+});
+
 test("the route editor saves through the plan and titles a new route as new", () => {
   const page = readFileSync(new URL("../src/pages/Routes.tsx", import.meta.url), "utf8");
   assert.match(page, /planRouteSave\(originalName, name,/);

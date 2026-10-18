@@ -312,6 +312,9 @@ func (p *googleProvider) ListModelsWithError() ([]ModelInfo, *CredentialObservat
 // message. What core refuses before sending anything is a configuration
 // error, as the transport's refusals were.
 func (p *googleProvider) failure(err error) error {
+	if refusal := inputLossRefusal(err); refusal != nil {
+		return refusal
+	}
 	var configErr *ConfigError
 	if errors.As(err, &configErr) {
 		return configErr

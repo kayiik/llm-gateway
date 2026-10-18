@@ -588,6 +588,10 @@ CREATE TABLE extensions (
 );
 `,
 	},
+	{
+		version: 25,
+		sql:     `ALTER TABLE usage_events ADD COLUMN source_usage_json TEXT;`,
+	},
 }
 
 func SchemaVersion() int { return len(migrations) }

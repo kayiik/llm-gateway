@@ -23,9 +23,20 @@ const transportCatalogFreshness = time.Hour
 var errTransportMode = errors.New("X-LLMGW-Transport-Mode must be transparent when present")
 
 func requestedTransportMode(r *http.Request) (core.TransportRequirement, error) {
-	requirement, err := core.ParseTransportRequirement(r.Header.Get(transportModeHeader))
+	value, _, valid := singlePolicyHeader(r.Header, transportModeHeader)
+	if !valid {
+		return "", errTransportMode
+	}
+	requirement, err := core.ParseTransportRequirement(value)
 	if err != nil {
 		return "", errTransportMode
+	}
+	compatibility, err := requestedCompatibility(r)
+	if err != nil {
+		return "", err
+	}
+	if requirement == core.TransportRequirementTransparent && compatibility == "allow" {
+		return "", errors.New("transparent mode cannot allow compatibility adaptation")
 	}
 	return requirement, nil
 }

@@ -310,6 +310,20 @@ func resolveCredentialObserved(
 	return config.ResolveProviderAPIKey(providerID, cfg), CredentialKindAPIKey, nil, nil
 }
 
+// ProviderCredentialIsAnonymous uses the same connection precedence as provider
+// construction without exposing the resolved secret to verification callers.
+func ProviderCredentialIsAnonymous(settings *config.Settings, providerID string, caller core.Caller) (bool, error) {
+	cfg, ok := settings.Providers[providerID]
+	if !ok {
+		return false, &ConfigError{Msg: "provider is not configured"}
+	}
+	secret, kind, _, err := resolveCredentialObserved(settings, providerID, cfg, caller)
+	if err != nil {
+		return false, err
+	}
+	return strings.EqualFold(strings.TrimSpace(kind), CredentialKindAPIKey) && AnonymousAPIKey(secret), nil
+}
+
 // newVertexProvider builds the gateway's Vertex transport, which serves the
 // facade's video and catalog, for whichever credential kind is stored. It is
 // also where a Vertex facade refuses a credential it cannot use, before any

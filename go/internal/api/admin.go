@@ -232,7 +232,12 @@ func handleState(w http.ResponseWriter, r *http.Request) {
 		for _, m := range cat.Failover {
 			fo = append(fo, map[string]any{"provider": m.Provider, "model": m.Model})
 		}
-		cats[name] = map[string]any{"failover": fo}
+		entry := map[string]any{"failover": fo}
+		if len(cat.Ingress) > 0 || cat.AllowAdaptation {
+			entry["ingress"] = append([]string(nil), cat.Ingress...)
+			entry["allow_adaptation"] = cat.AllowAdaptation
+		}
+		cats[name] = entry
 	}
 	// Keys and principals are listed a page at a time by their own routes;
 	// the state counts them instead (see counts below).
@@ -1032,18 +1037,30 @@ func handleRepairProvider(w http.ResponseWriter, r *http.Request) {
 }
 
 type endpointBody struct {
-	Name     string           `json:"name"`
-	Failover []map[string]any `json:"failover"`
+	Name            string           `json:"name"`
+	Failover        []map[string]any `json:"failover"`
+	Ingress         []string         `json:"ingress"`
+	AllowAdaptation bool             `json:"allow_adaptation"`
 }
 
 func storeEndpoint(name string, members []config.EndpointMember) (func() error, error) {
+	return storeEndpointContract(name, config.EndpointConfig{Failover: members})
+}
+
+func storeEndpointContract(name string, contract config.EndpointConfig) (func() error, error) {
+	if err := config.ValidateEndpointContract(&contract); err != nil {
+		return nil, err
+	}
 	return config.UpdateAndSave(func(s *config.Settings) error {
 		for existingName := range s.Endpoints {
 			if existingName != name && strings.EqualFold(existingName, name) {
 				return fmt.Errorf("endpoint name collides with existing endpoint %q; names are case-insensitive", existingName)
 			}
 		}
-		s.Endpoints[name] = &config.EndpointConfig{Failover: members}
+		s.Endpoints[name] = &config.EndpointConfig{
+			Failover: append([]config.EndpointMember(nil), contract.Failover...),
+			Ingress:  append([]string(nil), contract.Ingress...), AllowAdaptation: contract.AllowAdaptation,
+		}
 		return nil
 	})
 }
@@ -1078,6 +1095,11 @@ func handleUpsertEndpoint(w http.ResponseWriter, r *http.Request) {
 	var body endpointBody
 	if !decodeBody(r, &body) {
 		writeError(w, 400, "invalid body")
+		return
+	}
+	contract := config.EndpointConfig{Ingress: body.Ingress, AllowAdaptation: body.AllowAdaptation}
+	if err := config.ValidateEndpointContract(&contract); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	name := strings.TrimSpace(body.Name)
@@ -1154,12 +1176,13 @@ func handleUpsertEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, existed := config.Get().Endpoints[name]
-	if _, err := storeEndpoint(name, members); err != nil {
+	contract.Failover = members
+	if _, err := storeEndpointContract(name, contract); err != nil {
 		writeConfigSaveError(w, "Route configuration could not be persisted.", err)
 		return
 	}
 	providers.ResetProviders()
-	auditEndpointSaved(r, name, existed, members)
+	auditEndpointSaved(r, name, existed, contract)
 	writeJSON(w, 200, map[string]any{"ok": true, "name": name, "members": len(members)})
 }
 

@@ -48,9 +48,8 @@ const (
 	nativeStreamInput = 12 + 200 + 3000
 	// nativeStreamOutput is the output their message_delta reports.
 	nativeStreamOutput = 42
-	// nativeStreamedOutput estimates the thinking and the text they stream
-	// before their message_delta: 21 bytes, five tokens, and 11, two.
-	nativeStreamedOutput = 7
+	// Before message_delta, the reported cumulative start is only a lower bound.
+	nativeStreamStartOutput = 1
 	// nativeStreamText is how many of them reach the end of the text, and
 	// nativeStreamDelta how many come before message_delta.
 	nativeStreamText  = 8
@@ -258,7 +257,7 @@ func TestNativeMessagesStreamFailuresEndWithAnErrorEvent(t *testing.T) {
 			name:   "error event",
 			send:   append(append([]string{}, nativeStreamRecords[:nativeStreamText]...), upstreamError),
 			want:   strings.Join(nativeStreamRecords[:nativeStreamText], "") + upstreamError,
-			output: nativeStreamedOutput,
+			output: nativeStreamStartOutput,
 		},
 		{
 			name:   "closed before message_stop",
@@ -271,7 +270,7 @@ func TestNativeMessagesStreamFailuresEndWithAnErrorEvent(t *testing.T) {
 			send:   nativeStreamRecords[:nativeStreamText],
 			abort:  true,
 			want:   strings.Join(nativeStreamRecords[:nativeStreamText], "") + gatewayStreamError,
-			output: nativeStreamedOutput,
+			output: nativeStreamStartOutput,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -333,7 +332,7 @@ func TestNativeMessagesStreamFailsOverOnlyBeforeTheFirstByte(t *testing.T) {
 				w.WriteHeader(http.StatusBadRequest)
 				_, _ = io.WriteString(w, `{"type":"error","error":{"type":"invalid_request_error","message":"invalid"}}`)
 			},
-			status: http.StatusBadRequest, usage: http.StatusBadRequest,
+			status: http.StatusBadRequest, served: "first", usage: http.StatusBadRequest,
 		},
 		{
 			name: "broken after the first byte",
@@ -375,27 +374,25 @@ func TestNativeMessagesStreamFailsOverOnlyBeforeTheFirstByte(t *testing.T) {
 	}
 }
 
-// A stream on an endpoint with an adapted member keeps the strict
-// translation: a field it cannot carry is refused before any target is
-// asked, and an answer it can carry is rendered by the gateway, not relayed.
-func TestMixedMessagesStreamKeepsTheStrictTranslation(t *testing.T) {
+// An adapting member does not force an eligible native member through a
+// conversion, including when thinking and cache controls require native wire.
+func TestMixedMessagesStreamKeepsNativeMembersNative(t *testing.T) {
 	upstream := newNativeStreamUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		writeRecords(w, nativeStreamRecords...)
 	})
 	gateway := setupNativeStreamTest(t, upstream.URL)
 	response, body := postMessages(t, gateway, nativeStreamRequest("mixed"))
-	if response.StatusCode != http.StatusBadRequest || !strings.Contains(body, "Streaming cannot preserve Anthropic request") || upstream.totalCalls() != 0 {
+	if response.StatusCode != http.StatusOK || body != strings.Join(nativeStreamRecords, "") || upstream.callsTo("/first/v1/messages") != 1 || upstream.callsTo("/adapted/chat/completions") != 0 {
 		t.Fatalf("status=%d calls=%d body=%s", response.StatusCode, upstream.totalCalls(), body)
 	}
 
 	plain := map[string]any{"model": "mixed", "stream": true, "max_tokens": 64, "messages": []any{map[string]any{"role": "user", "content": "Say hello"}}}
 	body = streamThroughGateway(t, gateway, "/v1/messages", jsonStr(plain))
-	if upstream.callsTo("/first/v1/messages") != 1 || !strings.Contains(body, "Hello there") || !strings.HasSuffix(body, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n") {
+	if upstream.callsTo("/first/v1/messages") != 2 || !strings.Contains(body, "Hello there") || !strings.HasSuffix(body, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n") {
 		t.Fatalf("calls=%d body=%q", upstream.callsTo("/first/v1/messages"), body)
 	}
-	// The gateway renders a translated stream itself, with its own message ID.
-	if strings.Contains(body, "msg_fixture") || strings.Contains(body, `{"type": "ping"}`) {
-		t.Fatalf("a translated stream was relayed: %q", body)
+	if !strings.Contains(body, "msg_fixture") || !strings.Contains(body, `{"type": "ping"}`) {
+		t.Fatalf("native records were rebuilt: %q", body)
 	}
 }
 

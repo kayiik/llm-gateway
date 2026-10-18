@@ -69,9 +69,8 @@ func ollamaCatalogFixture(t *testing.T, base string, timeout float64) Provider {
 }
 
 // Chat goes through the core Runtime, and the daemon receives the /api/chat
-// body the transport sent, byte for byte: a developer message as a system
-// one, an empty one dropped, content that is not a string printed, and
-// temperature, top_p, tools and the output limit as options, the limit of a
+// body for supported text: a developer message as a system one, a missing
+// role as user, and temperature, top_p, tools and the output limit as options, the limit of a
 // Responses request included. The answer reads as the transport read it.
 func TestOllamaChatGoesThroughTheCoreRuntime(t *testing.T) {
 	var bodies []string
@@ -86,8 +85,7 @@ func TestOllamaChatGoesThroughTheCoreRuntime(t *testing.T) {
 	tools := []any{map[string]any{"type": "function", "function": map[string]any{"name": "add"}}}
 	response, err := ollamaFixture(t, daemon.URL).Complete("fixture-model", []Message{
 		{"role": "developer", "content": "policy"},
-		{"role": "user", "content": " "},
-		{"content": []any{map[string]any{"type": "text", "text": "hi"}}},
+		{"content": "hi"},
 		{"role": "tool", "content": "5", "tool_call_id": "call_0", "name": "add"},
 	}, Kwargs{
 		"temperature": json.Number("0.2"), "top_p": 0.9, "tools": tools, "stop": []any{"END"},
@@ -96,7 +94,7 @@ func TestOllamaChatGoesThroughTheCoreRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const want = `{"messages":[{"content":"policy","role":"system"},{"content":"[map[text:hi type:text]]","role":"user"},` +
+	const want = `{"messages":[{"content":"policy","role":"system"},{"content":"hi","role":"user"},` +
 		`{"content":"5","name":"add","role":"tool","tool_call_id":"call_0"}],"model":"fixture-model",` +
 		`"options":{"num_predict":64,"temperature":0.2,"top_p":0.9},"stream":false,"tools":[{"function":{"name":"add"},"type":"function"}]}`
 	if len(bodies) != 1 || bodies[0] != want {
@@ -106,7 +104,7 @@ func TestOllamaChatGoesThroughTheCoreRuntime(t *testing.T) {
 	const completion = `{"choices":[{"finish_reason":"tool_calls","index":0,"message":{"content":"","role":"assistant",` +
 		`"tool_calls":[{"function":{"arguments":"{\"a\":2}","name":"add"},"id":"call_0","index":0,"type":"function"}]}}],` +
 		`"id":"chatcmpl-ollama","model":"fixture-model","object":"chat.completion","usage":{"completion_tokens":3,"prompt_tokens":7,"total_tokens":10}}`
-	if string(encoded) != completion {
+	if normalized := completionFixtureChunks(t, []string{string(encoded)}, "chatcmpl-ollama")[0]; normalized != completion {
 		t.Fatalf("completion=%s\nwant %s", encoded, completion)
 	}
 }
@@ -168,6 +166,7 @@ func TestOllamaStreamFinishesWithStopAfterToolCalls(t *testing.T) {
 	})
 	stream, err := ollamaFixture(t, daemon.URL).Stream("fixture-model", []Message{{"role": "user", "content": "add"}}, nil)
 	chunks, err := drainOllamaStream(t, stream, err)
+	chunks = completionFixtureChunks(t, chunks, "chatcmpl-ollama")
 	want := []string{
 		`{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\"a\":2}","name":"add"},"id":"call_0","index":0,"type":"function"}]},` +
 			`"finish_reason":null,"index":0}],"id":"chatcmpl-ollama","model":"fixture-model","object":"chat.completion.chunk"}`,

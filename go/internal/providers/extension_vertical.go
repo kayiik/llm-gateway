@@ -290,7 +290,8 @@ func (rt *Runtime) extensionCoreVertical(providerType string) coreVertical {
 			if err != nil {
 				return nil, err
 			}
-			return extension.NewProvider(client, extension.ProviderInfo{ID: providerType, Surfaces: extensionSurfaces(providerType)}), nil
+			info := extension.ProviderInfo{ID: providerType, Surfaces: extensionSurfaces(providerType)}
+			return &extensionPreparedProvider{Provider: extension.NewProvider(client, info), client: client, info: info, runtime: rt, instance: instance}, nil
 		},
 		refresh: func(settings *config.Settings, instance string) tokenstore.RefreshFunc {
 			return func(ctx context.Context, current tokenstore.Record) (tokenstore.Record, error) {
@@ -305,6 +306,25 @@ func (rt *Runtime) extensionCoreVertical(providerType string) coreVertical {
 			open: func() (core.CredentialStore, error) { return rt.openCredentials(isOAuth) },
 		},
 	}
+}
+
+// Bind model evidence at the operation boundary: the provider factory is shared,
+// while catalogs belong to the calling identity and configured instance.
+type extensionPreparedProvider struct {
+	*extension.Provider
+	client   *extension.Client
+	info     extension.ProviderInfo
+	runtime  *Runtime
+	instance string
+}
+
+func (p *extensionPreparedProvider) PrepareCall(ctx context.Context, request core.Request, options core.CallPreparationOptions) (core.PreparedCall, error) {
+	caller := coreOperationFrom(ctx).caller
+	provider := extension.NewProviderWithModelLookup(p.client, p.info, func(model string) (core.ModelInfo, bool) {
+		row, found := p.runtime.CatalogCachedLookupForPrincipal(p.instance, model, caller)
+		return CoreModelInfo(row), found
+	})
+	return provider.PrepareCall(ctx, request, options)
 }
 
 type extensionCredentials struct {

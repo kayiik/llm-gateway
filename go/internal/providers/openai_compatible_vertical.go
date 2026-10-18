@@ -10,6 +10,7 @@ import (
 
 	core "github.com/kayiik/llmgw-core"
 	coreproviders "github.com/kayiik/llmgw-core/providers"
+	coretranslation "github.com/kayiik/llmgw-core/translation"
 )
 
 // openAICompatibleCoreType is the key in coreVerticals of the instances
@@ -109,7 +110,7 @@ func (s openAICoreSpec) bind(rt *Runtime, caller core.Caller) (*coreproviders.Op
 		if !ok {
 			return core.ModelInfo{}, false
 		}
-		return core.ModelInfo{ID: row.ID, SupportedAPIs: row.SupportedSurfaces, LegacyCapabilities: row.Capabilities}, true
+		return core.ModelInfo{ID: row.ID, SupportedAPIs: row.SupportedSurfaces, LegacyCapabilities: row.Capabilities, Capabilities: row.TypedCapabilities}, true
 	}
 	return s.build(config)
 }
@@ -138,6 +139,18 @@ var _ core.Provider = openAICoreProvider{}
 
 func (p openAICoreProvider) bind(ctx context.Context) (*coreproviders.OpenAICompatible, error) {
 	return p.spec.bind(p.runtime, coreOperationFrom(ctx).caller)
+}
+
+func (p openAICoreProvider) preparedProviderBinding(ctx context.Context) (core.Provider, error) {
+	return p.bind(ctx)
+}
+
+func (p openAICoreProvider) PrepareCall(ctx context.Context, request core.Request, options core.CallPreparationOptions) (core.PreparedCall, error) {
+	provider, err := p.bind(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return core.PrepareCall(ctx, coretranslation.Adapter{Provider: provider}, request, options)
 }
 
 // NativeSurfaces implements core.Provider over the shared catalog. An

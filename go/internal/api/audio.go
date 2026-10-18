@@ -47,6 +47,16 @@ func resolveAudioTarget(principal *config.Principal, model string, operation cor
 	if st != 0 {
 		return "", "", st, m
 	}
+	ingress := "/v1/embeddings"
+	switch operation {
+	case core.ModelOperationAudioIn:
+		ingress = "/v1/audio/transcriptions"
+	case core.ModelOperationAudioOut:
+		ingress = "/v1/audio/speech"
+	}
+	if err := validateRouteIngress(resolution.Category, ingress); err != nil {
+		return "", "", http.StatusBadRequest, err.Error()
+	}
 	if len(targets) == 0 {
 		return "", "", 404, "no routable target for '" + model + "'"
 	}

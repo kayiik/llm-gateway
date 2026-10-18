@@ -224,7 +224,7 @@ func TestPlaygroundPreservesDefinitiveUpstreamErrorWithoutRetry(t *testing.T) {
 	})
 	errorPayload, _ := response["error"].(map[string]any)
 	message, _ := errorPayload["message"].(string)
-	if status != http.StatusBadRequest || !strings.Contains(message, "Model is unavailable") {
+	if status != http.StatusBadRequest || !strings.Contains(message, "HTTP 400") {
 		t.Fatalf("status=%d response=%+v", status, response)
 	}
 	if calls.Load() != 1 {
@@ -341,7 +341,10 @@ func TestPlaygroundTextSurfaceRoutes(t *testing.T) {
 	config.Update(func(s *config.Settings) {
 		s.SSOEnabled, s.SSOSharedSecret, s.SSOAutoProvision = true, "proxy-secret", true
 		s.Providers = map[string]*config.ProviderConfig{"echo": {Type: "echo"}}
-		s.Endpoints = map[string]*config.EndpointConfig{}
+		s.Endpoints = map[string]*config.EndpointConfig{"compatible": {
+			Ingress: []string{"/v1/chat/completions", "/v1/responses", "/v1/messages"}, AllowAdaptation: true,
+			Failover: []config.EndpointMember{{Provider: "echo", Model: "echo-default"}},
+		}}
 	})
 	if _, err := iam.Initialize(); err != nil {
 		t.Fatal(err)
@@ -369,7 +372,7 @@ func TestPlaygroundTextSurfaceRoutes(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			test.body["project_id"] = project.ID
-			test.body["model"] = "echo/echo-default"
+			test.body["model"] = "compatible"
 			status, response := ssoConnectionRequest(t, server.URL, "surface-owner", http.MethodPost, test.path, test.body)
 			if status != http.StatusOK {
 				t.Fatalf("status=%d response=%+v", status, response)

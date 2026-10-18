@@ -28,6 +28,31 @@ after the move, the release predates this: update to the latest release.
 
 ## Before an upgrade
 
+### Native API policy migration
+
+The prepared-inference implementation changes implicit conversion to explicit
+permission. Before adopting a build containing this change, check the actual
+upstream API behind each selector and each client entrypoint:
+
+- Exact targets and bare aliases default native-only. For an intended direct
+  cross-API call, send `X-LLMGW-Compatibility: allow` on that request.
+- For clients sharing a named route, configure its canonical `ingress` list and
+  `allow_adaptation: true` only where conversion is intended. Include all needed
+  paths, such as Messages token counting. Existing routes without these fields
+  remain native-only; a client header cannot broaden them.
+- `force_api_support` no longer grants compatibility authorization. Transparent
+  mode remains stronger and cannot be combined with adaptation permission.
+- A native member is assessed independently of other route members. A mixed
+  chain does not force its native member through a lossy translation.
+
+Use the playground and hermetic client checks to validate the declared route.
+A conversion refusal requires a compatible request/target or a deliberate route
+policy change, rather than automatic field removal. See the
+[API contract](API.md#native-and-compatible-execution) and
+[endpoint configuration](CONFIGURATION.md#endpoints).
+
+### Upgrade preparation
+
 1. Schedule maintenance, drain traffic, and stop all gateway writers.
 2. Check the installed binary's `llmgw --help` and use its built-in backup if
    it lists one. Otherwise archive the entire stopped state volume, including
@@ -47,6 +72,11 @@ Database migrations are idempotent and recorded in `schema_migrations` and
 newer than it supports, and refuses to open a `gateway.db` that a newer release
 has migrated: run that release, or [roll back](#rollback) to the pre-upgrade
 snapshot.
+
+Source-usage evidence adds a nullable column to recorded requests. Existing rows
+remain without evidence rather than gaining synthetic measured zeros. The
+migration is additive, but an older binary may refuse the newer database schema;
+retain the pre-upgrade backup for rollback as described above.
 
 ## Standalone image installation
 

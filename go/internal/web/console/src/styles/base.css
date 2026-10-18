@@ -296,6 +296,21 @@ tbody tr:last-child td { border-bottom: 0; }
 .route-editor__member select { flex: 1; min-width: 0; min-height: 40px; padding: 8px; border: 1px solid #cfd7e0; background: #fff; border-radius: 4px; }
 .route-editor__member-actions { display: flex; gap: 5px; }
 .route-editor footer { display: flex; justify-content: flex-end; gap: 8px; }
+.route-contract { min-width: 0; margin: 0; padding: 12px 0; border: 0; border-top: 1px solid #dce1e6; border-bottom: 1px solid #dce1e6; }
+.route-contract legend { padding: 0 8px 0 0; color: inherit; font-size: 0.86rem; font-weight: 650; }
+.route-contract .form-help { margin: 6px 0 10px; }
+.route-contract__choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 6px 14px; }
+.route-contract__option, .route-contract__adaptation { display: flex; align-items: center; gap: 9px; min-height: 44px; color: inherit; font-size: 0.82rem; cursor: pointer; }
+.route-contract__option input, .route-contract__adaptation input { width: 17px; height: 17px; margin: 0; accent-color: #3568af; }
+.route-contract__other { margin-top: 7px; }
+.route-contract__other summary { width: fit-content; padding: 8px 0; color: #526172; font-size: 0.8rem; cursor: pointer; }
+.route-contract__adaptation { margin-top: 12px; font-weight: 650; }
+.route-contract :disabled { cursor: not-allowed; }
+.route-contract-summary { display: grid; gap: 4px; margin: 12px 0 0; font-size: 0.76rem; line-height: 1.45; }
+.route-contract-summary span { color: #526172; overflow-wrap: anywhere; }
+:root[data-theme="dark"] .route-contract { border-color: #344150; }
+:root[data-theme="dark"] .route-contract__other summary,
+:root[data-theme="dark"] .route-contract-summary span { color: #b4c0d0; }
 .endpoint-capabilities { display: grid; gap: 15px; }
 .capability-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .capability-list > div { padding: 12px; border: 1px solid #e1e6eb; background: #fafbfc; border-radius: 5px; }

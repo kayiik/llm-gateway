@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -28,7 +29,10 @@ type streamUsage struct {
 	// stream last reported, which input sums.
 	inputs [len(anthropicInputKinds)]int
 	// streamed estimates the output tokens of the text streamed so far.
-	streamed int
+	streamed      int
+	streamedBytes int
+	source        any
+	closeSource   func() error
 }
 
 func newStreamUsage(endpoint, requested string, principal *config.Principal, served *router.Target, started time.Time, promptBytes int) *streamUsage {
@@ -45,12 +49,12 @@ func estimatedTokens(n int) int {
 	return (n + 3) / 4
 }
 
-// streamedText adds the tokens of one streamed piece of text, estimated as
-// llm-translate estimates a stream's output: a quarter of its bytes, and at
-// least one, since a streamed piece is seldom less than a token.
+// streamedText carries partial tokens between pieces so transport fragmentation
+// cannot change the estimate. No output text needs to be retained.
 func (u *streamUsage) streamedText(piece any) {
 	if text, ok := piece.(string); ok && text != "" {
-		u.streamed += max(1, len(text)/4)
+		u.streamedBytes += min(len(text), math.MaxInt-u.streamedBytes)
+		u.streamed = max(1, u.streamedBytes/4)
 	}
 }
 
@@ -174,13 +178,27 @@ func (u *streamUsage) tokens() (int, int) {
 }
 
 func (u *streamUsage) record(status int, errorCode string) {
-	input, output := u.tokens()
+	if u.closeSource != nil {
+		_ = u.closeSource()
+		u.closeSource = nil
+	}
+	legacyInput, legacyOutput := u.tokens()
+	input, output, evidence, observedTarget := sourceUsageSnapshot(u.source, estimatedTokens(u.promptBytes), u.streamed, "estimated", "estimated")
+	if evidence == nil || evidence.SelectionUnavailable {
+		input, output = legacyInput, legacyOutput
+		if evidence != nil {
+			evidence.InputBasis, evidence.OutputBasis = "legacy_unverified", "legacy_unverified"
+		}
+	}
+	if observedTarget != nil {
+		u.served = observedTarget
+	}
 	recordUsage(router.UsageRecord{
 		RequestID: u.principal.RequestID, Endpoint: u.endpoint, RequestedModel: u.requested, RoutedModel: u.served.Model,
 		Provider: u.served.Provider, Project: u.principal.Project, Key: u.principal.Key,
 		ProjectID: u.principal.ProjectID, PrincipalID: u.principal.PrincipalID, KeyID: u.principal.KeyID,
 		InputTokens: input, OutputTokens: output, StatusCode: status, ErrorCode: errorCode,
-		LatencyMS: time.Since(u.started).Milliseconds(), IsStub: isStub(u.served.Provider),
+		LatencyMS: time.Since(u.started).Milliseconds(), IsStub: isStub(u.served.Provider), SourceUsage: evidence,
 	})
 }
 

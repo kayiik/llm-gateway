@@ -1,6 +1,7 @@
 package iam
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 )
@@ -56,13 +57,14 @@ type RecordedRequest struct {
 	PrincipalID    string `json:"principal_id,omitempty"`
 	KeyID          string `json:"key_id,omitempty"`
 	// KeyName names the request's key, a deleted one included.
-	KeyName      string `json:"key_name,omitempty"`
-	InputTokens  int64  `json:"input_tokens"`
-	OutputTokens int64  `json:"output_tokens"`
-	CostMicroUSD int64  `json:"cost_microusd"`
-	CreditsMilli int64  `json:"credits_milli"`
-	ErrorCode    string `json:"error_code,omitempty"`
-	Stub         bool   `json:"stub,omitempty"`
+	KeyName      string         `json:"key_name,omitempty"`
+	InputTokens  int64          `json:"input_tokens"`
+	OutputTokens int64          `json:"output_tokens"`
+	CostMicroUSD int64          `json:"cost_microusd"`
+	CreditsMilli int64          `json:"credits_milli"`
+	ErrorCode    string         `json:"error_code,omitempty"`
+	Stub         bool           `json:"stub,omitempty"`
+	SourceUsage  *UsageEvidence `json:"source_usage,omitempty"`
 }
 
 // ListUsageEvents returns the recorded requests filter selects and the
@@ -116,7 +118,7 @@ SELECT id,ts,COALESCE(request_id,''),COALESCE(endpoint,''),COALESCE(status_code,
        COALESCE(requested_model,''),COALESCE(routed_model,''),COALESCE(provider,''),
        COALESCE(project_id,''),COALESCE(principal_id,''),COALESCE(key_id,''),
        COALESCE(input_tokens,0),COALESCE(output_tokens,0),COALESCE(cost_microusd,0),
-       COALESCE(credits_milli,0),COALESCE(error_code,''),COALESCE(is_stub,0)
+       COALESCE(credits_milli,0),COALESCE(error_code,''),COALESCE(is_stub,0),COALESCE(source_usage_json,'')
 FROM usage_events WHERE `+strings.Join(where, " AND ")+` ORDER BY id DESC LIMIT ?`,
 		append(args, filter.Limit+1)...)
 	if err != nil {
@@ -127,16 +129,22 @@ FROM usage_events WHERE `+strings.Join(where, " AND ")+` ORDER BY id DESC LIMIT 
 	for rows.Next() {
 		var event RecordedRequest
 		var stub int
+		var sourceUsage string
 		if err := rows.Scan(
 			&event.ID, &event.Timestamp, &event.RequestID, &event.Endpoint, &event.StatusCode, &event.LatencyMS,
 			&event.RequestedModel, &event.RoutedModel, &event.Provider,
 			&event.ProjectID, &event.PrincipalID, &event.KeyID,
 			&event.InputTokens, &event.OutputTokens, &event.CostMicroUSD,
-			&event.CreditsMilli, &event.ErrorCode, &stub,
+			&event.CreditsMilli, &event.ErrorCode, &stub, &sourceUsage,
 		); err != nil {
 			return nil, 0, err
 		}
 		event.Stub = stub != 0
+		if sourceUsage != "" {
+			if err := json.Unmarshal([]byte(sourceUsage), &event.SourceUsage); err != nil {
+				return nil, 0, err
+			}
+		}
 		events = append(events, event)
 	}
 	if err := rows.Err(); err != nil {

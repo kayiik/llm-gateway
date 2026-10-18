@@ -350,6 +350,7 @@ func TestGoogleFacadeStreamsThroughCore(t *testing.T) {
 	if err := stream.Err(); err != nil {
 		t.Fatal(err)
 	}
+	chunks = completionFixtureChunks(t, chunks, "chatcmpl-google")
 	head := `{"choices":[{"delta":`
 	tail := `,"index":0}],"id":"chatcmpl-google","model":"gemini-fixture-001","object":"chat.completion.chunk"}`
 	want := []string{

@@ -47,10 +47,17 @@ func setupAPISmokeFixture(t *testing.T, upstream http.Handler) http.Handler {
 }
 
 func apiSmokeRequest(handler http.Handler, path string, payload any) *httptest.ResponseRecorder {
+	return apiSmokeRequestWithCompatibility(handler, path, payload, "")
+}
+
+func apiSmokeRequestWithCompatibility(handler http.Handler, path string, payload any, compatibility string) *httptest.ResponseRecorder {
 	body, _ := json.Marshal(payload)
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(body)))
 	req.Header.Set("Authorization", "Bearer fixture-gateway-token")
 	req.Header.Set("Content-Type", "application/json")
+	if compatibility != "" {
+		req.Header.Set(compatibilityHeader, compatibility)
+	}
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	return w

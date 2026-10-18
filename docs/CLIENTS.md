@@ -4,6 +4,13 @@ These profiles describe the gateway wire contract covered by automated fixtures.
 They do not certify every future installed client release. Use an exact model ID
 or endpoint returned by `GET /v1/models`.
 
+Direct selectors and aliases default to the target's actual native API. For
+intentional conversion, use a named route whose `ingress` accepts the client's
+API and whose `allow_adaptation` is true, or set
+`X-LLMGW-Compatibility: allow` on a direct request. Client identity and user-agent
+strings do not enable adaptation. A request header cannot broaden a route's
+contract. See [native and compatible execution](API.md#native-and-compatible-execution).
+
 Every profile authenticates with a gateway-issued project key, minted in the
 console under **API keys**. The administrator keys (`LLMGW_API_KEY` and
 `LLMGW_API_KEYS`) are for administration only: the data plane still accepts them,
@@ -60,13 +67,13 @@ receive the Messages payload directly, and Claude's streams from them arrive as
 the target sent them, thinking, signatures and cache usage included, so prompt
 caching and thinking work with Claude's defaults. Claude's `anthropic-version`
 and `anthropic-beta` headers reach native targets with each request, so beta
-features it asks for are served. A stream goes natively only
-when every target of the request is a native Anthropic target; on an endpoint
-with any adapted member it is translated. Adapted targets use a strict
+features it asks for are served where the upstream supports them. Each eligible
+member is prepared independently: a native member retains native execution even
+on a mixed endpoint. Explicitly permitted adapted targets use a strict
 compatibility profile and reject fields that cannot be preserved.
 
-For a Chat-only target, or an endpoint with any adapted member, disable thinking
-and prompt caching for a core-profile smoke:
+For an explicitly compatible Chat-only target, disable thinking and prompt
+caching for a core-profile smoke:
 
 ```json
 {

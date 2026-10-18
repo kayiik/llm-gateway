@@ -13,6 +13,8 @@ import (
 	"llmgw/internal/providers"
 	"llmgw/internal/router"
 
+	core "github.com/kayiik/llmgw-core"
+
 	"github.com/kayiik/llm-translate"
 )
 
@@ -92,9 +94,7 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	var req anthropicRequest
 	var raw map[string]any
-	decoder := json.NewDecoder(r.Body)
-	decoder.UseNumber()
-	if err := decoder.Decode(&raw); err != nil {
+	if err := decodeInferenceBody(r.Body, &raw); err != nil {
 		writeBodyError(w, err, 422, "invalid request body")
 		return
 	}
@@ -108,7 +108,8 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, modeErr.Error())
 		return
 	}
-	if pre := config.Get().GatewayPreamble; pre != "" && transportMode != "transparent" {
+	settings, generation := config.Snapshot()
+	if pre := settings.GatewayPreamble; pre != "" && transportMode != "transparent" {
 		raw["_llmgw_preamble"] = pre
 	}
 	ctx := providers.WithAnthropicClientHeaders(messagesFallbackContext(r, raw), r.Header)
@@ -131,71 +132,12 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, polStatus, polMsg)
 		return
 	}
-	if transportMode == "transparent" {
-		target, transparentErr := exactNativeTransparentTarget(req.Model, "/v1/messages", resolution, callerOf(principal))
-		if transparentErr != nil {
-			recordFailureUsage("anthropic.messages", req.Model, principal, 400, "transparent_contract", started)
-			writeError(w, http.StatusBadRequest, transparentErr.Error())
-			return
-		}
-		if rejectTransparentStream(w, req.Stream) {
-			recordFailureUsage("anthropic.messages", req.Model, principal, 400, "transparent_stream", started)
-			return
-		}
-		provider, providerErr := providers.GetProviderForPrincipal(target.Provider, callerOf(principal))
-		if providerErr != nil || !providers.SupportsAnthropicMessages(provider) {
-			writeError(w, http.StatusBadRequest, "provider does not implement its catalog-declared native Messages surface")
-			return
-		}
-		if !admitRequest(w, "anthropic.messages", req.Model, principal, "policy", started) {
-			return
-		}
-		response, providerErr := providers.CompleteAnthropicMessagesContext(ctx, provider, target.Model, raw)
-		if providerErr != nil {
-			writeUpstreamError(w, providerErr)
-			return
-		}
-		served := target
-		w.Header().Set(transportModeHeader, "transparent")
-		recordFromResponse("anthropic.messages", req.Model, &served, principal, response, time.Since(started).Milliseconds())
-		writeJSON(w, http.StatusOK, response)
-		return
-	}
-
-	if req.Stream {
-		native, msgs, kw, lossErr := messagesStreamPlan(targets, principal, raw, &req)
-		if lossErr != nil {
-			recordFailureUsage("anthropic.messages", req.Model, principal, 400, "compatibility", started)
-			writeError(w, 400, "Streaming cannot preserve Anthropic request: "+lossErr.Error())
-			return
-		}
-		if !admitRequest(w, "anthropic.messages", req.Model, principal, "policy", started) {
-			return
-		}
-		if native {
-			streamNativeMessagesSSE(w, ctx, targets, raw, req.Model, principal, started, "anthropic.messages")
-			return
-		}
-		streamMessagesSSE(w, ctx, targets, msgs, req.Model, principal, kw, started, "anthropic.messages")
-		return
-	}
-	if !admitRequest(w, "anthropic.messages", req.Model, principal, "policy", started) {
-		return
-	}
-
-	response, served, err := router.ExecuteAnthropicMessagesContext(governed(ctx, principal), targets, raw, req.Model, callerOf(principal))
-	if err != nil {
-		status := upstreamErrorStatus(err)
-		recordFailureUsage("anthropic.messages", req.Model, principal, status, "upstream", started)
-		writeUpstreamError(w, err)
-		return
-	}
-	recordFromResponse(
-		"anthropic.messages", req.Model, served, principal, response,
-		time.Since(started).Milliseconds(),
-	)
-	w.Header().Set(transportModeHeader, targetTransportMode(*served, callerOf(principal), "/v1/messages"))
-	writeJSON(w, 200, response)
+	r = r.WithContext(ctx)
+	dispatchPreparedInference(w, r, principal, preparedInput{
+		endpoint: "anthropic.messages", model: req.Model, surface: core.ModelSurfaceMessages,
+		settings: settings, generation: generation, resolution: resolution, targets: targets,
+		payload: raw, stream: req.Stream, started: started,
+	})
 }
 
 // messagesStreamPlan says how a Messages request streams. A stream whose
@@ -471,6 +413,10 @@ func handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target := targets[0]
+	if err := validateRouteIngress(resolution.Category, "/v1/messages/count_tokens"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	provider, err := providers.GetProviderForPrincipal(target.Provider, callerOf(principal))
 	if err != nil {
 		writeUpstreamError(w, err)

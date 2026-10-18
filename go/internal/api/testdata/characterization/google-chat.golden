@@ -39,8 +39,12 @@ status: 200
 header Cache-Control: no-cache
 header Connection: keep-alive
 header Content-Type: text/event-stream
+header X-Llmgw-Attempts: 1
+header X-Llmgw-Duration-Ms: <ms>
+header X-Llmgw-Fallback-Ms: <ms>
 header X-Llmgw-Prompt-Bytes: 111
 header X-Llmgw-Tool-Schema-Bytes: 0
+header X-Llmgw-Transport-Mode: translated
 header X-Llmgw-Ttfb-Ms: <ms>
 header X-Request-Id: <generated req_>
 upstream: POST /studio/v1beta/models/gemini-fixture:streamGenerateContent
@@ -92,7 +96,9 @@ body:
 request: POST /v1/messages
 status: 200
 header Content-Type: application/json
+header X-Llmgw-Attempts: 1
 header X-Llmgw-Transport-Mode: translated
+header X-Llmgw-Ttfb-Ms: <ms>
 header X-Request-Id: <generated req_>
 upstream: POST /studio/v1beta/models/gemini-fixture:generateContent
 upstream body: {"contents":[{"parts":[{"text":"Say hello"}],"role":"user"}],"generationConfig":{"maxOutputTokens":64},"systemInstruction":{"parts":[{"text":"Answer briefly."}]}}
@@ -119,7 +125,9 @@ body:
 request: POST /v1/responses
 status: 200
 header Content-Type: application/json
+header X-Llmgw-Attempts: 1
 header X-Llmgw-Transport-Mode: translated
+header X-Llmgw-Ttfb-Ms: <ms>
 header X-Request-Id: <generated req_>
 upstream: POST /vertex/v1/projects/fixture-project/locations/global/publishers/google/models/gemini-fixture:generateContent
 upstream body: {"contents":[{"parts":[{"text":"Say hello"}],"role":"user"}]}
@@ -202,7 +210,7 @@ body:
 {
   "error": {
     "code": "429",
-    "message": "vertex_ai: provider billing exhausted — Your prepayment credits are depleted.",
+    "message": "vertex_ai returned HTTP 429 (RESOURCE_EXHAUSTED): provider billing exhausted",
     "request_id": "<generated req_>",
     "type": "invalid_request_error"
   }
@@ -224,7 +232,7 @@ body:
 {
   "error": {
     "code": "404",
-    "message": "vertex_ai: model not available to this project or location — Publisher model was not found.",
+    "message": "vertex_ai returned HTTP 404 (NOT_FOUND): model not available to this project or location",
     "request_id": "<generated req_>",
     "type": "invalid_request_error"
   }
@@ -246,7 +254,7 @@ body:
 {
   "error": {
     "code": "403",
-    "message": "ai_studio: credential rejected — denied",
+    "message": "ai_studio returned HTTP 403 (PERMISSION_DENIED): credential rejected",
     "request_id": "<generated req_>",
     "type": "invalid_request_error"
   }

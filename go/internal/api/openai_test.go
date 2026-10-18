@@ -74,7 +74,7 @@ func TestCanceledNonStreamingRequestsCancelUpstreamWithoutRetry(t *testing.T) {
 					"cancel-route": {Failover: []config.EndpointMember{
 						{Provider: "upstream", Model: "model"},
 						{Provider: "second", Model: "model"},
-					}},
+					}, Ingress: []string{testCase.path}, AllowAdaptation: true},
 				}
 				settings.Policies.Defaults.RetryMaxAttempts = 3
 				settings.Policies.Defaults.RetryInitialBackoffSeconds = 0.01
@@ -229,13 +229,14 @@ func TestChatResponseEnvelopeNormalization(t *testing.T) {
 		s.Providers = map[string]*config.ProviderConfig{"fixture": {Type: "openai_compatible", BaseURL: upstream.URL, APIKey: "fixture"}}
 		s.Endpoints = map[string]*config.EndpointConfig{
 			"empty-route":   {Failover: []config.EndpointMember{{Provider: "fixture", Model: "empty"}}},
-			"adapted-route": {Failover: []config.EndpointMember{{Provider: "fixture", Model: "adapted-route-model"}}},
+			"adapted-route": {Failover: []config.EndpointMember{{Provider: "fixture", Model: "adapted-route-model"}}, Ingress: []string{"/v1/chat/completions"}, AllowAdaptation: true},
 		}
 	})
 	providers.ResetProviders()
 	if models := providers.RefreshCatalog("fixture"); len(models) != 6 {
 		t.Fatalf("catalog=%+v", models)
 	}
+	trustCatalog(t, "fixture")
 	server := httptest.NewServer(NewServer(Runtime{}))
 	t.Cleanup(func() {
 		server.Close()
@@ -245,22 +246,27 @@ func TestChatResponseEnvelopeNormalization(t *testing.T) {
 		router.ResetTelemetryState()
 	})
 	for _, tc := range []struct {
-		name, requested, wantModel, wantObject string
-		force, defect                          bool
-		wantIndex                              float64
+		name, requested string
+		wantModel       any
+		wantObject      string
+		adapt, defect   bool
+		wantIndex       float64
 	}{
-		{"exact native defaults", "fixture/missing", "missing", "chat.completion", false, true, 0},
-		{"endpoint native empty object", "empty-route", "empty", "chat.completion", false, false, 0},
-		{"exact native preserves", "fixture/preserved", "preserved", "provider.chat", false, false, 11},
+		{"exact native defaults", "fixture/missing", "upstream", "chat.completion", false, true, 0},
+		{"endpoint native empty object", "empty-route", nil, "chat.completion", false, false, 0},
+		{"exact native preserves", "fixture/preserved", nil, "provider.chat", false, false, 11},
 		{"exact adapted", "fixture/adapted-exact", "adapted-exact", "chat.completion", true, false, 0},
 		{"endpoint adapted", "adapted-route", "adapted-route-model", "chat.completion", true, false, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			payload := map[string]any{"model": tc.requested, "messages": []any{map[string]any{"role": "user", "content": "hi"}}}
-			if tc.force {
+			headers := http.Header{}
+			if tc.adapt {
+				// Endpoint rewriting and permission are separate controls.
 				payload["force_api_support"] = true
+				headers.Set(compatibilityHeader, "allow")
 			}
-			status, response := jsonRequest(t, server.URL+"/v1/chat/completions", http.MethodPost, "gateway-token", payload)
+			status, response := jsonRequest(t, server.URL+"/v1/chat/completions", http.MethodPost, "gateway-token", payload, headers)
 			choices, _ := response["choices"].([]any)
 			if status != http.StatusOK || response["model"] != tc.wantModel || response["object"] != tc.wantObject || len(choices) == 0 || choices[0].(map[string]any)["index"] != tc.wantIndex {
 				t.Fatalf("status=%d response=%+v", status, response)
@@ -331,13 +337,14 @@ func setupResponsesAPITest(t *testing.T) *httptest.Server {
 }
 
 func TestNonStreamingChatReturnsSafeLatencyDiagnostics(t *testing.T) {
-	server := setupResponsesAPITest(t)
-	body := `{"model":"echo/echo-default","messages":[{"role":"user","content":"hello"}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]}`
+	fixture := newNativePolicyFixture(t)
+	server := fixture.server
+	body := `{"model":"chat/fixture","messages":[{"role":"user","content":"hello"}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]}`
 	request, err := http.NewRequest(http.MethodPost, server.URL+"/v1/chat/completions", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
-	request.Header.Set("Authorization", "Bearer test-secret")
+	request.Header.Set("Authorization", "Bearer gateway-fixture")
 	request.Header.Set("Content-Type", "application/json")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
@@ -396,6 +403,7 @@ func TestResponsesEndpointReturnsResponsesEnvelope(t *testing.T) {
 			"model": "echo/echo-default", "input": "hello",
 			"max_output_tokens": 8,
 		},
+		http.Header{compatibilityHeader: {"allow"}},
 	)
 	if status != http.StatusOK || response["object"] != "response" ||
 		response["status"] != "completed" {
@@ -421,6 +429,7 @@ func TestResponsesEndpointStreamsResponsesEvents(t *testing.T) {
 		http.MethodPost, server.URL+"/v1/responses", bytes.NewReader(body),
 	)
 	request.Header.Set("Authorization", "Bearer test-secret")
+	request.Header.Set(compatibilityHeader, "allow")
 	request.Header.Set("Content-Type", "application/json")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
@@ -681,6 +690,7 @@ func TestResponsesPreambleIsNotExposedInPublicEnvelope(t *testing.T) {
 			"model": "echo/echo-default", "input": "hello",
 			"instructions": "public instructions",
 		},
+		http.Header{compatibilityHeader: {"allow"}},
 	)
 	if status != http.StatusOK {
 		t.Fatalf("status=%d response=%+v", status, response)

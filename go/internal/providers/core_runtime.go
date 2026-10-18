@@ -33,6 +33,7 @@ type coreVertical struct {
 // Runtime serves, one line per type. The Runtime holds what it returns.
 func (rt *Runtime) coreVerticals() map[string]coreVertical {
 	verticals := map[string]coreVertical{
+		preparedEchoCoreType:     rt.echoPreparedVertical(),
 		anthropicCoreType:        rt.anthropicCoreVertical(),
 		azureCoreType:            rt.azureCoreVertical(),
 		googleCoreType:           rt.googleCoreVertical(),
@@ -99,7 +100,11 @@ func (rt *Runtime) coreProvider(settings *config.Settings, instance string) (cor
 	if !ok {
 		return nil, errNotServedByCore(instance)
 	}
-	return vertical.provider(settings, instance)
+	provider, err := vertical.provider(settings, instance)
+	if err != nil {
+		return nil, err
+	}
+	return rt.preparationProvider(settings, instance, provider), nil
 }
 
 // coreRefresh is the Runtime's RefreshFactory: the refresh of the instance's

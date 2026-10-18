@@ -20,6 +20,10 @@ translation framework.
 - One focused acceptance slice per feature branch and pull request into `main`.
 - Run targeted tests while implementing. GitHub CI runs the complete Go and
   console gates for each PR.
+- Use `node scripts/test-local.mjs policy` for the focused local regression
+  profile, or `api --run TestName` for one slice. The runner preserves Go caches,
+  isolates test state and reuses exact-input executables; see
+  [local testing](docs/TESTING.md).
 - Before a release from `main`, validation runs Docker endpoint integration
   against a real provider plus simple host-side checks with the installed
   Claude, Codex, and Copilot CLIs.
@@ -85,8 +89,39 @@ test, inspection, and cleanup commands; they must not persist or print secrets.
 
 ## Known Caveats & Planned Polish
 
+### Active local recovery and capability work
+
+The current local implementation follows these dependency-ordered acceptance
+slices. Each slice needs focused failing-first evidence and cross-repository
+integration; local changes are not a claim that a released build contains them.
+
+- **Native API policy:** direct calls use the deployment's actual native API by
+  default. Compatibility is explicit; routes declare ingress and permitted
+  adaptation. Preserve one prepared decision through execution, including
+  request fidelity, state, transport and caller/credential binding.
+- **Usage and price fidelity:** retain presence, provenance, cache/reasoning and
+  modality details without double-counting; distinguish unknown price from
+  known-free, preserve applied tariff identity and precise settlement.
+- **Joined request diagnostics:** connect attempts, serving-model/upstream IDs,
+  losses, terminal status and accounting to one request; expose final stream
+  facts only when they exist.
+- **Capability slices:** image/document understanding across applicable provider
+  families, endpoints and daemon paths, reviewed structured output and scoped
+  file/native API support; native passthrough and actual model capability are
+  separate from adapter availability.
+- **Single-node operations:** readiness evidence, bounded concurrency/recovery,
+  atomic route/grant updates, effective/conflict-aware configuration, scoped
+  attribution and existing operator/client tooling.
+- **Deliberate optimisation/additional APIs:** preserve caller cache controls;
+  implement only bounded, eligible exact caching and provider/operation-specific
+  APIs with explicit lifecycle/accounting acceptance. Removed efforts below
+  remain removed.
+
 - **Console Route Rename:** Renaming a route in the Web Console creates the new route, then deletes the original, and refuses a name another route already uses. It is two requests rather than an atomic rename, and key grants and project policies that name the old route are not moved; the confirmation lists the affected keys. A server-side rename that carries grants along remains open.
-- **Anonymous Provider Verify Selection:** Verification probes on providers without configured API keys must automatically pick free-tier models (`-free`, `:free`) rather than naive alphabetical first rows.
+- **Verification selection:** local recovery now prefers declared free eligible
+  models before bounded name heuristics and resolves effective stored
+  credentials. Published builds need the completed changes and real library
+  dependency updates before they can be described as containing local repairs.
 
 ## Deferred efforts
 

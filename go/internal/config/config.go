@@ -97,7 +97,9 @@ type EndpointMember struct {
 // requests the endpoint name (e.g. "smart") and the gateway cascades through
 // this chain until one pinned provider/model succeeds.
 type EndpointConfig struct {
-	Failover []EndpointMember `yaml:"failover" json:"failover"`
+	Failover        []EndpointMember `yaml:"failover" json:"failover"`
+	Ingress         []string         `yaml:"ingress,omitempty" json:"ingress,omitempty"`
+	AllowAdaptation bool             `yaml:"allow_adaptation,omitempty" json:"allow_adaptation,omitempty"`
 }
 
 // Deprecated: use EndpointConfig. Retained until client evidence and a
@@ -425,6 +427,7 @@ func cloneSettings(source *Settings) *Settings {
 		}
 		copy := *endpoint
 		copy.Failover = append([]EndpointMember(nil), endpoint.Failover...)
+		copy.Ingress = append([]string(nil), endpoint.Ingress...)
 		next.Endpoints[name] = &copy
 	}
 	next.Policies.Overrides = make(map[string]ProviderPolicy, len(source.Policies.Overrides))
@@ -960,9 +963,17 @@ func applyConfig(s *Settings, payload map[string]any) error {
 	// merging, so a mid-migration operator gets a predictable result instead
 	// of one that depends on map iteration order.
 	if raw, ok := payload["endpoints"].(map[string]any); ok {
-		s.Endpoints = parseEndpoints(raw)
+		endpoints, err := parseEndpoints(raw)
+		if err != nil {
+			return err
+		}
+		s.Endpoints = endpoints
 	} else if raw, ok := payload["categories"].(map[string]any); ok {
-		s.Endpoints = parseEndpoints(raw)
+		endpoints, err := parseEndpoints(raw)
+		if err != nil {
+			return err
+		}
+		s.Endpoints = endpoints
 	}
 	if raw, ok := payload["policies"].(map[string]any); ok {
 		defaults := s.Policies.Defaults
@@ -1089,21 +1100,44 @@ func mergeProviderPolicy(base ProviderPolicy, fields map[string]any) ProviderPol
 	return base
 }
 
-func parseEndpoints(raw map[string]any) map[string]*EndpointConfig {
+func parseEndpoints(raw map[string]any) (map[string]*EndpointConfig, error) {
 	out := map[string]*EndpointConfig{}
 	for name, cc := range raw {
 		ep := &EndpointConfig{}
 		switch v := cc.(type) {
 		case map[string]any:
+			if value := v["ingress"]; value != nil {
+				paths, ok := value.([]any)
+				if !ok {
+					return nil, fmt.Errorf("route %q ingress must be a list", name)
+				}
+				for _, path := range paths {
+					ingress, ok := path.(string)
+					if !ok {
+						return nil, fmt.Errorf("route %q ingress must contain strings", name)
+					}
+					ep.Ingress = append(ep.Ingress, ingress)
+				}
+			}
+			if value := v["allow_adaptation"]; value != nil {
+				allow, ok := value.(bool)
+				if !ok {
+					return nil, fmt.Errorf("route %q allow_adaptation must be a Boolean", name)
+				}
+				ep.AllowAdaptation = allow
+			}
 			if fo, ok := v["failover"].([]any); ok {
 				ep.Failover = parseMembers(fo)
 			}
 		case []any:
 			ep.Failover = parseMembers(v)
 		}
+		if err := ValidateEndpointContract(ep); err != nil {
+			return nil, fmt.Errorf("route %q: %w", name, err)
+		}
 		out[name] = ep
 	}
-	return out
+	return out, nil
 }
 
 func parseMembers(items []any) []EndpointMember {
@@ -1220,7 +1254,14 @@ func configPayload(s *Settings) map[string]any {
 			}
 			fo = append(fo, member)
 		}
-		endpoints[name] = map[string]any{"failover": fo}
+		entry := map[string]any{"failover": fo}
+		if len(ep.Ingress) > 0 {
+			entry["ingress"] = append([]string(nil), ep.Ingress...)
+		}
+		if ep.AllowAdaptation {
+			entry["allow_adaptation"] = true
+		}
+		endpoints[name] = entry
 	}
 	payload := map[string]any{
 		"providers": providers,
@@ -1304,6 +1345,11 @@ func writeSettings(path string, raw []byte, s *Settings) error {
 		// A file the loader cannot parse holds an edit the operator has yet
 		// to fix; replacing it would discard that edit along with the rest.
 		return fmt.Errorf("configuration not saved: %w", err)
+	}
+	for name, endpoint := range s.Endpoints {
+		if err := ValidateEndpointContract(endpoint); err != nil {
+			return fmt.Errorf("configuration not saved: route %q: %w", name, err)
+		}
 	}
 	if err := mergeManagedSettings(rootMapping(document), s); err != nil {
 		return fmt.Errorf("configuration not saved: %w", err)

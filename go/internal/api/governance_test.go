@@ -33,6 +33,10 @@ func aliasCandidatesAs(p *config.Principal) (map[string][]router.Target, error) 
 // envelope lost on the way to the router, the hidden cases would read 403.
 func TestGovernanceKeepsNotFoundAndForbiddenApart(t *testing.T) {
 	owner, project := setupKeyScope(t)
+	config.Update(func(s *config.Settings) {
+		s.Endpoints["echo-default"].Ingress = []string{"/v1/chat/completions", "/v1/responses", "/v1/messages", "/v1/messages/count_tokens"}
+		s.Endpoints["echo-default"].AllowAdaptation = true
+	})
 	issue := func(name string, policy iam.KeyPolicy) string {
 		issued, err := iam.IssueKey(iam.KeyCreate{ProjectID: project.ID, PrincipalID: owner.ID, Name: name, Policy: policy})
 		if err != nil {
@@ -97,7 +101,7 @@ func TestGovernanceNamesTheKeyInFailoverTelemetry(t *testing.T) {
 		s.Providers["bad"] = &config.ProviderConfig{Type: "openai_compatible", BaseURL: "http://127.0.0.1:1/v1", APIKey: "none"}
 		s.Endpoints["flaky"] = &config.EndpointConfig{Failover: []config.EndpointMember{
 			{Provider: "bad", Model: "x"}, {Provider: "one", Model: "echo-default"},
-		}}
+		}, Ingress: []string{"/v1/chat/completions", "/v1/responses", "/v1/messages"}, AllowAdaptation: true}
 	})
 	providers.ResetProviders()
 	issued, err := iam.IssueKey(iam.KeyCreate{ProjectID: project.ID, PrincipalID: owner.ID, Name: "telemetry-key"})

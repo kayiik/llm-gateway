@@ -857,14 +857,35 @@ func providerCheckDetail(success bool, failureCode string) string {
 	}
 }
 
-func selectVerificationModel(rows []providers.ModelInfo, pCfg *config.ProviderConfig) string {
+func selectVerificationModel(rows []providers.ModelInfo, isAnonymous bool) string {
+	eligible := make([]providers.ModelInfo, 0, len(rows))
+	for _, row := range rows {
+		if strings.TrimSpace(row.ID) == "" {
+			continue
+		}
+		conversational := len(row.SupportedSurfaces) == 0
+		for _, surface := range row.SupportedSurfaces {
+			switch core.ParseSurfacePath(surface) {
+			case core.ModelSurfaceChatCompletions, core.ModelSurfaceResponses, core.ModelSurfaceMessages:
+				conversational = true
+			}
+		}
+		if conversational {
+			eligible = append(eligible, row)
+		}
+	}
+	rows = eligible
 	if len(rows) == 0 {
 		return ""
 	}
-	isAnonymous := pCfg == nil || pCfg.APIKey == "" || strings.EqualFold(pCfg.APIKey, "none") || strings.EqualFold(pCfg.APIKey, "free")
 
 	// If anonymous / free tier, prioritize free-tier models first
 	if isAnonymous {
+		for _, r := range rows {
+			if r.Free {
+				return r.ID
+			}
+		}
 		for _, r := range rows {
 			id := strings.ToLower(r.ID)
 			if strings.Contains(id, "nemotron") && strings.Contains(id, "free") {
@@ -873,7 +894,7 @@ func selectVerificationModel(rows []providers.ModelInfo, pCfg *config.ProviderCo
 		}
 		for _, r := range rows {
 			id := strings.ToLower(r.ID)
-			if strings.Contains(id, "auto/free") || strings.Contains(id, "mimo") {
+			if strings.Contains(id, "auto/free") {
 				return r.ID
 			}
 		}
@@ -1040,8 +1061,14 @@ func runProviderVerifyWithContext(
 				"model_unavailable",
 			)
 		}
-		providerConfig, _ := config.Provider(providerID)
-		model = selectVerificationModel(rows, providerConfig)
+		anonymous, err := providers.ProviderCredentialIsAnonymous(config.Get(), providerID, callerOf(principal))
+		if err != nil {
+			return fail("Provider credential could not be resolved for verification.", "provider_unavailable")
+		}
+		model = selectVerificationModel(rows, anonymous)
+		if model == "" {
+			return fail("No conversational model is available to verify.", "model_unavailable")
+		}
 	}
 	if catalogRefreshed {
 		provider, err = providers.GetProviderForPrincipal(providerID, callerOf(principal))

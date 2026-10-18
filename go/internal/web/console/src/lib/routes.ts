@@ -1,6 +1,29 @@
 import type { JSONRecord } from "./api";
 import { keyLabel, keysPath } from "./directory";
-import { asList, asRecord, numberValue } from "./records";
+import { asList, asRecord, numberValue, stringValue } from "./records";
+
+export type RouteContract = { ingress: string[]; allow_adaptation: boolean };
+
+export const routeIngressOptions = [
+  { path: "/v1/chat/completions", label: "Chat Completions" },
+  { path: "/v1/responses", label: "Responses" },
+  { path: "/v1/messages", label: "Messages" },
+  { path: "/v1/messages/count_tokens", label: "Token counting" },
+  { path: "/v1/embeddings", label: "Embeddings" },
+  { path: "/v1/audio/transcriptions", label: "Audio transcription" },
+  { path: "/v1/audio/speech", label: "Speech" },
+  { path: "/v1/images/generations", label: "Image generation" },
+  { path: "/v1/videos/generations", label: "Video generation" },
+];
+
+export function routeContract(value: unknown): RouteContract {
+  const record = asRecord(value);
+  return { ingress: asList(record.ingress).map((path) => stringValue(path)).filter(Boolean), allow_adaptation: record.allow_adaptation === true };
+}
+
+export function routeIngressLabel(path: string): string {
+  return routeIngressOptions.find((option) => option.path === path)?.label ?? path;
+}
 
 export type RouteSavePlan =
   | { kind: "refused"; message: string }
@@ -56,8 +79,11 @@ export function renameConfirmation(plan: { name: string; from: string }, granted
 // commitRouteSave writes a planned save. A rename creates the new route before
 // deleting the original, so a failure never leaves neither route in place; when
 // only the delete fails, the outcome names the route that is left to remove.
-export async function commitRouteSave(plan: Exclude<RouteSavePlan, { kind: "refused" }>, failover: JSONRecord[], principalQuery: string, send: RouteRequest): Promise<string> {
-  await send(`/endpoints${principalQuery}`, "POST", { name: plan.name, failover });
+export async function commitRouteSave(plan: Exclude<RouteSavePlan, { kind: "refused" }>, failover: JSONRecord[], principalQuery: string, send: RouteRequest, contract?: RouteContract): Promise<string> {
+  await send(`/endpoints${principalQuery}`, "POST", {
+    name: plan.name, failover,
+    ...(contract ? { ingress: [...contract.ingress], allow_adaptation: contract.allow_adaptation } : {}),
+  });
   if (plan.kind !== "rename") return "Route saved in the selected failover order.";
   try {
     await send(`/endpoints/${encodeURIComponent(plan.from)}`, "DELETE");

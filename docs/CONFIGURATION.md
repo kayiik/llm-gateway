@@ -61,7 +61,7 @@ Supported fields depend on the runtime type:
 | `vertex_request_type` | Optional Vertex invocation mode: `default`, `paygo`, or `dedicated`. Unset preserves Google's default routing; `dedicated` requires matching provisioned throughput and does not fall back. |
 | `default_voice` | Default voice for speech providers. |
 | `disabled` | Keep the instance configured while removing it from routing. |
-| `force_api_support` | Opt the instance into experimental catalog-driven API adaptation. |
+| `force_api_support` | Legacy narrow catalog-driven endpoint rewrite. Does not authorize compatibility or override a native-only request/route. |
 
 With credential encryption configured, startup copies a provider's `api_key`
 into an encrypted system connection, which resolution then prefers. When the
@@ -87,6 +87,35 @@ endpoints:
 
 The deprecated `categories` key still loads when `endpoints` is absent. When both
 are present, `endpoints` wins and the maps are not merged.
+
+An endpoint without an API contract admits matching actual-native members only.
+To permit assessed adaptation, declare both the accepted entrypoints and the
+permission explicitly:
+
+```yaml
+endpoints:
+  compatible-coding:
+    ingress:
+      - /v1/chat/completions
+      - /v1/responses
+      - /v1/messages
+    allow_adaptation: true
+    failover:
+      - { provider: hosted-chat, model: <hosted-model-id> }
+```
+
+Nonempty `ingress` restricts native and adapted calls to those canonical paths.
+An omitted/false `allow_adaptation` grants no conversion permission, even with a
+matching ingress. Request compatibility `allow` cannot broaden the route;
+`deny` removes adapting candidates. Unknown or duplicate paths, invalid types,
+and adaptation without an ingress declaration are rejected on load/save.
+
+Other accepted paths are `/v1/messages/count_tokens`, `/v1/embeddings`,
+`/v1/audio/transcriptions`, `/v1/audio/speech`, `/v1/images/generations`, and
+`/v1/videos/generations`. Include token counting when a client's route needs it;
+a Chat-only declaration does not permit it. Declaring a path does not add that
+operation to an otherwise incapable provider. Console route editing and both
+endpoint administration API aliases retain these fields.
 
 ### Provider resilience
 

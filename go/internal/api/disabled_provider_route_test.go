@@ -202,8 +202,9 @@ func TestDisabledProviderRoutePreservesOperationalStatus(t *testing.T) {
 	// Initialization failures remain operational errors, not unavailable models.
 	config.Update(func(s *config.Settings) { s.Providers["fixture"].Type = "invalid-fixture-type" })
 	providers.ResetProviders()
+	before := calls.Load()
 	w := apiSmokeRequest(handler, "/v1/chat/completions", map[string]any{"model": "mixed", "messages": []any{}})
-	if w.Code != 502 {
+	if w.Code != http.StatusInternalServerError || !strings.Contains(w.Body.String(), "Upstream provider is misconfigured.") || calls.Load() != before {
 		t.Fatalf("configuration failure status changed: %d %s", w.Code, w.Body.String())
 	}
 }

@@ -246,8 +246,8 @@ func TestChatFieldsAnthropicCannotSendAreRefused(t *testing.T) {
 		{"n", 2},
 	} {
 		for _, stream := range []bool{false, true} {
-			w := apiSmokeRequest(handler, "/v1/chat/completions", chatFieldRequest("native/claude-fixture", stream, map[string]any{tc.field: tc.value}))
-			if w.Code != http.StatusBadRequest || !strings.Contains(errorMessage(w.Body.String()), `"`+tc.field+`"`) {
+			w := apiSmokeRequestWithCompatibility(handler, "/v1/chat/completions", chatFieldRequest("native/claude-fixture", stream, map[string]any{tc.field: tc.value}), "allow")
+			if w.Code != http.StatusBadRequest || !strings.Contains(errorMessage(w.Body.String()), tc.field) {
 				t.Fatalf("%s stream=%v: status=%d body=%s", tc.field, stream, w.Code, w.Body.String())
 			}
 			if sent := upstream.take("/n/v1/messages"); sent != nil {
@@ -257,7 +257,7 @@ func TestChatFieldsAnthropicCannotSendAreRefused(t *testing.T) {
 	}
 
 	nothing := map[string]any{"n": 1, "logprobs": false, "response_format": map[string]any{"type": "text"}, "parallel_tool_calls": true}
-	w := apiSmokeRequest(handler, "/v1/chat/completions", chatFieldRequest("native/claude-fixture", false, nothing))
+	w := apiSmokeRequestWithCompatibility(handler, "/v1/chat/completions", chatFieldRequest("native/claude-fixture", false, nothing), "allow")
 	sent := upstream.take("/n/v1/messages")
 	if w.Code != http.StatusOK || sent == nil {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
@@ -275,11 +275,10 @@ func TestChatFieldsAnthropicCannotSendAreRefused(t *testing.T) {
 func TestChatFieldsAnthropicServesAdvisoryFieldsAndTheCompletionLimit(t *testing.T) {
 	handler, upstream := setupChatFieldFixture(t)
 	advisory := map[string]any{
-		"max_completion_tokens": 64, "user": "fixture-user", "seed": 7, "service_tier": "auto",
-		"store": true, "reasoning_effort": "high", "presence_penalty": 0.5,
+		"max_completion_tokens": 64, "user": "fixture-user",
 	}
 	for _, stream := range []bool{false, true} {
-		w := apiSmokeRequest(handler, "/v1/chat/completions", chatFieldRequest("native/claude-fixture", stream, advisory))
+		w := apiSmokeRequestWithCompatibility(handler, "/v1/chat/completions", chatFieldRequest("native/claude-fixture", stream, advisory), "allow")
 		sent := upstream.take("/n/v1/messages")
 		if w.Code != http.StatusOK || sent == nil {
 			t.Fatalf("stream=%v: status=%d body=%s", stream, w.Code, w.Body.String())
@@ -295,10 +294,24 @@ func TestChatFieldsAnthropicServesAdvisoryFieldsAndTheCompletionLimit(t *testing
 	}
 }
 
+func TestChatFieldsAnthropicRejectsUnmappedGenerationAndBillingControls(t *testing.T) {
+	handler, upstream := setupChatFieldFixture(t)
+	for name, value := range map[string]any{"store": true, "service_tier": "auto", "reasoning_effort": "high", "presence_penalty": 0.5, "seed": 7} {
+		response := apiSmokeRequestWithCompatibility(handler, "/v1/chat/completions", chatFieldRequest("native/claude-fixture", false, map[string]any{name: value}), "allow")
+		if response.Code != http.StatusBadRequest || !strings.Contains(errorMessage(response.Body.String()), name) || upstream.take("/n/v1/messages") != nil {
+			t.Fatalf("unmapped control %s status=%d body=%s", name, response.Code, response.Body.String())
+		}
+	}
+}
+
 // An endpoint member that cannot send a field the request sets is skipped,
 // as one capability filtering excludes is, and the next member serves.
 func TestChatFieldsSkipAnEndpointMemberThatCannotSendThem(t *testing.T) {
 	handler, upstream := setupChatFieldFixture(t)
+	config.Update(func(s *config.Settings) {
+		s.Endpoints["mixed"].Ingress = []string{"/v1/chat/completions"}
+		s.Endpoints["mixed"].AllowAdaptation = true
+	})
 	fields := map[string]any{"response_format": map[string]any{"type": "json_object"}}
 	for _, stream := range []bool{false, true} {
 		w := apiSmokeRequest(handler, "/v1/chat/completions", chatFieldRequest("mixed", stream, fields))
@@ -344,7 +357,7 @@ func TestChatFieldsReachGitHubCopilotThroughTheDaemon(t *testing.T) {
 	}
 	daemon := http.NewServeMux()
 	daemon.HandleFunc("GET /extension/v1/github_copilot/models", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"models": []any{map[string]any{"id": "model-a"}}})
+		writeJSON(w, http.StatusOK, map[string]any{"models": []any{map[string]any{"id": "model-a", "supported_apis": []string{"/chat/completions"}}}})
 	})
 	daemon.HandleFunc("POST /extension/v1/github_copilot/invoke", func(w http.ResponseWriter, r *http.Request) {
 		record(r)
@@ -400,19 +413,30 @@ func TestChatFieldsReachGitHubCopilotThroughTheDaemon(t *testing.T) {
 	}
 }
 
-// A Responses request for a JSON schema is served by a Chat-only target with
-// the same schema as its response_format, streamed or not, and the answer
-// carries the format back. A target that cannot send response_format
-// refuses the request before anything is sent, as the fallback refuses any
-// control it cannot preserve.
-func TestResponsesFallbackCarriesTextFormatAsResponseFormat(t *testing.T) {
+// The OpenAI registry declares native Responses, unlike this Chat-only fixture.
+func useChatOnlyFixture(t *testing.T) {
+	t.Helper()
+	config.Update(func(s *config.Settings) {
+		s.Providers["chat-only"] = s.Providers["openai"]
+		delete(s.Providers, "openai")
+		s.Endpoints["mixed"].Failover[1].Provider = "chat-only"
+		s.Endpoints["mixed"].Ingress = []string{"/v1/responses"}
+		s.Endpoints["mixed"].AllowAdaptation = true
+	})
+	providers.ResetProviders()
+}
+
+// Preparation selects a declared Chat mapping before I/O, preserving the schema
+// in both the upstream request and the caller's response metadata.
+func TestResponsesPreparedConversionCarriesTextFormatAsResponseFormat(t *testing.T) {
 	handler, upstream := setupChatFieldFixture(t)
+	useChatOnlyFixture(t)
 	format := map[string]any{"type": "json_schema", "name": "verdict", "schema": map[string]any{"type": "object"}, "strict": true}
 	wantChat := map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "verdict", "schema": map[string]any{"type": "object"}, "strict": true}}
 	for _, stream := range []bool{false, true} {
-		w := apiSmokeRequest(handler, "/v1/responses", map[string]any{
-			"model": "openai/chat-model", "input": "verdict?", "stream": stream, "text": map[string]any{"format": format},
-		})
+		w := apiSmokeRequestWithCompatibility(handler, "/v1/responses", map[string]any{
+			"model": "chat-only/chat-model", "input": "verdict?", "stream": stream, "text": map[string]any{"format": format},
+		}, "allow")
 		if w.Code != http.StatusOK {
 			t.Fatalf("stream=%v: status=%d body=%s", stream, w.Code, w.Body.String())
 		}
@@ -420,26 +444,41 @@ func TestResponsesFallbackCarriesTextFormatAsResponseFormat(t *testing.T) {
 		if sent == nil || !reflect.DeepEqual(sent["response_format"], wantChat) {
 			t.Fatalf("stream=%v: the upstream received %v, want response_format %v", stream, sent, wantChat)
 		}
-		if !stream && !strings.Contains(w.Body.String(), `"name":"verdict"`) {
-			t.Fatalf("the answer does not carry the requested format: %s", w.Body.String())
+		if !strings.Contains(w.Body.String(), `"name":"verdict"`) {
+			t.Errorf("stream=%v: the answer does not carry the requested format: %s", stream, w.Body.String())
+		}
+		if !stream {
+			var response struct {
+				Usage struct {
+					Input  int `json:"input_tokens"`
+					Output int `json:"output_tokens"`
+					Total  int `json:"total_tokens"`
+				} `json:"usage"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Usage.Input != 1 || response.Usage.Output != 1 || response.Usage.Total != 2 {
+				t.Errorf("reported native counts changed in the converted wire: %+v", response.Usage)
+			}
 		}
 	}
 
-	w := apiSmokeRequest(handler, "/v1/responses", map[string]any{
+	w := apiSmokeRequestWithCompatibility(handler, "/v1/responses", map[string]any{
 		"model": "native/claude-fixture", "input": "verdict?", "text": map[string]any{"format": format},
-	})
-	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "text.format") {
-		t.Fatalf("status=%d body=%s, want a 400 naming text.format", w.Code, w.Body.String())
+	}, "allow")
+	if w.Code != http.StatusBadRequest || (!strings.Contains(w.Body.String(), "text.format") && !strings.Contains(w.Body.String(), "response_format")) {
+		t.Fatalf("status=%d body=%s, want an unsupported schema refusal", w.Code, w.Body.String())
 	}
 	if sent := upstream.take("/n/v1/messages"); sent != nil {
 		t.Fatalf("a refused request reached the upstream: %v", sent)
 	}
 
-	w = apiSmokeRequest(handler, "/v1/responses", map[string]any{
+	w = apiSmokeRequestWithCompatibility(handler, "/v1/responses", map[string]any{
 		"model": "native/claude-fixture", "input": "hi", "text": map[string]any{"format": map[string]any{"type": "text"}},
-	})
+	}, "allow")
 	if w.Code != http.StatusOK || upstream.take("/n/v1/messages") == nil {
-		t.Fatalf("a text format asks for nothing: status=%d body=%s", w.Code, w.Body.String())
+		t.Fatalf("baseline Responses-to-Messages text mapping failed: status=%d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -447,8 +486,9 @@ func TestResponsesFallbackCarriesTextFormatAsResponseFormat(t *testing.T) {
 // is skipped, as a Chat request skips one that cannot send its
 // response_format, and the next member serves the request, streamed or not.
 // The request fails with the refusal only when no member can serve it.
-func TestResponsesFallbackSkipsAnEndpointMemberThatCannotSendTextFormat(t *testing.T) {
+func TestResponsesPreparedConversionSkipsAnEndpointMemberThatCannotSendTextFormat(t *testing.T) {
 	handler, upstream := setupChatFieldFixture(t)
+	useChatOnlyFixture(t)
 	format := map[string]any{"type": "json_schema", "name": "verdict", "schema": map[string]any{"type": "object"}}
 	wantChat := map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "verdict", "schema": map[string]any{"type": "object"}}}
 	for _, stream := range []bool{false, true} {
@@ -469,14 +509,14 @@ func TestResponsesFallbackSkipsAnEndpointMemberThatCannotSendTextFormat(t *testi
 	config.Update(func(s *config.Settings) {
 		s.Endpoints["refusing"] = &config.EndpointConfig{Failover: []config.EndpointMember{
 			{Provider: "native", Model: "claude-fixture"}, {Provider: "native", Model: "claude-other"},
-		}}
+		}, Ingress: []string{"/v1/responses"}, AllowAdaptation: true}
 	})
 	for _, stream := range []bool{false, true} {
 		w := apiSmokeRequest(handler, "/v1/responses", map[string]any{
 			"model": "refusing", "input": "verdict?", "stream": stream, "text": map[string]any{"format": format},
 		})
-		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "text.format") {
-			t.Fatalf("stream=%v: status=%d body=%s, want a 400 naming text.format", stream, w.Code, w.Body.String())
+		if w.Code != http.StatusBadRequest || (!strings.Contains(w.Body.String(), "text.format") && !strings.Contains(w.Body.String(), "response_format")) {
+			t.Fatalf("stream=%v: status=%d body=%s, want an unsupported schema refusal", stream, w.Code, w.Body.String())
 		}
 		if sent := upstream.take("/n/v1/messages"); sent != nil {
 			t.Fatalf("stream=%v: a refused request reached the upstream: %v", stream, sent)

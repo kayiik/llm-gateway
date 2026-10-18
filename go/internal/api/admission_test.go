@@ -103,12 +103,12 @@ func TestGatewayRejectionsDoNotConsumeQuota(t *testing.T) {
 				"type": "function", "function": map[string]any{"name": "lookup", "parameters": map[string]any{"type": "object"}},
 			}},
 		}},
-		{"responses compatibility", "/v1/responses", nil, map[string]any{
+		{"responses compatibility", "/v1/responses", http.Header{compatibilityHeader: {"allow"}}, map[string]any{
 			"model": "fixture/model", "input": "hi", "tools": []any{map[string]any{
 				"type": "function", "name": "lookup", "parameters": map[string]any{"type": "object"},
 			}},
 		}},
-		{"messages material loss", "/v1/messages", nil, map[string]any{
+		{"messages material loss", "/v1/messages", http.Header{compatibilityHeader: {"allow"}}, map[string]any{
 			"model": "fixture/model", "max_tokens": 8, "stream": true, "messages": []any{map[string]any{
 				"role": "user", "content": []any{map[string]any{"type": "document", "source": map[string]any{"type": "base64"}}},
 			}},
@@ -154,7 +154,7 @@ func TestGatewayRejectionsDoNotConsumeQuota(t *testing.T) {
 		{"/v1/messages", map[string]any{"model": "fixture/model", "max_tokens": 8, "messages": hello, "stream": true}},
 		{"/v1/embeddings", map[string]any{"model": "fixture/model", "input": "hi"}},
 	} {
-		w := admissionRequest(handler, tc.path, token, nil, tc.payload)
+		w := admissionRequest(handler, tc.path, token, http.Header{compatibilityHeader: {"allow"}}, tc.payload)
 		if w.Code != http.StatusTooManyRequests || !strings.Contains(w.Body.String(), "quota exceeded") {
 			t.Fatalf("exhausted quota at %s stream=%v: status=%d body=%s", tc.path, tc.payload["stream"], w.Code, w.Body.String())
 		}

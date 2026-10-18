@@ -55,7 +55,7 @@ func playgroundStreamFixture(t *testing.T, extra map[string]*config.ProviderConf
 		}
 		s.Endpoints = map[string]*config.EndpointConfig{"fast": {Failover: []config.EndpointMember{
 			{Provider: "unreachable", Model: "model"}, {Provider: "echo", Model: "echo-default"},
-		}}}
+		}, Ingress: []string{"/v1/chat/completions", "/v1/responses", "/v1/messages"}, AllowAdaptation: true}}
 		s.Policies.Defaults = config.ProviderPolicy{RetryMaxAttempts: 1}
 	})
 	if _, err := iam.Initialize(); err != nil {
@@ -136,6 +136,29 @@ func readPlaygroundEvents(t *testing.T, response *http.Response) []playgroundEve
 	}
 }
 
+func assertPlaygroundTrace(t *testing.T, raw any, want []any) {
+	t.Helper()
+	trace, ok := raw.([]any)
+	if !ok || len(trace) != len(want) {
+		t.Fatalf("trace=%v, want %v", raw, want)
+	}
+	for index, item := range trace {
+		attempt, ok := item.(map[string]any)
+		if !ok {
+			t.Fatalf("invalid trace attempt: %v", item)
+		}
+		identity := map[string]any{"provider": attempt["provider"], "model": attempt["model"], "status": attempt["status"]}
+		if !reflect.DeepEqual(identity, want[index]) {
+			t.Fatalf("trace identity=%v, want %v", identity, want[index])
+		}
+		if duration, exists := attempt["duration_ms"]; exists {
+			if value, ok := duration.(float64); !ok || value < 0 {
+				t.Fatalf("invalid attempt duration: %v", duration)
+			}
+		}
+	}
+}
+
 // A playground request that streams shows, on every text surface, the route
 // members it tried as its stream opens, its text as it arrives, and then the
 // answer as a request that did not stream returns it. It is metered and
@@ -183,9 +206,17 @@ func TestPlaygroundStreamsEveryTextSurface(t *testing.T) {
 			}
 			route, done := events[0].data, events[len(events)-1].data
 			served := map[string]any{"provider": "echo", "model": "echo-default"}
-			if !reflect.DeepEqual(route["served"], served) || !reflect.DeepEqual(route["fallback_trace"], wantTrace) || route["surface"] != test.path {
+			transport := "translated"
+			if test.path == "/v1/chat/completions" {
+				transport = "native"
+			}
+			if route["transport_mode"] != transport || done["transport_mode"] != transport {
+				t.Fatalf("selected transport=%s route=%v done=%v", transport, route["transport_mode"], done["transport_mode"])
+			}
+			if !reflect.DeepEqual(route["served"], served) || route["surface"] != test.path {
 				t.Fatalf("route %+v", route)
 			}
+			assertPlaygroundTrace(t, route["fallback_trace"], wantTrace)
 			text := ""
 			for _, event := range events[1 : len(events)-1] {
 				if event.name != "delta" {
@@ -197,9 +228,10 @@ func TestPlaygroundStreamsEveryTextSurface(t *testing.T) {
 			if text != want {
 				t.Fatalf("streamed text %q, want %q", text, want)
 			}
-			if !reflect.DeepEqual(done["served"], served) || !reflect.DeepEqual(done["fallback_trace"], wantTrace) || done["project_id"] != project.ID {
+			if !reflect.DeepEqual(done["served"], served) || done["project_id"] != project.ID {
 				t.Fatalf("done %+v", done)
 			}
+			assertPlaygroundTrace(t, done["fallback_trace"], wantTrace)
 			if answer := test.answer(done["raw_response"].(map[string]any)); answer != want {
 				t.Fatalf("the assembled answer says %q, want %q", answer, want)
 			}

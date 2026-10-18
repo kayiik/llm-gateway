@@ -34,7 +34,9 @@ const extensionTestSecret = "fixture-extension-api-secret"
 // serves the gateway.
 func useExtensionsAPI(t *testing.T, encrypted bool) *httptest.Server {
 	t.Helper()
-	t.Setenv("LLMGW_STATE_DIR", t.TempDir())
+	state := t.TempDir()
+	t.Setenv("LLMGW_STATE_DIR", state)
+	t.Setenv("LLMGW_CONFIG", filepath.Join(state, "config.yaml"))
 	t.Setenv("LLMGW_EXTENSION_URL", "")
 	t.Setenv("LLMGW_EXTENSION_SECRET", "")
 	iam.ResetForTests()
@@ -449,7 +451,7 @@ func TestARequestAfterAnExtensionMovesReachesItsNewAddress(t *testing.T) {
 	daemon := func(calls *atomic.Int32) *httptest.Server {
 		mux := http.NewServeMux()
 		mux.HandleFunc("GET /extension/v1/github_copilot/models", func(w http.ResponseWriter, r *http.Request) {
-			writeJSON(w, http.StatusOK, map[string]any{"models": []any{map[string]any{"id": "model-a"}}})
+			writeJSON(w, http.StatusOK, map[string]any{"models": []any{map[string]any{"id": "model-a", "supported_apis": []string{"/chat/completions"}}}})
 		})
 		mux.HandleFunc("POST /extension/v1/github_copilot/invoke", func(w http.ResponseWriter, r *http.Request) {
 			calls.Add(1)

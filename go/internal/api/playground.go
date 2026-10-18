@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -207,57 +208,14 @@ func executePlayground(w http.ResponseWriter, r *http.Request, body playgroundBo
 		writeError(w, 400, "model and at least one message are required")
 		return
 	}
-	started := time.Now()
-	resolution, err := resolveModel(r.Context(), body.Model, principal)
-	if err != nil {
-		if _, missing := err.(*router.ModelNotFoundError); missing {
-			writeError(w, 404, err.Error())
-		} else {
-			writeError(w, 500, "Gateway route configuration is unavailable.")
-		}
-		return
-	}
-	targets, status, message := enforcePlaygroundPolicy(principal, body.Model, resolution.Category, resolution.Targets)
-	if status != 0 {
-		writeError(w, status, message)
-		return
-	}
-	targets, err = router.FilterCompatibleTargets(targets, callerOf(principal), router.CompatibilityRequest{
-		Surface: core.ModelSurfaceChatCompletions, Tools: requestHasTools(body.Tools), Vision: requestIsMultimodal(body.Messages),
-	})
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
 	request := chatRequest{Model: body.Model, Messages: body.Messages, Temperature: body.Temperature, MaxTokens: body.MaxTokens, ReasoningEffort: body.ReasoningEffort, Tools: body.Tools, ToolChoice: body.ToolChoice}
-	response, served, trace, err := router.ExecuteCompleteWithTraceContext(governed(r.Context(), principal), targets, providerMessages(body.Messages), body.Model, callerOf(principal), chatKwargs(&request))
-	latency := time.Since(started).Milliseconds()
-	if err != nil {
-		if r.Context().Err() != nil {
-			return
+	payload := map[string]any{"model": body.Model, "messages": body.Messages}
+	for name, value := range chatKwargs(&request) {
+		if !strings.HasPrefix(name, "_") {
+			payload[name] = value
 		}
-		recordUsage(router.UsageRecord{
-			Endpoint: "playground.chat", RequestedModel: body.Model, Project: project.Slug, Key: "playground",
-			ProjectID: project.ID, PrincipalID: principal.PrincipalID, StatusCode: upstreamErrorStatus(err), LatencyMS: latency, ErrorCode: "upstream",
-		})
-		auditPlayground(r, source, "playground.execute", project.ID, principal.PrincipalID, "failure", map[string]any{"model": body.Model, "source": source})
-		writeUpstreamError(w, err)
-		return
 	}
-	inputTokens, outputTokens := responseUsage(response)
-	recordUsage(router.UsageRecord{
-		Endpoint: "playground.chat", RequestedModel: body.Model, RoutedModel: served.Model, Provider: served.Provider,
-		Project: project.Slug, Key: "playground", ProjectID: project.ID, PrincipalID: principal.PrincipalID,
-		InputTokens: inputTokens, OutputTokens: outputTokens, StatusCode: http.StatusOK, LatencyMS: latency, IsStub: playgroundStub(served.Provider, principal),
-	})
-	auditPlayground(r, source, "playground.execute", project.ID, principal.PrincipalID, "success", map[string]any{"model": body.Model, "served_provider": served.Provider, "served_model": served.Model, "source": source})
-	writeJSON(w, http.StatusOK, map[string]any{
-		"project_id": project.ID, "principal_id": principal.PrincipalID,
-		"served":     map[string]any{"provider": served.Provider, "model": served.Model},
-		"latency_ms": latency, "usage": safePlaygroundValue(response["usage"]),
-		"fallback_trace": trace, "raw_response": safePlaygroundValue(response),
-		"transport_mode": targetTransportMode(*served, callerOf(principal), "/v1/chat/completions"),
-	})
+	executePlaygroundSurface(w, r, payload, body, principal, project, source, core.ModelSurfaceChatCompletions)
 }
 
 func executePlaygroundSurface(w http.ResponseWriter, r *http.Request, payload map[string]any, body playgroundBody, principal *config.Principal, project iam.Project, source string, surface core.ModelSurface) {
@@ -270,6 +228,7 @@ func executePlaygroundSurface(w http.ResponseWriter, r *http.Request, payload ma
 		return
 	}
 	started := time.Now()
+	settings, generation := config.Snapshot()
 	resolution, err := resolveModel(r.Context(), body.Model, principal)
 	if err != nil {
 		if _, missing := err.(*router.ModelNotFoundError); missing {
@@ -279,7 +238,7 @@ func executePlaygroundSurface(w http.ResponseWriter, r *http.Request, payload ma
 		}
 		return
 	}
-	targets, status, message := enforcePlaygroundPolicy(principal, body.Model, resolution.Category, resolution.Targets)
+	targets, status, message := authorizePlaygroundPolicy(principal, body.Model, resolution.Category, resolution.Targets)
 	if status != 0 {
 		writeError(w, status, message)
 		return
@@ -295,70 +254,52 @@ func executePlaygroundSurface(w http.ResponseWriter, r *http.Request, payload ma
 			return
 		}
 	}
-	targets, err = router.FilterCompatibleTargets(targets, callerOf(principal), router.CompatibilityRequest{
-		Surface: surface, Tools: requestHasTools(payload["tools"]), Vision: playgroundPayloadIsMultimodal(surface, payload),
-		Streaming: body.Stream,
-	})
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
 	delete(payload, "project_id")
 	delete(payload, "principal_id")
-	if body.Stream {
-		streamPlayground(w, r, payload, body, principal, project, source, surface, targets, started)
+	payload["stream"] = body.Stream
+	prepared, err := preparePlaygroundRequest(r, principal, payload, body.Model, surface, settings, generation, resolution, targets)
+	if err != nil {
+		writeUpstreamError(w, err)
 		return
 	}
-	delete(payload, "stream")
-
-	// Every chain reports the route members it tried to the sink; the Chat
-	// chain also times them, so its own trace is shown.
-	ctx, sink := router.WithAttemptTrace(governed(r.Context(), principal))
-	var response map[string]any
-	var served *router.Target
-	var trace []router.AttemptTrace
-	switch surface {
-	case core.ModelSurfaceResponses:
-		response, served, err = router.ExecuteResponsesContext(ctx, targets, payload, body.Model, callerOf(principal))
-	case core.ModelSurfaceMessages:
-		response, served, err = router.ExecuteAnthropicMessagesContext(ctx, targets, payload, body.Model, callerOf(principal))
-	default:
-		var request chatRequest
-		raw, _ := json.Marshal(payload)
-		_ = json.Unmarshal(raw, &request)
-		if len(request.Messages) == 0 {
-			writeError(w, http.StatusBadRequest, "at least one message is required")
-			return
-		}
-		response, served, trace, err = router.ExecuteCompleteWithTraceContext(ctx, targets, providerMessages(request.Messages), body.Model, callerOf(principal), chatKwargs(&request))
-		if err == nil {
-			response["model"] = served.Model
-			normalizeChatResponseEnvelope(response)
-		}
+	if status, message := admitPreparedPlayground(principal, body.Model, resolution.Category, prepared.Targets()); status != 0 {
+		writeError(w, status, message)
+		return
 	}
-	if trace == nil {
-		trace = sink.Attempts()
+	if body.Stream {
+		streamPlayground(w, r, payload, body, principal, project, source, surface, prepared, started)
+		return
+	}
+	result, served, trace, err := prepared.Invoke(governed(r.Context(), principal), body.Model)
+	var response map[string]any
+	if err == nil {
+		err = decodeInferenceBody(strings.NewReader(string(result.Body)), &response)
+	}
+	if err == nil && surface == core.ModelSurfaceChatCompletions {
+		normalizeChatResponseEnvelope(response)
 	}
 	latency := time.Since(started).Milliseconds()
 	endpoint := "playground." + playgroundSurfaceName(surface)
+	accounting := preparedInput{endpoint: endpoint, model: body.Model, surface: surface, payload: payload, started: started}
 	if err != nil {
 		if r.Context().Err() != nil {
+			recordPreparedUsage(principal, accounting, prepared, served, nil, 499, "client_cancelled")
 			return
 		}
-		recordUsage(router.UsageRecord{Endpoint: endpoint, RequestedModel: body.Model, Project: project.Slug, Key: "playground", ProjectID: project.ID, PrincipalID: principal.PrincipalID, StatusCode: upstreamErrorStatus(err), LatencyMS: latency, ErrorCode: "upstream"})
+		recordPreparedUsage(principal, accounting, prepared, served, nil, upstreamErrorStatus(err), "upstream")
 		auditPlayground(r, source, "playground.execute", project.ID, principal.PrincipalID, "failure", map[string]any{"model": body.Model, "surface": playgroundSurfacePath(surface), "source": source})
 		writeUpstreamError(w, err)
 		return
 	}
-	inputTokens, outputTokens := responseUsage(response)
-	recordUsage(router.UsageRecord{Endpoint: endpoint, RequestedModel: body.Model, RoutedModel: served.Model, Provider: served.Provider, Project: project.Slug, Key: "playground", ProjectID: project.ID, PrincipalID: principal.PrincipalID, InputTokens: inputTokens, OutputTokens: outputTokens, StatusCode: http.StatusOK, LatencyMS: latency, IsStub: playgroundStub(served.Provider, principal)})
+	setPreparedDiagnostics(w, preparedInput{surface: surface, started: started, payload: payload}, prepared, served, trace, "")
+	recordPreparedUsage(principal, accounting, prepared, served, response, http.StatusOK, "")
 	auditPlayground(r, source, "playground.execute", project.ID, principal.PrincipalID, "success", map[string]any{"model": body.Model, "surface": playgroundSurfacePath(surface), "served_provider": served.Provider, "served_model": served.Model, "source": source})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"project_id": project.ID, "principal_id": principal.PrincipalID,
 		"served":     map[string]any{"provider": served.Provider, "model": served.Model},
 		"latency_ms": latency, "usage": safePlaygroundValue(response["usage"]),
 		"fallback_trace": trace, "raw_response": safePlaygroundValue(response),
-		"transport_mode": targetTransportMode(*served, callerOf(principal), playgroundSurfacePath(surface)),
+		"transport_mode": w.Header().Get(transportModeHeader),
 		"surface":        playgroundSurfacePath(surface),
 	})
 }
@@ -397,6 +338,39 @@ func playgroundSurfacePath(surface core.ModelSurface) string {
 }
 
 func enforcePlaygroundPolicy(principal *config.Principal, requestedModel, resolvedCategory string, targets []router.Target) ([]router.Target, int, string) {
+	targets, status, message := authorizePlaygroundPolicy(principal, requestedModel, resolvedCategory, targets)
+	if status != 0 {
+		return nil, status, message
+	}
+	if status, message := admitPlaygroundProject(principal); status != 0 {
+		return nil, status, message
+	}
+	return targets, 0, ""
+}
+
+func admitPreparedPlayground(principal *config.Principal, model, category string, targets []router.Target) (int, string) {
+	authorized, status, message := authorizePlaygroundPolicy(principal, model, category, targets)
+	if status != 0 {
+		return status, message
+	}
+	if !slices.Equal(authorized, targets) {
+		return http.StatusConflict, "Project authorization changed during preparation; retry the request."
+	}
+	return admitPlaygroundProject(principal)
+}
+
+func admitPlaygroundProject(principal *config.Principal) (int, string) {
+	if err := iam.CheckAndConsumeProjectRequest(principal.ProjectID, time.Now()); err != nil {
+		var exceeded *iam.QuotaExceeded
+		if errors.As(err, &exceeded) {
+			return 429, exceeded.Error()
+		}
+		return 500, "Project quota store unavailable."
+	}
+	return 0, ""
+}
+
+func authorizePlaygroundPolicy(principal *config.Principal, requestedModel, resolvedCategory string, targets []router.Target) ([]router.Target, int, string) {
 	policy, err := iam.GetProjectPolicy(principal.ProjectID)
 	if err != nil {
 		return nil, 500, "Project policy store unavailable."
@@ -419,13 +393,6 @@ func enforcePlaygroundPolicy(principal *config.Principal, requestedModel, resolv
 	targets, status, message := availableRouteTargets(targets)
 	if status != 0 {
 		return nil, status, message
-	}
-	if err := iam.CheckAndConsumeProjectRequest(principal.ProjectID, time.Now()); err != nil {
-		var exceeded *iam.QuotaExceeded
-		if errors.As(err, &exceeded) {
-			return nil, 429, exceeded.Error()
-		}
-		return nil, 500, "Project quota store unavailable."
 	}
 	return targets, 0, ""
 }

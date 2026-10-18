@@ -73,8 +73,14 @@ func TestAnthropicClientHeadersReachNativeMessagesTargets(t *testing.T) {
 		}
 	}
 
-	chat, err := http.Post(gateway.URL+"/v1/chat/completions", "application/json",
+	request, err := http.NewRequest(http.MethodPost, gateway.URL+"/v1/chat/completions",
 		strings.NewReader(`{"model":"first/model-a","stream":true,"messages":[{"role":"user","content":"Say hello"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(compatibilityHeader, "allow")
+	chat, err := http.DefaultClient.Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}

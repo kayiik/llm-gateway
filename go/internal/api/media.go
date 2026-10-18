@@ -120,6 +120,13 @@ func resolveMediaTarget(principal *config.Principal, model string, operation cor
 	if status != 0 {
 		return "", "", status, message
 	}
+	ingress := "/v1/images/generations"
+	if operation == core.ModelOperationVideo {
+		ingress = "/v1/videos/generations"
+	}
+	if err := validateRouteIngress(resolution.Category, ingress); err != nil {
+		return "", "", http.StatusBadRequest, err.Error()
+	}
 	if len(targets) == 0 {
 		return "", "", http.StatusNotFound, "no routable target for '" + model + "'"
 	}

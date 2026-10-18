@@ -30,7 +30,7 @@ func TestChainFailurePassesRetryAfterOn(t *testing.T) {
 					for key, value := range body {
 						request[key] = value
 					}
-					response := apiSmokeRequest(handler, path, request)
+					response := apiSmokeRequestWithCompatibility(handler, path, request, "allow")
 					if response.Code != status || response.Header().Get("Retry-After") != "7" {
 						t.Fatalf("status=%d Retry-After=%q body=%s", response.Code, response.Header().Get("Retry-After"), response.Body.String())
 					}
@@ -70,7 +70,7 @@ func TestAnthropicAndAzureRefusalsPassRetryAfterOn(t *testing.T) {
 			if tc.stream {
 				request["stream"] = true
 			}
-			response := apiSmokeRequest(handler, tc.path, request)
+			response := apiSmokeRequestWithCompatibility(handler, tc.path, request, "allow")
 			if response.Code != http.StatusTooManyRequests || response.Header().Get("Retry-After") != "2" {
 				t.Fatalf("status=%d Retry-After=%q body=%s", response.Code, response.Header().Get("Retry-After"), response.Body.String())
 			}

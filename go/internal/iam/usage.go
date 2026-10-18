@@ -2,6 +2,8 @@ package iam
 
 import (
 	"encoding/json"
+	"errors"
+	"math"
 	"time"
 )
 
@@ -23,11 +25,31 @@ type UsageEvent struct {
 	CreditsMilli   int64
 	ErrorCode      string
 	IsStub         bool
+	SourceUsage    *UsageEvidence
 }
 
 // RecordUsageEvent persists attribution and reconciles day/month token, cost and
 // credit counters. Request counts are consumed at intake by CheckAndConsumeRequest.
 func RecordUsageEvent(event UsageEvent) error {
+	if event.InputTokens < 0 || event.OutputTokens < 0 || event.CostMicroUSD < 0 || event.CreditsMilli < 0 || event.LatencyMS < 0 ||
+		int64(event.InputTokens) > math.MaxInt64-int64(event.OutputTokens) {
+		return errors.New("usage values must be non-negative and fit the supported range")
+	}
+	var sourceUsage any
+	if event.SourceUsage != nil {
+		encoded, err := json.Marshal(event.SourceUsage)
+		selectedValid := event.SourceUsage.SelectedAttempt >= 0 && event.SourceUsage.SelectedAttempt < len(event.SourceUsage.Attempts)
+		if event.SourceUsage.SelectionUnavailable {
+			selectedValid = event.SourceUsage.SelectedAttempt == -1
+		}
+		if err != nil || len(encoded) > 64<<10 || event.SourceUsage.Version != 1 || len(event.SourceUsage.Attempts) == 0 || len(event.SourceUsage.Attempts) > 8 || !selectedValid {
+			return errors.New("invalid usage evidence")
+		}
+		sourceUsage = string(encoded)
+		if event.SourceUsage.Invalid && (event.InputTokens != 0 || event.OutputTokens != 0 || event.CostMicroUSD != 0 || event.CreditsMilli != 0) {
+			return errors.New("invalid source usage cannot settle counters")
+		}
+	}
 	db, err := DB()
 	if err != nil {
 		return err
@@ -68,16 +90,21 @@ func RecordUsageEvent(event UsageEvent) error {
 INSERT INTO usage_events(
     request_id,ts,endpoint,status_code,latency_ms,requested_model,routed_model,
     provider,project_id,principal_id,key_id,input_tokens,output_tokens,
-    cost_microusd,credits_milli,error_code,is_stub
-) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    cost_microusd,credits_milli,error_code,is_stub,source_usage_json
+) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		event.RequestID, event.Timestamp, event.Endpoint, event.StatusCode,
 		event.LatencyMS, nullable(event.RequestedModel), nullable(event.RoutedModel),
 		nullable(event.Provider), nullable(event.ProjectID), nullable(event.PrincipalID),
 		nullable(event.KeyID), event.InputTokens, event.OutputTokens,
-		event.CostMicroUSD, event.CreditsMilli, nullable(event.ErrorCode), stub,
+		event.CostMicroUSD, event.CreditsMilli, nullable(event.ErrorCode), stub, sourceUsage,
 	)
 	if err != nil {
 		return err
+	}
+	// Keep invalid provider evidence observable without treating it as measured
+	// zero or settling token, money, or credit counters from it.
+	if event.SourceUsage != nil && event.SourceUsage.Invalid {
+		return tx.Commit()
 	}
 	if event.KeyID != "" {
 		at := time.Unix(event.Timestamp, 0).UTC()
@@ -88,7 +115,7 @@ INSERT INTO usage_events(
 		}{
 			{"day", dayStart}, {"month", monthStart},
 		} {
-			if _, err := tx.Exec(`
+			result, err := tx.Exec(`
 INSERT INTO quota_counters(
     key_id,period,period_start,input_tokens,output_tokens,cost_microusd,credits_milli
 ) VALUES(?,?,?,?,?,?,?)
@@ -96,11 +123,22 @@ ON CONFLICT(key_id,period,period_start) DO UPDATE SET
     input_tokens=input_tokens+excluded.input_tokens,
     output_tokens=output_tokens+excluded.output_tokens,
     cost_microusd=cost_microusd+excluded.cost_microusd,
-    credits_milli=credits_milli+excluded.credits_milli`,
+	    credits_milli=credits_milli+excluded.credits_milli
+	WHERE typeof(input_tokens)='integer' AND typeof(output_tokens)='integer'
+	    AND input_tokens>=0 AND output_tokens>=0 AND input_tokens<=?-output_tokens
+	    AND typeof(cost_microusd)='integer' AND cost_microusd BETWEEN 0 AND ?
+	    AND typeof(credits_milli)='integer' AND credits_milli BETWEEN 0 AND ?`,
 				event.KeyID, period.name, period.start, event.InputTokens,
 				event.OutputTokens, event.CostMicroUSD, event.CreditsMilli,
-			); err != nil {
+				math.MaxInt64-int64(event.InputTokens)-int64(event.OutputTokens), math.MaxInt64-event.CostMicroUSD, math.MaxInt64-event.CreditsMilli,
+			)
+			if err != nil {
 				return err
+			}
+			if affected, err := result.RowsAffected(); err != nil {
+				return err
+			} else if affected != 1 {
+				return errors.New("usage counters exceed the supported range")
 			}
 		}
 	}
@@ -113,7 +151,7 @@ ON CONFLICT(key_id,period,period_start) DO UPDATE SET
 		}{
 			{"day", dayStart}, {"month", monthStart},
 		} {
-			if _, err := tx.Exec(`
+			result, err := tx.Exec(`
 INSERT INTO project_quota_counters(
     project_id,period,period_start,input_tokens,output_tokens,cost_microusd,credits_milli
 ) VALUES(?,?,?,?,?,?,?)
@@ -121,11 +159,22 @@ ON CONFLICT(project_id,period,period_start) DO UPDATE SET
     input_tokens=input_tokens+excluded.input_tokens,
     output_tokens=output_tokens+excluded.output_tokens,
     cost_microusd=cost_microusd+excluded.cost_microusd,
-    credits_milli=credits_milli+excluded.credits_milli`,
+	    credits_milli=credits_milli+excluded.credits_milli
+	WHERE typeof(input_tokens)='integer' AND typeof(output_tokens)='integer'
+	    AND input_tokens>=0 AND output_tokens>=0 AND input_tokens<=?-output_tokens
+	    AND typeof(cost_microusd)='integer' AND cost_microusd BETWEEN 0 AND ?
+	    AND typeof(credits_milli)='integer' AND credits_milli BETWEEN 0 AND ?`,
 				event.ProjectID, period.name, period.start, event.InputTokens,
 				event.OutputTokens, event.CostMicroUSD, event.CreditsMilli,
-			); err != nil {
+				math.MaxInt64-int64(event.InputTokens)-int64(event.OutputTokens), math.MaxInt64-event.CostMicroUSD, math.MaxInt64-event.CreditsMilli,
+			)
+			if err != nil {
 				return err
+			}
+			if affected, err := result.RowsAffected(); err != nil {
+				return err
+			} else if affected != 1 {
+				return errors.New("usage counters exceed the supported range")
 			}
 		}
 	}
