@@ -152,6 +152,10 @@ func ProviderHTTPTarget(providerID string, caller core.Caller) (string, http.Hea
 	return Current().ProviderHTTPTarget(providerID, caller)
 }
 
+func SupportsRealtimeHTTPTransport(providerID string) bool {
+	return Current().SupportsRealtimeHTTPTransport(providerID)
+}
+
 func CoreServesSurfaceForPrincipal(providerID, model string, surface core.ModelSurface, caller core.Caller) bool {
 	return Current().CoreServesSurfaceForPrincipal(providerID, model, surface, caller)
 }

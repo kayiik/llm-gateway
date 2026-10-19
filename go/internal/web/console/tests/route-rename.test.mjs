@@ -87,14 +87,14 @@ test("an update or a create writes only the named route", async () => {
 test("every route save retains explicit ingress and adaptation, including rename", async () => {
   for (const plan of [{ kind: "create", name: "coding" }, { kind: "update", name: "coding" }, { kind: "rename", name: "next", from: "coding" }]) {
     const bodies = [];
-    const contract = { ingress: ["/v1/chat/completions", "/v1/messages"], allow_adaptation: true };
+    const contract = { ingress: ["/v1/chat/completions", "/v1/messages", "/v1/realtime/calls"], allow_adaptation: true };
     await routes.commitRouteSave(plan, [{ provider: "p", model: "m" }], "", async (_path, method, body) => {
       if (method === "POST") bodies.push(body);
     }, contract);
     contract.ingress.push("/v1/responses");
     assert.deepEqual(bodies[0], {
       name: plan.name, failover: [{ provider: "p", model: "m" }],
-      ingress: ["/v1/chat/completions", "/v1/messages"], allow_adaptation: true,
+      ingress: ["/v1/chat/completions", "/v1/messages", "/v1/realtime/calls"], allow_adaptation: true,
     });
   }
 });

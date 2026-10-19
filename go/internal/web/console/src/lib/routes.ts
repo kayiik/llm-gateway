@@ -12,6 +12,7 @@ export const routeIngressOptions = [
   { path: "/v1/embeddings", label: "Embeddings" },
   { path: "/v1/audio/transcriptions", label: "Audio transcription" },
   { path: "/v1/audio/speech", label: "Speech" },
+  { path: "/v1/realtime/calls", label: "Realtime WebRTC signaling" },
   { path: "/v1/images/generations", label: "Image generation" },
   { path: "/v1/videos/generations", label: "Video generation" },
 ];

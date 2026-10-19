@@ -6,6 +6,8 @@ toolchain declared in `go/go.mod`; it installs no dependencies or services.
 ```text
 node scripts/test-local.mjs policy
 node scripts/test-local.mjs api --run TestResponses
+node scripts/test-local.mjs api --run TestMultimodal
+node scripts/test-local.mjs api --run TestRealtime
 node scripts/test-local.mjs go --package ./internal/iam --run TestUsage
 node scripts/test-local.mjs console
 node scripts/test-local.mjs all

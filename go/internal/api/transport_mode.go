@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"llmgw/internal/config"
@@ -115,7 +116,22 @@ func modelTransportSurfaces(
 ) ([]string, []string, []string) {
 	provider, credential, _ := transportDeclaration(providerID, caller)
 	model.Capabilities, model.SupportedSurfaces = capabilities, surfaces
-	return core.ListingSurfaces(provider, credential, transportEvidence(model, refreshedAt), evaluatedAt)
+	native, emulated, unknown := core.ListingSurfaces(provider, credential, transportEvidence(model, refreshedAt), evaluatedAt)
+	// This signaling path is served directly by the gateway rather than the
+	// core conversation adapters. Only a current explicit API declaration is
+	// positive listing evidence; neither the provider label nor model name is.
+	for _, surface := range surfaces {
+		if strings.TrimPrefix(surface, "/v1") != "/realtime/calls" {
+			continue
+		}
+		if providers.SupportsRealtimeHTTPTransport(providerID) && realtimeCatalogSupport(model, refreshedAt, evaluatedAt) == core.SupportSupported {
+			native = append(native, realtimeCallsPath)
+		} else {
+			unknown = append(unknown, realtimeCallsPath)
+		}
+		break
+	}
+	return native, emulated, unknown
 }
 
 // transportDeclaration returns the core provider whose declarations say

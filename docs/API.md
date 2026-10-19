@@ -34,6 +34,7 @@ from a non-loopback `Origin` are refused with `403`; see
 | `POST` | `/v1/embeddings` | Single-target OpenAI-shaped embedding proxy. |
 | `POST` | `/v1/audio/transcriptions` | Multipart single-target speech-to-text proxy. |
 | `POST` | `/v1/audio/speech` | Single-target speech synthesis, including native Edge TTS. |
+| `POST` | `/v1/realtime/calls` | Native multipart WebRTC SDP/session signaling. |
 | `POST` | `/v1/images/generations` | Image generation from a capable provider; returns inline `b64_json`. |
 | `POST` | `/v1/videos/generations` | Starts a video operation or polls one when `operation` is supplied. |
 
@@ -51,6 +52,7 @@ The same handlers accept:
 /embeddings
 /audio/transcriptions
 /audio/speech
+/realtime/calls
 /images/generations
 /videos/generations
 ```
@@ -196,10 +198,51 @@ compatibility profile: adaptive/enabled thinking, `redacted_thinking`, cache
 controls, structured output, documents, unsupported images, error tool results,
 and unknown fields fail closed when they cannot be preserved.
 
+## Media inputs
+
+Native Chat Completions, Responses and Messages retain their API's ordered
+content arrays, file references and media controls, including through native
+companion-daemon transport. A native input is passed to the selected provider
+for model-specific validation; the gateway does not decode videos or transcode
+audio to forward a request.
+
+OpenAI-compatible targets and the Bedrock compatible endpoint share this
+native content-part transport. Accepted modalities are still specific to the
+model and API. The Bedrock integration uses its compatible Chat/Responses
+surfaces; native AWS Converse/InvokeModel and bidirectional speech APIs are
+separate interfaces and are not implemented by that adapter.
+
+Explicitly permitted adaptations support these carriers:
+
+- Chat `file` parts and Responses `input_file` parts map `filename`,
+  `file_data` and `file_id` between the nested and flat envelopes. Exactly one
+  data/ID carrier is required. Responses `file_url` stays native-only because
+  Chat has no equivalent URL field.
+- Messages user images with base64 or URL sources map to Chat image parts.
+  A base64 `application/pdf` document maps to a Chat file. Document titles,
+  citations, context and cache controls still require a native Messages target
+  when that adapting path cannot retain them.
+- Google AI Studio and Vertex Gemini preserve ordered user text/media parts.
+  Inline images and typed file data become `inlineData`; remote media URIs
+  become `fileData` without a gateway-side fetch. PDF, audio and video use the
+  same documented MIME/data carriers. Chat `input_audio` requires explicit
+  `wav` or `mp3` format. A bare file's MIME type can be derived from a recognized
+  filename; a data URL carries its own type. Opaque provider file IDs are not
+  interpreted as Google file URIs.
+- Ollama receives inline base64 user images in its native `images` list, in
+  image order, alongside the message text. Remote images and non-default image
+  detail require a different/native target rather than a hidden download or
+  silently dropped control.
+
+Unsupported carriers and unmapped nested controls fail during preparation.
+These mappings retain the existing native-first policy; they do not enable
+adaptation implicitly or change a model's declared input capabilities.
+
 ## Source usage evidence
 
 Recorded request listings include optional `source_usage` evidence for prepared
-operations. Older rows and providers without an observation interface omit it.
+operations and explicitly scoped signaling requests. Older rows and providers
+without an observation interface omit it.
 Its versioned object contains accounting bases, incomplete/invalid flags, a
 bounded attempt history and the `selected_attempt` index used by the legacy
 aggregate counters. Attempts retain the actual upstream API, provider/model,
@@ -255,6 +298,68 @@ voices, such as `English-US.Male-1`, or else its base voice speaks.
 
 Audio resolves one target. Transcription uploads count against the
 [request size limit](#request-size).
+
+Direct OpenAI-compatible audio proxies forward successful response bytes as
+they arrive, preserving the upstream content type. Speech can return binary
+audio (`stream_format: "audio"`, the upstream default) or audio events
+(`stream_format: "sse"`) where the selected endpoint/model supports them.
+Multipart transcription `stream=true` requests transcript SSE. The proxy also
+retains `chunking_strategy` and repeated `include[]`,
+`timestamp_granularities[]`, `known_speaker_names[]` and
+`known_speaker_references[]` fields. Query values retain their existing
+precedence over multipart fields.
+
+Buffered native provider adapters reject an explicitly requested SSE mode
+instead of ignoring it. Immediate upstream failures use the normal safe JSON
+error envelope. After audio bytes have been delivered, a transport failure
+aborts the HTTP response rather than appending JSON to audio or replaying the
+request. Client cancellation closes the upstream, and the request's recorded
+outcome is finalized when forwarding ends. These HTTP audio streams are
+distinct from the separate realtime WebRTC/WebSocket session APIs.
+
+## Realtime WebRTC signaling
+
+`POST /v1/realtime/calls` implements the
+[native call-creation contract](https://developers.openai.com/api/reference/resources/realtime/subresources/calls/methods/create).
+Supply multipart `sdp` and `session` fields once each. The session is a JSON
+object with `type: "realtime"` and a `model` naming an exact provider/model,
+alias or route. Other session fields, including audio settings, instructions,
+tools and provider extensions, retain their values; routing replaces only the
+model selector with the selected upstream model.
+
+```bash
+curl "$LLMGW_URL/v1/realtime/calls" \
+  -H "Authorization: Bearer $LLMGW_PROJECT_KEY" \
+  -F 'sdp=<offer.sdp;type=application/sdp' \
+  -F 'session={"type":"realtime","model":"voice","audio":{"output":{"voice":"marin"}}};type=application/json'
+```
+
+The selected registered OpenAI-compatible HTTP transport sends the request to
+its configured base URL's `/realtime/calls`. Current explicit model API
+declarations constrain selection; missing or expired evidence remains unknown
+for upstream validation. Native signaling uses no Chat/Responses conversion.
+Routes with an ingress list must include `/v1/realtime/calls`. One selected
+target receives one creation request, and an upstream failure is returned to
+the caller rather than replaying session creation.
+
+The successful upstream status and SDP bytes are returned with their SDP/plain
+text content type. A valid `Location` retains its call ID at a gateway-relative
+path. This handler covers creation; server-side call control, sideband events,
+WebSocket sessions and the separate `/live/sessions` API are follow-up work.
+Clients manage the peer connection and data channel using the provider's protocol.
+
+The gateway applies normal key/project routing and request admission at
+creation, recording a project-attributed signaling request. The response carries
+`X-LLMGW-Usage-Scope: signaling`. WebRTC media and data-channel usage events travel
+between client and provider, so the gateway does not observe their token counts
+or final session cost through this HTTP exchange. Recorded source evidence uses
+`unobserved_session` bases, incomplete flags and a signaling attempt with unknown
+completion quality and absent counters. Legacy zero aggregates are not measured
+zero-token sessions. Ongoing media token/cost enforcement requires a separate
+session-usage observation path.
+
+SDP contains ICE credentials. Signaling bodies are excluded from request/response
+body logs even when general body logging is enabled; metadata and byte counts remain.
 
 ## Images and video
 

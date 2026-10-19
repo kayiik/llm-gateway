@@ -109,6 +109,12 @@ integration; local changes are not a claim that a released build contains them.
   families, endpoints and daemon paths, reviewed structured output and scoped
   file/native API support; native passthrough and actual model capability are
   separate from adapter availability.
+- **Audio and realtime:** local compatible HTTP proxies now forward binary
+  speech and speech/transcription SSE incrementally. Native WebRTC SDP creation
+  now uses normal route/key/request admission with explicitly unobserved media
+  usage. Sideband/session accounting, WebSocket sessions, additional native
+  provider audio/media APIs and playground attachment composition remain
+  bounded follow-up slices.
 - **Single-node operations:** readiness evidence, bounded concurrency/recovery,
   atomic route/grant updates, effective/conflict-aware configuration, scoped
   attribution and existing operator/client tooling.

@@ -162,7 +162,7 @@ func TestOpenAICompatibleProxyTargetIsTheFactorysKey(t *testing.T) {
 	}{
 		{&config.ProviderConfig{Type: "openai_compatible", BaseURL: "https://api.example.test/v1/", APIKey: "Bearer fixture-key"}, "https://api.example.test/v1", "Bearer fixture-key"},
 		{&config.ProviderConfig{Type: "litellm", BaseURL: "http://127.0.0.1:4000", APIKey: "free"}, "http://127.0.0.1:4000", ""},
-		{&config.ProviderConfig{Type: "bedrock", Region: "eu-central-1", APIKey: "fixture-key"}, "https://bedrock-runtime.eu-central-1.amazonaws.com/v1", "Bearer fixture-key"},
+		{&config.ProviderConfig{Type: "bedrock", Region: "eu-central-1", APIKey: "fixture-key"}, "https://bedrock-runtime.eu-central-1.amazonaws.com/openai/v1", "Bearer fixture-key"},
 		{&config.ProviderConfig{Type: "bedrock", BaseURL: " https://bedrock-mantle.example.test/v1/ "}, "https://bedrock-mantle.example.test/v1", ""},
 	} {
 		provider := openAICompatibleFixture(t, fixture.cfg)

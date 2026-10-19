@@ -26,6 +26,7 @@ var pathAliases = map[string]string{
 	"/messages/count_tokens": "/v1/messages/count_tokens",
 	"/audio/transcriptions":  "/v1/audio/transcriptions",
 	"/audio/speech":          "/v1/audio/speech",
+	"/realtime/calls":        "/v1/realtime/calls",
 	"/embeddings":            "/v1/embeddings",
 	"/images/generations":    "/v1/images/generations",
 	"/videos/generations":    "/v1/videos/generations",
@@ -116,6 +117,7 @@ func (s *server) handler() http.Handler {
 	mux.HandleFunc("POST /v1/embeddings", handleEmbeddings)
 	mux.HandleFunc("POST /v1/audio/transcriptions", handleTranscriptions)
 	mux.HandleFunc("POST /v1/audio/speech", handleSpeech)
+	mux.HandleFunc("POST /v1/realtime/calls", handleRealtimeCalls)
 	mux.HandleFunc("POST /v1/images/generations", handleImageGenerations)
 	mux.HandleFunc("POST /v1/videos/generations", handleVideoGenerations)
 	mux.HandleFunc("GET /v1/models", handleModels)

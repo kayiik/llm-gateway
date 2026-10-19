@@ -775,7 +775,7 @@ export function Playground({ data, mode, principalID, onPrincipalIDChange, prese
         {surface === "image" ? <form class="surface form-stack" onSubmit={runImage}>
           <label>Describe the image<textarea value={mediaPrompt} rows={3} onInput={(event) => setMediaPrompt((event.currentTarget as HTMLTextAreaElement).value)} /></label>
           <button class="button button--primary" type="submit" disabled={running || !model}>{running ? <RefreshCw class="spin" size={16} /> : <Play size={16} />} Generate image</button>
-          {imageURL ? <figure class="playground-media"><img src={imageURL} alt="Generated result" /><figcaption>{numberValue(result?.image_bytes)} bytes \u00b7 {stringValue(result?.content_type)}</figcaption></figure> : null}
+          {imageURL ? <figure class="playground-media"><img src={imageURL} alt="Generated result" /><figcaption>{numberValue(result?.image_bytes)} bytes · {stringValue(result?.content_type)}</figcaption></figure> : null}
         </form> : null}
 
         {surface === "video" ? <form class="surface form-stack" onSubmit={runVideo}>
@@ -783,7 +783,7 @@ export function Playground({ data, mode, principalID, onPrincipalIDChange, prese
           <p class="form-help">Video generation takes minutes. The job runs upstream; this page polls it, so navigating away stops the polling but not the job.</p>
           <button class="button button--primary" type="submit" disabled={running || !model}>{running ? <RefreshCw class="spin" size={16} /> : <Play size={16} />} Generate video</button>
           {videoStatus ? <p class="playground-progress"><RefreshCw class={running ? "spin" : ""} size={15} /> {videoStatus}</p> : null}
-          {videoURL ? <figure class="playground-media"><video controls src={videoURL} /><figcaption>{numberValue(result?.video_bytes)} bytes \u00b7 {stringValue(result?.mime_type)}</figcaption></figure> : null}
+          {videoURL ? <figure class="playground-media"><video controls src={videoURL} /><figcaption>{numberValue(result?.video_bytes)} bytes · {stringValue(result?.mime_type)}</figcaption></figure> : null}
         </form> : null}
 
         {surface === "transcription" ? <form class="surface form-stack" onSubmit={runTranscription}>

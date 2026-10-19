@@ -112,7 +112,8 @@ and adaptation without an ingress declaration are rejected on load/save.
 
 Other accepted paths are `/v1/messages/count_tokens`, `/v1/embeddings`,
 `/v1/audio/transcriptions`, `/v1/audio/speech`, `/v1/images/generations`, and
-`/v1/videos/generations`. Include token counting when a client's route needs it;
+`/v1/videos/generations`, and `/v1/realtime/calls`. Include token counting when
+a client's route needs it;
 a Chat-only declaration does not permit it. Declaring a path does not add that
 operation to an otherwise incapable provider. Console route editing and both
 endpoint administration API aliases retain these fields.

@@ -237,8 +237,12 @@ left unmanaged; rate limits and outages are recorded without removing them.
   can change or stop working independently of this project.
 - Edge TTS uses an unofficial read-aloud service and may change independently.
 - Bedrock uses bearer API keys; IAM/SigV4 role authentication is not implemented.
-  Without a `base_url` it is reached at its `region`'s endpoint, and a region
-  that is not an AWS region name is refused. A request without a configured
+  Without a `base_url` its compatible API base is
+  `https://bedrock-runtime.<region>.amazonaws.com/openai/v1`, matching
+  [AWS's Chat Completions contract](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-chat-completions.html).
+  Its native content parts retain multimodal inputs for eligible models;
+  Converse/InvokeModel and bidirectional speech are separate AWS interfaces.
+  A region that is not an AWS region name is refused. A request without a configured
   `timeout` gives up after 300 seconds.
 - Azure deployment discovery depends on a pinned legacy API version.
 - Browser-cookie extraction, MITM interception, and stealth session reuse are out

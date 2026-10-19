@@ -18,9 +18,9 @@ import (
 
 func TestBedrockBaseURL(t *testing.T) {
 	cases := map[string]string{
-		"us-west-2": "https://bedrock-runtime.us-west-2.amazonaws.com/v1",
-		"":          "https://bedrock-runtime.us-east-1.amazonaws.com/v1",
-		"  ":        "https://bedrock-runtime.us-east-1.amazonaws.com/v1",
+		"us-west-2": "https://bedrock-runtime.us-west-2.amazonaws.com/openai/v1",
+		"":          "https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1",
+		"  ":        "https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1",
 	}
 	for region, want := range cases {
 		if got := BedrockBaseURL(region); got != want {
