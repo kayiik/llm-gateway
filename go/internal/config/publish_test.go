@@ -28,7 +28,8 @@ func populatedSettings() *Settings {
 	s.APIKeys = []string{"fixture-key-a", "fixture-key-b"}
 	s.OpenAICodexClientID = "fixture-codex-client"
 	s.Providers = map[string]*ProviderConfig{
-		"fixture": {Type: "openai_compatible", BaseURL: "https://provider.example.test/v1", Timeout: &timeout},
+		"fixture": {Type: "openai_compatible", BaseURL: "https://provider.example.test/v1", Timeout: &timeout,
+			UsageLimits: &ProviderUsageLimits{TargetUsageLimits: TargetUsageLimits{RPM: 5}, Models: map[string]TargetUsageLimits{"model-a": {DailyTokens: 100}}}},
 	}
 	s.Endpoints = map[string]*EndpointConfig{
 		"smart": {Failover: []EndpointMember{{Provider: "fixture", Model: "model-a"}}, Ingress: []string{"/v1/chat/completions"}, AllowAdaptation: true},

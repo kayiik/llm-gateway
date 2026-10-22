@@ -19,6 +19,7 @@ type RetentionResult struct {
 	AuditEvents          int64
 	KeyQuotaCounters     int64
 	ProjectQuotaCounters int64
+	TargetQuotaCounters  int64
 	DeliveredOutbox      int64
 }
 
@@ -71,6 +72,10 @@ func PruneOperationalHistory(now time.Time, policy RetentionPolicy) (RetentionRe
             (period='minute' AND period_start < ?) OR
             (period='day' AND period_start < ?) OR
             (period='month' AND period_start < ?) LIMIT ?)`, []any{minute, day, month, retentionBatchSize}, &result.ProjectQuotaCounters},
+		{`DELETE FROM target_quota_counters WHERE rowid IN (SELECT rowid FROM target_quota_counters WHERE
+            (period='minute' AND period_start < ?) OR
+            (period='day' AND period_start < ?) OR
+            (period='month' AND period_start < ?) LIMIT ?)`, []any{minute, day, month, retentionBatchSize}, &result.TargetQuotaCounters},
 		{`DELETE FROM outbox_events WHERE id IN (SELECT id FROM outbox_events
           WHERE status='delivered' AND delivered_at IS NOT NULL AND delivered_at < ? ORDER BY id LIMIT ?)`, []any{outboxCutoff, retentionBatchSize}, &result.DeliveredOutbox},
 	}

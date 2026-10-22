@@ -14,6 +14,11 @@ dependencies in `go.mod`, not as vendored directories. See
 The console source is under `go/internal/web/console/` and its generated `dist/` is
 committed because the Go binary embeds it.
 
+During implementation, use the focused runner in [local testing](docs/TESTING.md)
+instead of repeating the complete suite for each edit. That guide also explains
+explicit external modfiles for local library bindings; published pins alone may
+not include uncommitted cross-repository additions.
+
 ```bash
 cd go
 go build ./...
@@ -74,6 +79,7 @@ Two test suites guard the library boundary (llm-gateway#67):
 - `docs/OPERATIONS.md`: deployment, logging, retention, backup, release, rollback.
 - `docs/UPGRADING.md`: migrations and compatibility aliases.
 - `docs/LIMITATIONS.md`: explicit non-goals and known gaps.
+- `docs/TESTING.md`: focused local checks, integration and client-validation entrypoints.
 - `SECURITY.md`: threat boundary and private reporting.
 - `website/`: public GitHub Pages presentation of the same facts.
 

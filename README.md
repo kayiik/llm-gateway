@@ -103,7 +103,7 @@ known limits are in [`docs/CLIENTS.md`](docs/CLIENTS.md).
 | `POST` | `/v1/messages/count_tokens` | Native count or marked deterministic estimate |
 | `POST` | `/v1/embeddings` | Single-target OpenAI-shaped embedding proxy |
 | `POST` | `/v1/audio/transcriptions` | Single-target multipart speech-to-text proxy |
-| `POST` | `/v1/audio/speech` | OpenAI-shaped or native Edge TTS speech synthesis |
+| `POST` | `/v1/audio/speech` | Compatible or declared native speech synthesis |
 | `POST` | `/v1/images/generations` | Inline base64 image generation through a capable provider |
 | `POST` | `/v1/videos/generations` | Start or poll a long-running video operation |
 
@@ -129,15 +129,15 @@ walking a cross-model chain. See [`docs/ROUTING.md`](docs/ROUTING.md).
 
 ## Providers and credentials
 
-The curated registry includes API-key, OAuth, local/no-auth, Google, Azure,
+The curated registry includes API-key, local/no-auth, Google, Azure,
 Bedrock, and custom compatible integrations. Registry availability means the
 configuration/runtime path exists; it does not guarantee that a particular
 account, model, region, or installed client has passed live verification.
 
 Generic API-key providers resolve a human's private default connection first,
-then a system connection, then a legacy config seed. Copilot has a stricter
-shared-service path: a service requires an exact active project/provider/kind
-binding. Codex OAuth is human-private. See [`docs/PROVIDERS.md`](docs/PROVIDERS.md)
+then a system connection, then a legacy config seed. Extensions advertise their
+own provider IDs, APIs and sign-in methods after connection; OAuth connections
+remain caller-private. See [`docs/PROVIDERS.md`](docs/PROVIDERS.md)
 and [`docs/MULTI_USER.md`](docs/MULTI_USER.md).
 
 ## Operations

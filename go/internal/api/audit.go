@@ -106,6 +106,9 @@ func auditEndpointSaved(r *http.Request, name string, existed bool, contract con
 	recorded := make([]map[string]any, 0, len(contract.Failover))
 	for _, member := range contract.Failover {
 		entry := map[string]any{"provider": member.Provider, "model": member.Model}
+		if member.Route != "" {
+			entry = map[string]any{"route": member.Route}
+		}
 		if member.AllowUnverified {
 			entry["allow_unverified"] = true
 		}

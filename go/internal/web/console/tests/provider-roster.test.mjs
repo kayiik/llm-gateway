@@ -154,7 +154,7 @@ test("registry entries are shelved by their categories, then by their protocol",
     "Local & self-hosted": ["ollama", "litellm", "vllm", "lmstudio"],
     "Aggregators & routers": ["openrouter", "siliconflow", "siliconflow_cn", "novita", "vivgrid", "shengsuanyun"],
     "Cloud platforms": ["dashscope", "dashscope_cn", "dashscope_us", "volcengine_ark", "nvidia_nim", "near_ai"],
-    "Coding plans & subscriptions": ["github_copilot", "openai_codex", "alibaba_coding_plan", "alibaba_coding_plan_anthropic"],
+    "Coding plans & subscriptions": ["alibaba_coding_plan", "alibaba_coding_plan_anthropic"],
     "Free tiers": ["modelscope", "modelscope_cn"],
     "OpenAI-compatible": ["openai", "deepseek", "moonshot", "zai", "minimax", "venice", "longcat", "avian"],
     "Anthropic-compatible": ["anthropic"],
@@ -166,4 +166,5 @@ test("registry entries are shelved by their categories, then by their protocol",
     assert.ok(ui.providerShelves.includes(shelf), shelf);
   }
   assert.equal(ui.shelfFor({ id: "candidate", protocol: "openai", category: "local" }), "Local & self-hosted", "a candidate may name one category");
+  for (const id of ["github_copilot", "openai_codex", "google_antigravity", "edge_tts"]) assert.equal(entries.has(id), false, "private extension implementations are not built-in discovery offers");
 });

@@ -20,6 +20,7 @@ import (
 	"llmgw/internal/router"
 
 	gcpauth "github.com/kayiik/llm-provider-auth/gcp"
+	"github.com/kayiik/llmgw-core/extension"
 )
 
 // writeConfigSaveError answers a change the configuration file did not take,
@@ -221,6 +222,9 @@ func handleState(w http.ResponseWriter, r *http.Request) {
 			"disabled":            pc.Disabled,
 			"models":              len(models),
 		}
+		if pc.UsageLimits != nil {
+			entry["usage_limits"] = pc.UsageLimits
+		}
 		if !refreshed.IsZero() {
 			entry["catalog_refreshed"] = refreshed.UTC().Format(time.RFC3339)
 		}
@@ -230,9 +234,20 @@ func handleState(w http.ResponseWriter, r *http.Request) {
 	for name, cat := range s.Endpoints {
 		fo := []any{}
 		for _, m := range cat.Failover {
-			fo = append(fo, map[string]any{"provider": m.Provider, "model": m.Model})
+			if m.Route != "" {
+				fo = append(fo, map[string]any{"route": m.Route})
+			} else {
+				member := map[string]any{"provider": m.Provider, "model": m.Model}
+				if m.AllowUnverified {
+					member["allow_unverified"] = true
+				}
+				fo = append(fo, member)
+			}
 		}
 		entry := map[string]any{"failover": fo}
+		if expanded, err := config.ExpandEndpointMembers(s.Endpoints, name); err == nil {
+			entry["expanded_failover"] = expanded
+		}
 		if len(cat.Ingress) > 0 || cat.AllowAdaptation {
 			entry["ingress"] = append([]string(nil), cat.Ingress...)
 			entry["allow_adaptation"] = cat.AllowAdaptation
@@ -336,7 +351,8 @@ type providerBody struct {
 	// Extension names the extension that serves a provider the companion
 	// daemon serves. Left out, a saved provider keeps the one it names;
 	// empty, it names none and is served by the only extension.
-	Extension *string `json:"extension"`
+	Extension   *string                     `json:"extension"`
+	UsageLimits *config.ProviderUsageLimits `json:"usage_limits"`
 }
 
 // POST /admin/api/providers
@@ -401,32 +417,56 @@ func handleUpsertProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "provider id must be non-empty with no spaces or '/'")
 		return
 	}
-	body.Type = strings.ToLower(strings.TrimSpace(body.Type))
-	if !contains(providers.ProviderTypes, body.Type) {
+	body.Type = strings.TrimSpace(body.Type)
+	legacyServed := providers.CompanionDaemonType(&config.ProviderConfig{Type: body.Type, RegistryID: registryID}) != ""
+	namedExtension := ""
+	if previous := config.Get().Providers[pid]; previous != nil {
+		namedExtension = strings.TrimSpace(previous.Extension)
+	}
+	if body.Extension != nil {
+		namedExtension = strings.TrimSpace(*body.Extension)
+		body.Extension = &namedExtension
+	}
+	served := namedExtension != "" || legacyServed
+	genericExtension := namedExtension != "" && !legacyServed
+	var extensionCredential extension.CredentialKind
+	if !served {
+		body.Type = strings.ToLower(body.Type)
+	}
+	if body.Type == "" || (!served && !contains(providers.ProviderTypes, body.Type)) {
 		writeError(w, 400, "unknown provider type "+body.Type)
 		return
 	}
-	served := providers.CompanionDaemonType(&config.ProviderConfig{Type: body.Type, RegistryID: registryID}) != ""
 	// The extension is checked and saved while no extension changes, so a
 	// provider never comes to name one a delete is removing.
 	extensionMutationMu.Lock()
 	defer extensionMutationMu.Unlock()
-	if body.Extension != nil {
-		named := strings.TrimSpace(*body.Extension)
-		if named != "" {
-			if !served {
-				writeError(w, 400, "extension is only valid for a provider the companion daemon serves")
+	if namedExtension != "" {
+		if _, found, err := iam.ExtensionByID(namedExtension); err != nil {
+			writeError(w, 500, "Extension store unavailable.")
+			return
+		} else if !found {
+			writeError(w, 400, fmt.Sprintf("extension %q is not configured", namedExtension))
+			return
+		}
+		// Legacy saved types remain editable while their extension is offline.
+		// A new provider ID must actually be declared by the named extension.
+		if genericExtension {
+			info, err := providers.Current().ExtensionProviderInfo(r.Context(), namedExtension, body.Type)
+			if err != nil {
+				writeError(w, 400, err.Error())
 				return
 			}
-			if _, found, err := iam.ExtensionByID(named); err != nil {
-				writeError(w, 500, "Extension store unavailable.")
+			extensionCredential = info.CredentialKind()
+			if extensionCredential != extension.CredentialNone && extensionCredential != extension.CredentialToken && extensionCredential != extension.CredentialOAuth {
+				writeError(w, 400, "the extension provider has not reported a supported credential kind")
 				return
-			} else if !found {
-				writeError(w, 400, fmt.Sprintf("extension %q is not configured", named))
+			}
+			if strings.TrimSpace(body.APIKey) != "" && extensionCredential != extension.CredentialToken {
+				writeError(w, 400, "the extension provider does not accept a pasted token; use its declared sign-in method")
 				return
 			}
 		}
-		body.Extension = &named
 	}
 	if body.VertexRequestType != nil {
 		value := strings.ToLower(strings.TrimSpace(*body.VertexRequestType))
@@ -442,6 +482,10 @@ func handleUpsertProvider(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := providerEndpointCollision(pid); err != nil {
 		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	if err := body.UsageLimits.Validate(); err != nil {
+		writeError(w, 400, err.Error())
 		return
 	}
 	systemConnection, err := iam.SystemProviderConnectionExists(pid)
@@ -479,8 +523,8 @@ func handleUpsertProvider(w http.ResponseWriter, r *http.Request) {
 		// by Google, reporting a bad key when the real fault is the wrong kind.
 		// A setup token serves Anthropic, directly or through the companion
 		// daemon.
-		setupTokenType := strings.EqualFold(body.Type, "anthropic") || body.Type == providers.ExtensionTypeAnthropicSetup
-		setupTokenLooking := strings.HasPrefix(raw, "sk-ant-oat")
+		setupTokenType := !genericExtension && (strings.EqualFold(body.Type, "anthropic") || body.Type == providers.ExtensionTypeAnthropicSetup)
+		setupTokenLooking := !genericExtension && strings.HasPrefix(raw, "sk-ant-oat")
 		if setupTokenLooking && !setupTokenType {
 			writeError(w, 400, "an Anthropic setup token is only usable by an anthropic or anthropic_setup_token provider")
 			return
@@ -505,7 +549,7 @@ func handleUpsertProvider(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "unsupported provider credential kind")
 			return
 		}
-		if gcpauth.LooksLikeServiceAccount(raw) {
+		if !genericExtension && gcpauth.LooksLikeServiceAccount(raw) {
 			if !strings.EqualFold(body.Type, "vertex_ai") {
 				writeError(w, 400,
 					"a Google service account key is only usable by a vertex_ai provider")
@@ -548,8 +592,12 @@ func handleUpsertProvider(w http.ResponseWriter, r *http.Request) {
 			Region: emptyNil(body.Region), Project: emptyNil(body.Project),
 			Location: emptyNil(body.Location), PublicOAuthClientID: strings.TrimSpace(body.PublicOAuthClientID),
 			ForceApiSupport: bool(body.ForceApiSupport),
+			UsageLimits:     body.UsageLimits,
 		}
 		if previous := s.Providers[pid]; previous != nil {
+			if body.UsageLimits == nil {
+				next.UsageLimits = previous.UsageLimits
+			}
 			next.Timeout = previous.Timeout
 			next.DefaultVoice = previous.DefaultVoice
 			next.Disabled = previous.Disabled
@@ -707,7 +755,11 @@ func endpointsUsingProvider(settings *config.Settings, providerID string) []stri
 		if endpoint == nil {
 			continue
 		}
-		for _, member := range endpoint.Failover {
+		members, err := config.ExpandEndpointMembers(settings.Endpoints, name)
+		if err != nil {
+			members = endpoint.Failover
+		}
+		for _, member := range members {
 			if member.Provider == providerID {
 				names = append(names, name)
 				break
@@ -1133,6 +1185,18 @@ func handleUpsertEndpoint(w http.ResponseWriter, r *http.Request) {
 		modelRaw, _ := member["model"].(string)
 		providerID := strings.TrimSpace(providerRaw)
 		modelID := strings.TrimSpace(modelRaw)
+		if raw, reference := member["route"]; reference {
+			route, valid := raw.(string)
+			_, hasProvider := member["provider"]
+			_, hasModel := member["model"]
+			_, hasPublication := member["allow_unverified"]
+			if !valid || strings.TrimSpace(route) == "" || hasProvider || hasModel || hasPublication {
+				writeError(w, 400, fmt.Sprintf("route member %d requires either a route reference or a provider/model pair", index+1))
+				return
+			}
+			members = append(members, config.EndpointMember{Route: strings.TrimSpace(route)})
+			continue
+		}
 		if providerID == "" || modelID == "" {
 			writeError(w, 400, fmt.Sprintf("route member %d requires provider and model", index+1))
 			return
@@ -1172,18 +1236,78 @@ func handleUpsertEndpoint(w http.ResponseWriter, r *http.Request) {
 		members = append(members, config.EndpointMember{Provider: providerID, Model: modelID, AllowUnverified: allowUnverified})
 	}
 	if len(members) == 0 {
-		writeError(w, 400, "a route requires at least one provider/model member")
+		writeError(w, 400, "a route requires at least one provider/model member or route reference")
 		return
 	}
 	_, existed := config.Get().Endpoints[name]
 	contract.Failover = members
+	// Validate the proposed graph before publishing anything. Referenced leaves
+	// use the same owner-scoped catalog and publication checks as direct leaves.
+	endpoints := make(map[string]*config.EndpointConfig, len(config.Get().Endpoints)+1)
+	for existing, endpoint := range config.Get().Endpoints {
+		endpoints[existing] = endpoint
+	}
+	endpoints[name] = &contract
+	if err := config.ValidateEndpointReferences(endpoints); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	expanded, err := config.ExpandEndpointMembers(endpoints, name)
+	if err != nil || len(expanded) == 0 {
+		writeError(w, http.StatusBadRequest, "a route must expand to at least one provider/model member")
+		return
+	}
+	for index, member := range expanded {
+		if _, exists := config.Get().Providers[member.Provider]; !exists {
+			writeError(w, 400, fmt.Sprintf("expanded route member %d has unknown provider %q", index+1, member.Provider))
+			return
+		}
+		if providers.CatalogRequiresPrincipal(member.Provider) && principal == nil {
+			writeError(w, 400, "principal_id is required to validate this private OAuth provider")
+			return
+		}
+		if _, found := catalogLookupForPrincipal(member.Provider, member.Model, principal); !found {
+			writeError(w, 400, fmt.Sprintf("expanded route member %d has unknown model %q for provider %q", index+1, member.Model, member.Provider))
+			return
+		}
+		evidence, published, publicationErr := providers.AnonymousModelPublication(member.Provider, member.Model)
+		if publicationErr != nil {
+			writeError(w, 500, "Model publication evidence is unavailable.")
+			return
+		}
+		if !published && !(member.AllowUnverified && evidence.State == iam.ModelEvidenceUnverified) {
+			writeError(w, 400, fmt.Sprintf("expanded route member %d is disabled for routing", index+1))
+			return
+		}
+	}
+	warnings := []string{}
+	for existing := range endpoints {
+		if existing != name && !endpointReferences(endpoints, existing, name, map[string]bool{}) {
+			continue
+		}
+		leaves, expandErr := config.ExpandEndpointMembers(endpoints, existing)
+		if expandErr != nil {
+			writeError(w, http.StatusBadRequest, expandErr.Error())
+			return
+		}
+		advice, capabilityErr := endpointCapabilityWarnings(leaves, func(member config.EndpointMember) (providers.ModelInfo, bool) {
+			return catalogLookupForPrincipal(member.Provider, member.Model, principal)
+		})
+		if capabilityErr != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("route %q: %s", existing, capabilityErr))
+			return
+		}
+		if existing == name {
+			warnings = advice
+		}
+	}
 	if _, err := storeEndpointContract(name, contract); err != nil {
 		writeConfigSaveError(w, "Route configuration could not be persisted.", err)
 		return
 	}
 	providers.ResetProviders()
 	auditEndpointSaved(r, name, existed, contract)
-	writeJSON(w, 200, map[string]any{"ok": true, "name": name, "members": len(members)})
+	writeJSON(w, 200, map[string]any{"ok": true, "name": name, "members": len(members), "expanded_members": len(expanded), "warnings": warnings})
 }
 
 func modelPublicationState(state string) string {
@@ -1219,6 +1343,17 @@ func handleDeleteEndpoint(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	_, existed := config.Get().Endpoints[name]
+	referencedBy := []string{}
+	for existing := range config.Get().Endpoints {
+		if existing != name && endpointReferences(config.Get().Endpoints, existing, name, map[string]bool{}) {
+			referencedBy = append(referencedBy, existing)
+		}
+	}
+	if len(referencedBy) > 0 {
+		sort.Strings(referencedBy)
+		writeError(w, http.StatusConflict, fmt.Sprintf("route %q is referenced by %s; remove those references before deleting it", name, strings.Join(referencedBy, ", ")))
+		return
+	}
 	if _, err := config.UpdateAndSave(func(s *config.Settings) error {
 		delete(s.Endpoints, name)
 		return nil

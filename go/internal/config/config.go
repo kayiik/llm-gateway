@@ -61,10 +61,11 @@ type ProviderConfig struct {
 	// endpoint (e.g. Responses-only gpt-5.5), translate the request instead of
 	// letting it fail. Off by default; adaptation is never native to the provider.
 	ForceApiSupport bool `yaml:"force_api_support,omitempty" json:"force_api_support,omitempty"`
-	// Extension names the extension, the companion daemon, that serves a
-	// provider of a type the daemon serves. Empty leaves it to the only
-	// extension the gateway has, which is no choice once it has several.
-	Extension string `yaml:"extension,omitempty" json:"extension,omitempty"`
+	// Extension selects a saved extension; Type is its advertised provider ID,
+	// even when it matches a built-in runtime name. Legacy extension aliases
+	// without a binding still resolve to the only configured extension.
+	Extension   string               `yaml:"extension,omitempty" json:"extension,omitempty"`
+	UsageLimits *ProviderUsageLimits `yaml:"usage_limits,omitempty" json:"usage_limits,omitempty"`
 }
 
 // Extension is a companion daemon the gateway reaches the providers it
@@ -86,8 +87,9 @@ type Extension struct {
 	Unusable string
 }
 
-// EndpointMember is one pinned provider/model target in a failover chain.
+// EndpointMember is a pinned provider/model target or a reusable route member list.
 type EndpointMember struct {
+	Route           string `yaml:"route,omitempty" json:"route,omitempty"`
 	Provider        string `yaml:"provider" json:"provider"`
 	Model           string `yaml:"model" json:"model"`
 	AllowUnverified bool   `yaml:"allow_unverified,omitempty" json:"allow_unverified,omitempty"`
@@ -456,6 +458,7 @@ func cloneProvider(provider *ProviderConfig) *ProviderConfig {
 		return nil
 	}
 	copy := *provider
+	copy.UsageLimits = cloneProviderUsageLimits(provider.UsageLimits)
 	if provider.Timeout != nil {
 		timeout := *provider.Timeout
 		copy.Timeout = &timeout
@@ -954,6 +957,13 @@ func applyConfig(s *Settings, payload map[string]any) error {
 			if v, ok := m["extension"].(string); ok {
 				cfg.Extension = strings.TrimSpace(v)
 			}
+			if raw, exists := m["usage_limits"]; exists && raw != nil {
+				var err error
+				cfg.UsageLimits, err = parseProviderUsageLimits(raw)
+				if err != nil {
+					return fmt.Errorf("provider %q: %w", pid, err)
+				}
+			}
 			s.Providers[pid] = cfg
 		}
 	}
@@ -1127,24 +1137,48 @@ func parseEndpoints(raw map[string]any) (map[string]*EndpointConfig, error) {
 				ep.AllowAdaptation = allow
 			}
 			if fo, ok := v["failover"].([]any); ok {
-				ep.Failover = parseMembers(fo)
+				members, err := parseMembers(fo)
+				if err != nil {
+					return nil, fmt.Errorf("route %q: %w", name, err)
+				}
+				ep.Failover = members
 			}
 		case []any:
-			ep.Failover = parseMembers(v)
+			members, err := parseMembers(v)
+			if err != nil {
+				return nil, fmt.Errorf("route %q: %w", name, err)
+			}
+			ep.Failover = members
 		}
 		if err := ValidateEndpointContract(ep); err != nil {
 			return nil, fmt.Errorf("route %q: %w", name, err)
 		}
 		out[name] = ep
 	}
+	if err := ValidateEndpointReferences(out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
-func parseMembers(items []any) []EndpointMember {
+func parseMembers(items []any) ([]EndpointMember, error) {
 	var out []EndpointMember
 	for _, it := range items {
 		m, ok := it.(map[string]any)
 		if !ok {
+			continue
+		}
+		if value, exists := m["route"]; exists {
+			route, ok := value.(string)
+			if !ok || route == "" {
+				return nil, errors.New("member route must be a nonempty string")
+			}
+			for _, field := range []string{"provider", "model", "allow_unverified"} {
+				if _, exists := m[field]; exists {
+					return nil, errors.New("member route cannot be combined with provider, model or allow_unverified")
+				}
+			}
+			out = append(out, EndpointMember{Route: route})
 			continue
 		}
 		prov, _ := m["provider"].(string)
@@ -1154,7 +1188,7 @@ func parseMembers(items []any) []EndpointMember {
 			out = append(out, EndpointMember{Provider: prov, Model: model, AllowUnverified: allowUnverified})
 		}
 	}
-	return out
+	return out, nil
 }
 
 func applyScalars(s *Settings, p map[string]any) {
@@ -1249,6 +1283,9 @@ func configPayload(s *Settings) map[string]any {
 		fo := []any{}
 		for _, m := range ep.Failover {
 			member := map[string]any{"provider": m.Provider, "model": m.Model}
+			if m.Route != "" {
+				member = map[string]any{"route": m.Route}
+			}
 			if m.AllowUnverified {
 				member["allow_unverified"] = true
 			}
@@ -1324,6 +1361,7 @@ func providerFields(pc *ProviderConfig) []providerField {
 		{"timeout", timeout, pc.Timeout != nil},
 		{"force_api_support", true, pc.ForceApiSupport},
 		{"extension", pc.Extension, pc.Extension != ""},
+		{"usage_limits", pc.UsageLimits, pc.UsageLimits != nil},
 	}
 }
 
@@ -1340,6 +1378,11 @@ func providerConfigPayload(pc *ProviderConfig) map[string]any {
 // writeSettings writes s over the file at path, whose content is raw,
 // keeping everything in raw that a save does not manage.
 func writeSettings(path string, raw []byte, s *Settings) error {
+	for _, provider := range s.Providers {
+		if err := provider.UsageLimits.Validate(); err != nil {
+			return err
+		}
+	}
 	document, _, err := parseYAML(path, raw)
 	if err != nil {
 		// A file the loader cannot parse holds an edit the operator has yet
@@ -1350,6 +1393,9 @@ func writeSettings(path string, raw []byte, s *Settings) error {
 		if err := ValidateEndpointContract(endpoint); err != nil {
 			return fmt.Errorf("configuration not saved: route %q: %w", name, err)
 		}
+	}
+	if err := ValidateEndpointReferences(s.Endpoints); err != nil {
+		return fmt.Errorf("configuration not saved: %w", err)
 	}
 	if err := mergeManagedSettings(rootMapping(document), s); err != nil {
 		return fmt.Errorf("configuration not saved: %w", err)

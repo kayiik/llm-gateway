@@ -56,3 +56,17 @@ Runner supervision and cache invalidation checks:
 ```text
 node --test scripts/test-local.test.mjs
 ```
+
+## Integration and release validation
+
+Use [fixture integration](../test/integration/README.md) for deterministic endpoint
+checks and [client UAT](../test/uat/README.md) for installed-client/provider checks.
+Fixtures establish only the behavior they assert; they do not certify an
+installed CLI, account entitlement or a published artifact.
+
+The release workflow still runs the [live-acceptance harness](../test/live-acceptance/README.md)
+against its candidate image. An inconclusive-provider override is not a general
+no-live-call switch. Documentation cleanup does not change that workflow or
+authorize running it. Provider login, credentials, spend and infrastructure
+changes require operator participation. Use disposable state and ephemeral client
+configuration; never put real values in examples, reports or chat.

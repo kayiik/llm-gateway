@@ -7,8 +7,7 @@ Use **Sync catalog** and **Test completion** against your own provider.
 
 ## Vocabulary
 
-- **Provider integration**: a curated registry row such as `openai` or
-  `github_copilot`.
+- **Provider integration**: a curated registry row such as `openai` or `anthropic`.
 - **Provider instance**: one configured ID, runtime type, endpoint, and settings.
 - **Provider connection**: one encrypted API-key or OAuth envelope owned by a
   human or the gateway system principal.
@@ -24,15 +23,12 @@ is `endpoints`.
 
 | Integration | Protocol/runtime | Authentication | Scope | Notes |
 | --- | --- | --- | --- | --- |
-| GitHub Copilot | OpenAI-shaped Copilot transport | Official device authorization | Personal | Disabled by default; owner-private; general gateway use is a grey area. |
 | Claude Code | Anthropic gateway client | Gateway key | Client only | Client setup, not an upstream provider; no Claude personal OAuth. |
-| OpenAI Codex | Native Responses-oriented transport | Device authorization plus PKCE | Personal | Experimental; signs in with the companion daemon's OAuth client unless one is configured. |
 | OpenAI | OpenAI-compatible | API key | System or personal | Standard project API-key integration. |
 | Anthropic | Native Anthropic | API key or setup token | System or personal | Native Messages and token counting; setup tokens are stored only as encrypted connections. |
 | Google Gemini | Google's OpenAI-compatible endpoint | API key | System or personal | Distinct from native AI Studio. |
 | Google AI Studio | Native Gemini | API key | System or personal | Chat with streaming and tools, image, and video. |
 | Vertex AI (Agent Platform) | Native Gemini/Vertex | API key or service-account JSON | System or personal | Project/location required; discovery credential requirements can differ from inference. Optional request type selects default, PayGo, or dedicated provisioned throughput. |
-| Google Antigravity | Cloud Code Assist `v1internal` | Browser OAuth | Personal | Experimental undocumented API; exact upstream catalog, non-streaming chat, tools, and reasoning. |
 | OpenRouter | OpenAI-compatible | API key | System or personal | Multi-vendor aggregator. |
 | Groq | OpenAI-compatible | API key | System or personal | Hosted low-latency inference. |
 | Mistral AI | OpenAI-compatible | API key | System or personal | Hosted Mistral models. |
@@ -71,10 +67,9 @@ is `endpoints`.
 | LiteLLM | OpenAI-compatible | Optional API key | System or personal | A self-hosted LiteLLM proxy. |
 | vLLM | OpenAI-compatible | Optional API key | System or personal | A self-hosted vLLM server. |
 | LM Studio | OpenAI-compatible | Optional API key | System or personal | LM Studio's local server. |
-| Edge TTS | Native speech | None by default | System | Unofficial public Edge read-aloud endpoint/token; may change. |
 | ElevenLabs | Native speech | API key | System or personal | Direct speech-to-text and text-to-speech through the OpenAI audio surfaces; voice IDs remain request parameters. |
 | Xiaomi MiMo | Chat Completions audio | API key | System or personal | Direct text-to-speech; the gateway maps OpenAI speech requests to MiMo's documented audio contract. |
-| OpenCode Zen | OpenAI-compatible | None by default | System or personal | Free anonymous multi-model European inference endpoint. |
+| OpenCode Zen | OpenAI-compatible | API key | System or personal | Keyed OpenCode Zen endpoint; model access depends on the account. |
 | Kilo Code | OpenAI-compatible | None by default | System or personal | Free anonymous multi-model inference endpoint with auto/free routing. |
 | LLM7.io | OpenAI-compatible | None by default | System or personal | Anonymous turbo-tier chat models. |
 | OVH AI Endpoints | OpenAI-compatible | None by default | System or personal | Anonymous per-IP inference tier; availability is rate-limited. Its NVR voices speak on `/v1/audio/speech`. |
@@ -88,42 +83,40 @@ runtime type, beside the LiteLLM card.
 
 ## Companion daemon
 
-The `github_copilot`, `openai_codex`, `google_antigravity`, `edge_tts`,
-`opencode_zen_anonymous`, and `anthropic_setup_token` provider types are served
-by an optional companion daemon that is distributed separately. The gateway
-reaches each daemon as an extension: the address it listens at and the shared
-secret it was started with, which an administrator adds on the console's
-**Providers** page or with `POST /admin/api/extensions`. The secret is stored
-only encrypted, so adding an extension needs
+An extension is a separately operated service implementing the public
+`/extension/v1/` protocol. Add its address and shared secret under **Providers →
+Extensions**, or with `POST /admin/api/extensions`. The secret is stored only
+encrypted, so this requires
 [`LLMGW_CREDENTIAL_ENCRYPTION_KEY`](CONFIGURATION.md#credential-and-identity-boundary).
-A provider of one of those types is served by the extension its configuration
-names, or by the only extension there is; without one, it is unavailable.
-Adding a second extension names the first in the providers it has been serving,
-so they keep working.
-Other provider types do not use a daemon. The gateway no longer reads
-`LLMGW_EXTENSION_URL` or `LLMGW_EXTENSION_SECRET`, and warns at startup while
-either is set.
 
-The gateway sends each of those providers only the surfaces the daemon serves
-for it. Codex answers Chat Completions and Responses natively, so a Responses
-request reaches it as sent, encrypted reasoning and the Codex client's own
-tools included; this needs a daemon that forwards the Codex client's request
-fields, and an older one refuses them with `400`. Copilot, Antigravity, and
-anonymous OpenCode Zen answer Chat Completions, over which the gateway serves
-Responses and Messages. Edge TTS answers speech, and the setup-token Anthropic
-provider answers non-streaming Messages natively and no Chat Completions.
+The gateway discovers provider IDs and names, native API surfaces, credential
+requirements, refresh support and OAuth methods from `GET /extension/v1/info`.
+It does not promise a particular extension implementation or a built-in list
+of extension providers. A discovered provider can be added without a registry
+entry or gateway code change:
 
-For administrators, the console's **Providers** page lists the extensions
-first. Each row says what its daemon serves, its version, and whether it
-answers. Opened, an extension shows its address and last check, what needs
-attention, such as a daemon that answers without its secret, one older than
-the gateway expects, or providers that cannot serve requests while it does not
-answer, and the providers it serves, each with its state in the gateway and
-the step it still needs: adding it, an account, or a token. Those providers
-are listed there rather than on the page's other shelves. An extension is added
-or changed in place, after a check that tries the address and secret as typed,
-and is removed once no provider uses it. The **Overview** page lists the
-warnings the gateway logged when it started.
+```json
+{"id":"connected-provider","type":"<advertised-provider-id>","extension":"<extension-id>"}
+```
+
+The extension binding selects the transport even when the advertised ID matches
+a built-in runtime name. Native declarations and caller-scoped model evidence
+control preparation; API adaptation still requires explicit permission. Native
+request fields are forwarded to the extension, which is responsible for its
+upstream behavior. An extension's own release number is informational, not an
+extension protocol version.
+
+The console shows providers only after discovery, with their reported APIs and
+sign-in methods. Add a provider, then paste its token or connect its account as
+declared. OAuth connections belong to a human and do not fall back to a shared
+system key. A provider declaring `none` requires no provider credential. Provider
+and account setup does not run inference.
+
+An offline extension shows its configured instances without invented capability
+claims. Extensions can be edited and checked in place, and removed once no
+provider uses them. Legacy configured type aliases remain readable; new bindings
+name the extension explicitly. The retired `LLMGW_EXTENSION_URL` and
+`LLMGW_EXTENSION_SECRET` variables are no longer read.
 
 ## Connection resolution
 
@@ -135,32 +128,11 @@ Generic API-key providers resolve:
 
 This generic system fallback is not project-binding-gated today.
 
-Copilot is stricter:
-
-- a human uses only that human's active OAuth connection;
-- a service can use a gateway-owned credential only through an exact active
-  project/provider/`service` binding;
-- otherwise the provider contributes no models and cannot be routed.
-
-Codex OAuth is human-private and is not assignable to services or the system
-principal. OAuth subscription connections cannot be copied between humans.
-Sign-in uses official device authorization or browser PKCE through the companion
-daemon, which signs in with its own OAuth client unless
-[`LLMGW_OPENAI_CODEX_CLIENT_ID`](CONFIGURATION.md#credential-and-identity-boundary)
-names one for the gateway to forward. Browser sign-in uses OpenAI's registered
-loopback redirect and accepts the final redirect URL pasted back into the console;
-no client secret, browser cookie, or local Codex credential file is imported.
-Connections created before client-profile binding was introduced must be
-reauthorized once: older encrypted envelopes do not contain the OAuth client
-identity required for safe token refresh, and the gateway does not guess it.
-
-Codex models are native to Responses. Chat Completions and Messages requests
-reach them through a translated facade. `max_tokens`, `temperature`, `top_p`,
-and `stop` are ignored, because the official Codex client never sends them.
-Fields that change the structure of the answer are rejected with a
-configuration error instead of being dropped. These include a non-text
-`response_format`, `n` above 1, `logprobs`, a `tool_choice` other than `auto`,
-and audio output.
+Extension OAuth uses the caller's active private OAuth connection. It does not
+borrow another human's connection or fall back to a generic system API key.
+An explicitly supported gateway-owned OAuth credential requires the existing
+exact project/provider/principal-kind binding. The extension owns its upstream
+OAuth client, redirect behavior, token metadata and refresh implementation.
 
 ## Private and system credentials
 
@@ -176,14 +148,13 @@ protect the state directory and its backups.
 
 ## Google integrations
 
-Google exposes four distinct paths:
+The built-in Google integrations expose three distinct paths:
 
 | Integration | API grammar | Typical authentication | Distinguishing behavior |
 | --- | --- | --- | --- |
 | `gemini` | Google's OpenAI-compatible API | API key | OpenAI-shaped client compatibility. |
 | `ai_studio` | Native Gemini API | API key | Native chat with streaming, function tools and structured output; native image and Veo video support. |
 | `vertex_ai` | Native Gemini/Vertex API | Service-account JSON or eligible API key | Native chat with streaming, function tools and structured output; project and location scope; Cloud billing. `vertex_request_type: dedicated` requires matching provisioned capacity and never silently falls back. |
-| `google_antigravity` | Cloud Code Assist `v1internal` | Browser OAuth | Experimental owner-private catalog and non-streaming chat; requires an operator-provided OAuth client. |
 
 A `vertex_ai` service-account key must name `https://oauth2.googleapis.com/token`
 or `https://accounts.google.com/o/oauth2/token` as its `token_uri`, or omit it;

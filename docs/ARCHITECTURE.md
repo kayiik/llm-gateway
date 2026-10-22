@@ -37,7 +37,8 @@ The gateway ecosystem is split into three standalone, reusable open-source libra
 2. **No Reverse Dependencies**:
    - The libraries never import gateway packages or assume the gateway's SQLite schema, settings file, or console. Product state reaches them only through interfaces the gateway implements: settings sources, provider and refresh factories, credential and catalog stores, evidence sinks, OAuth flow drivers, and the catalogs and invokers of the anonymous orchestrator.
 3. **Released Versions Only**:
-   - `go/go.mod` requires each library directly at a release tag (`vMAJOR.MINOR.PATCH`). No `replace` directive is committed, and production builds run with `GOWORK=off`, so they resolve the published modules.
+    - `go/go.mod` requires each library directly at a release tag (`vMAJOR.MINOR.PATCH`). No `replace` directive is committed, and production builds run with `GOWORK=off`, so they resolve the published modules.
+    - This is a packaging rule, not proof that the published pins contain every local addition. Cross-repository development may use an external modfile as described in [local testing](TESTING.md). A reviewed dirty checkout and a released dependency graph are separate source inputs.
 4. **Enforced by Tests**:
    - `go/internal/architecture` fails when `go.mod` gains a `replace` directive or an untagged library version, when any gateway file uses a deprecated `llmgw-core` API whose replacement the gateway has adopted, or when the product adapter layer (section 3) gains a storage or configuration dependency beyond its recorded budget.
    - Go itself keeps the libraries' `internal` packages out of the gateway's reach, so the gateway uses them only through their public packages.
@@ -48,11 +49,11 @@ The gateway ecosystem is split into three standalone, reusable open-source libra
 
 | Module | Canonical Repository | Primary Responsibilities |
 | --- | --- | --- |
-| `llm-translate` | `github.com/kayiik/llm-translate` | Bidirectional protocol transformations: Anthropic Messages, OpenAI Chat Completions, Responses API, tool definitions, tool results, reasoning/thinking blocks, multi-part vision, and SSE stream conversion. Zero storage, zero persistence, zero policy. |
+| `llm-translate` | `github.com/kayiik/llm-translate` | Finite, assessed transformations among Anthropic Messages, OpenAI Chat and Responses, including tools, supported media carriers and SSE. The `realtime` package maps the limited OpenAI GA/Gemini Live event profile; it owns no sockets, playback or billing. Zero storage or persistence. |
 | `llm-provider-auth` | `github.com/kayiik/llm-provider-auth` | Upstream provider authentication: standard OAuth PKCE browser flows, GCP service account key parsing and access-token minting, the token store contract and its refresh coordinator (`tokenstore`), and bounded, secret-sanitized auth diagnostics. Zero routing, zero IAM database. |
 | `llmgw-core` | `github.com/kayiik/llmgw-core` | The embeddable provider runtime: the clean provider verticals and their HTTP transports (OpenAI-compatible, Bedrock, Azure OpenAI, Anthropic API key, Google AI Studio / Vertex AI, Ollama, Keyed Zen); the `Runtime`, which resolves each request's credential, refreshes it, and replays a rejected request; the catalog service; the execution primitives for ordered failover and health tracking; the OAuth flow service; the anonymous-provider orchestrator; the client of the extension protocol; transport planning; the reviewed provider registry manifest; and the store, sink, and settings interfaces a product implements. Zero SQLite, zero console, zero operational backups. |
-| Companion daemon (optional) | Distributed separately | Serves the provider types the gateway does not carry itself: GitHub Copilot, OpenAI Codex, Google Antigravity, Edge TTS, anonymous OpenCode Zen, and Anthropic setup token. The gateway reaches each daemon through `llmgw-core`'s extension client at the address of an extension an administrator adds, authenticated with that extension's shared secret. Under that protocol the daemon keeps no credentials: the gateway stores them and sends one with each operation. |
-| `llm-gateway` | `github.com/kayiik/llm-gateway` | The complete self-hosted gateway product: CLI (`serve`, `health`, `version`, `backup`, `credentials`), YAML settings, SQLite IAM and stores (principals, keys, projects, encrypted provider connections, rate limits, quotas, usage, provider evidence, retained audit logging), routing policy (endpoints, aliases, key and project governance, capability filtering, telemetry, and the savings ledger), the `/console` administration and `/portal` user surfaces, roster auto-refresh, the adapters connecting that product state to `llmgw-core`, and the extensions, stored in `gateway.db`, that point `llmgw-core`'s extension client at the optional companion daemons. |
+| Companion daemon (optional) | Distributed separately | Advertises provider IDs, native surfaces, credential kinds and sign-in methods through the extension protocol. Explicit bindings use those declarations rather than a fixed gateway vendor list. The gateway stores caller/account credentials and supplies them per operation through Core's extension client. Application metadata and explicitly enabled daemon host integrations have their own custody boundaries. |
+| `llm-gateway` | `github.com/kayiik/llm-gateway` | The self-hosted application: CLI, settings, SQLite IAM/credentials/usage, ordered routing and route references, caller/key/project governance, console/portal, public provider-feed refresh, extension bindings, and adapters over the library interfaces. It owns realtime authorization, frozen target/credential binding, session orchestration and qualified usage records. |
 
 ---
 
@@ -89,12 +90,15 @@ The gateway meets the libraries in its product adapter layer: `go/internal/provi
 - `go/internal/router` is routing policy: it resolves endpoints and aliases under key and project governance, filters targets by typed capability, walks a chain with core's `execution.Execute`, and records telemetry and the savings ledger. `Target` and `Resolution` alias core's types.
 - `go/internal/api/transport_mode.go` plans transparent requests with core's transport helpers, `oauth_flows.go` and `server.go` run core's OAuth flow service, and `anonymous_provider_automation.go` runs the anonymous orchestrator under the gateway's enrollment policy.
 - `go/internal/iam` implements `core.CredentialStore` over SQLite (`credential_store*.go`); every provider connection lives there.
+- Core's `realtimews` supplies bounded JSON WebSocket transport, not protocol adaptation. Gateway's `realtime_gemini.go` serializes calls into Translate's state mapper. Confirmed interruption and continued delivered-context turns do not imply actually-heard history reconciliation; that remains unsupported in the reviewed Gemini profile.
+- `internal/roster` synchronizes the public provider catalog feed. It is not an implemented emergency SDK roster, credential-distribution service or offline usage-reconciliation system.
 
 ### Extending the Gateway
 
 - A provider that speaks an existing wire needs only a registry entry, in core's manifest or in `registry_overlay.json`.
 - A new wire starts in `llmgw-core`, which owns transports and vertical semantics. The gateway then adds the type's `*_vertical.go`, its line in `coreVerticals`, and its facade in `factory.go`.
 - Quota adapters register on the gateway's `Runtime` through `RegisterQuotaAdapter`; sign-in flows are the `oauthflow` drivers that `Runtime.OAuthDriver` returns.
+- Quota registration and snapshot storage are foundations, not a production allowance collector or quota-aware selection pipeline. No provider/model local-cap feature follows merely from request/key quota support.
 
 ---
 

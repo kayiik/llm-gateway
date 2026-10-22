@@ -25,6 +25,7 @@ const (
 	oauthParamSource         = "source"
 	oauthParamKind           = "credential_kind"
 	oauthParamPersistProfile = "persist_profile"
+	oauthParamLegacyManual   = "legacy_manual_profile"
 )
 
 // oauthCaller is the core.Caller of the principal an OAuth route acts for:

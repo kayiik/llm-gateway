@@ -687,7 +687,7 @@ func TestTheRetiredExtensionTypeIsAConfigurationError(t *testing.T) {
 	}
 	rt := newRuntime(func(bool) (core.CredentialStore, error) { return core.NewMemoryCredentialStore(), nil })
 	_, err := rt.GetProvider("daemon")
-	if !IsConfig(err) || !strings.Contains(err.Error(), "type 'extension'") || !strings.Contains(err.Error(), "github_copilot") {
+	if !IsConfig(err) || !strings.Contains(err.Error(), "type 'extension'") || !strings.Contains(err.Error(), "advertised by the extension") {
 		t.Fatalf("provider of the retired type: %v", err)
 	}
 	if issue := ProviderConfigurationIssue("daemon"); !strings.Contains(issue, "type 'extension'") {

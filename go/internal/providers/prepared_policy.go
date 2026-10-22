@@ -17,6 +17,9 @@ func preparedNonHealth(err error) bool {
 	if isContextError(err) {
 		return true
 	}
+	if isTargetLimitError(err) {
+		return true
+	}
 	var wrapped *preparedError
 	if errors.As(err, &wrapped) {
 		if wrapped.fidelity {
@@ -38,6 +41,9 @@ func preparedNonHealth(err error) bool {
 }
 
 func (rt *Runtime) guardPreparedCall(_ context.Context, settings *config.Settings, instance string, caller core.Caller, request core.Request, call core.PreparedCall) core.PreparedCall {
+	if provider := settings.Providers[instance]; provider != nil {
+		call = limitedPreparedCall(call, instance, request.Model, provider.UsageLimits)
+	}
 	policy := policyFor(settings, instance)
 	scope := providerCacheKey(instance, caller)
 	hints := &ResilientProvider{name: instance, scope: scope, policy: policy}

@@ -78,7 +78,7 @@ func extensionInfo(version, secret string, open bool) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, extension.InfoResponse{Version: version, Providers: []extension.ProviderInfo{
-			{ID: "github_copilot", Name: "GitHub Copilot", Surfaces: []core.ModelSurface{core.ModelSurfaceChatCompletions}},
+			{ID: "github_copilot", Name: "GitHub Copilot", Surfaces: []core.ModelSurface{core.ModelSurfaceChatCompletions}, Credential: extension.CredentialOAuth, HasOAuth: true, OAuthMethods: []oauthflow.Method{oauthflow.MethodDevice}},
 		}})
 	}
 }
@@ -155,7 +155,7 @@ func TestExtensionsAreManagedThroughTheAdminAPI(t *testing.T) {
 	}
 	status, listing := admin.call(http.MethodGet, "/admin/api/extensions", nil)
 	listed, _ := listing["extensions"].([]any)
-	if status != http.StatusOK || len(listed) != 1 || listing["minimum_version"] != "0.0.4" || listing["legacy_environment"] != false {
+	if status != http.StatusOK || len(listed) != 1 || listing["minimum_version"] != "" || listing["legacy_environment"] != false {
 		t.Fatalf("listing: status=%d body=%+v", status, listing)
 	}
 	home := listed[0].(map[string]any)
@@ -343,8 +343,8 @@ func TestExtensionChecksSayWhatTheDaemonAnswered(t *testing.T) {
 	}{
 		{"protected", extensionInfo("0.0.4", extensionTestSecret, false), "", want{reachable: true, version: "0.0.4"}},
 		{"open to anyone", extensionInfo("v0.1.0", "", true), "", want{reachable: true, version: "v0.1.0", unauthenticated: true}},
-		{"older than needed", extensionInfo("v0.0.3", extensionTestSecret, false), "", want{reachable: true, version: "v0.0.3", outdated: true}},
-		{"a prerelease of the minimum", extensionInfo("0.0.4-rc.1", extensionTestSecret, false), "", want{reachable: true, version: "0.0.4-rc.1", outdated: true}},
+		{"independent release numbering", extensionInfo("v0.0.3", extensionTestSecret, false), "", want{reachable: true, version: "v0.0.3"}},
+		{"a prerelease", extensionInfo("0.0.4-rc.1", extensionTestSecret, false), "", want{reachable: true, version: "0.0.4-rc.1"}},
 		{"a development build", extensionInfo("dev", extensionTestSecret, false), "", want{reachable: true, version: "dev"}},
 		{"secret refused", answer(http.StatusUnauthorized, "application/json", `{"error":"unauthorized"}`), "", want{code: "secret_refused"}},
 		{"secret forbidden", answer(http.StatusForbidden, "application/json", `{"error":"forbidden"}`), "", want{code: "secret_refused"}},
@@ -642,6 +642,7 @@ func TestASignInStartNamesTheExtensionOfTheProviderItConfigures(t *testing.T) {
 	starts := make(chan string, 4)
 	daemon := func(name string) string {
 		mux := http.NewServeMux()
+		mux.HandleFunc("GET /extension/v1/info", extensionInfo("fixture-build", extensionTestSecret, false))
 		mux.HandleFunc("POST /extension/v1/github_copilot/oauth/start", func(w http.ResponseWriter, r *http.Request) {
 			starts <- name
 			writeJSON(w, http.StatusOK, map[string]any{"authorization": oauthflow.Authorization{
@@ -713,19 +714,5 @@ func TestTheCompanionDaemonReportIsGone(t *testing.T) {
 	server := useExtensionsAPI(t, true)
 	if status, _ := jsonRequest(t, server.URL+"/admin/api/companion-daemon", http.MethodGet, "admin-secret", nil); status != http.StatusNotFound {
 		t.Fatalf("status=%d, want 404", status)
-	}
-}
-
-// A version is outdated when it is a semantic version below the minimum the
-// gateway needs; one that is not, such as a development build, is not.
-func TestExtensionVersionsBelowTheMinimumAreOutdated(t *testing.T) {
-	for version, outdated := range map[string]bool{
-		"0.0.3": true, "v0.0.3": true, "0.0.3+build.5": true, "0.0.4-rc.1": true, "0.0.4-alpha": true,
-		"0.0.4": false, "v0.0.4": false, "0.0.4+build.5": false, "0.0.10": false, "0.1.0": false, "1.0.0": false,
-		"dev": false, "": false, "0.0": false, "0.0.x": false, "00.0.3": false, "0.0.3-": false, "V0.0.3": false,
-	} {
-		if got := extensionOutdated(version); got != outdated {
-			t.Errorf("version %q outdated=%v, want %v", version, got, outdated)
-		}
 	}
 }

@@ -27,6 +27,14 @@ endpoints:
 The client requests `coding`. Eligible chat execution walks the ordered members
 until one succeeds or the chain is exhausted.
 
+Members may also use `{ route: another-endpoint }`. These references expand
+depth-first into the same ordered target list, preserving repeated members. They
+do not create another inference or retry layer. The outer route remains the
+request's policy and usage identity; each attempt retains its actual provider and
+model. Referenced routes contribute members, not their own API policy or grants.
+Missing references and cycles fail configuration validation. See
+[endpoint configuration](CONFIGURATION.md#endpoints) for the saved shape and limits.
+
 ### Bare provider-native alias
 
 Version punctuation and Claude picker context tags are normalized. A bare alias
@@ -56,9 +64,11 @@ send a Chat field the request sets or one the Responses fallback cannot serve
 it through, is passed over before anything is sent to it, and the request fails
 with `400` only when no member can take it.
 
-Streaming has a hard boundary: a request can move to the next target only before
-the first response byte. Once output starts, a later failure is surfaced to the
-client; the gateway does not replay partial output through another model.
+Streaming has a hard boundary: the prepared route commits when an upstream stream
+opens and its iterator is selected. Opening failures may advance to the next
+eligible target; a later read failure is surfaced to the client, even if no visible
+content has arrived yet. The gateway does not restart that stream or splice in
+another model's answer. Route references do not change this boundary.
 
 Native Anthropic Messages advances past retryable upstream statuses, statusless
 provider failures such as malformed responses, and billing and request-shape

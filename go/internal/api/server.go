@@ -26,6 +26,7 @@ var pathAliases = map[string]string{
 	"/messages/count_tokens": "/v1/messages/count_tokens",
 	"/audio/transcriptions":  "/v1/audio/transcriptions",
 	"/audio/speech":          "/v1/audio/speech",
+	"/realtime":              "/v1/realtime",
 	"/realtime/calls":        "/v1/realtime/calls",
 	"/embeddings":            "/v1/embeddings",
 	"/images/generations":    "/v1/images/generations",
@@ -118,6 +119,7 @@ func (s *server) handler() http.Handler {
 	mux.HandleFunc("POST /v1/audio/transcriptions", handleTranscriptions)
 	mux.HandleFunc("POST /v1/audio/speech", handleSpeech)
 	mux.HandleFunc("POST /v1/realtime/calls", handleRealtimeCalls)
+	mux.HandleFunc("GET /v1/realtime", handleRealtimeWebsocket)
 	mux.HandleFunc("POST /v1/images/generations", handleImageGenerations)
 	mux.HandleFunc("POST /v1/videos/generations", handleVideoGenerations)
 	mux.HandleFunc("GET /v1/models", handleModels)
@@ -187,6 +189,7 @@ func (s *server) handler() http.Handler {
 	mux.HandleFunc("GET /user/api/connections", handleUserConnections)
 	mux.HandleFunc("POST /user/api/connections", handleUserCreateConnection)
 	mux.HandleFunc("DELETE /user/api/connections/{connection_id}", handleUserRevokeConnection)
+	mux.HandleFunc("POST /user/api/connections/{id}/quota/refresh", handleUserRefreshProviderQuota)
 	mux.HandleFunc("POST /user/api/connections/{provider_id}/oauth/start", s.handleUserOAuthStart)
 	mux.HandleFunc("POST /user/api/connections/{provider_id}/oauth/poll", s.handleUserOAuthPoll)
 	mux.HandleFunc("POST /user/api/connections/{provider_id}/oauth/complete", s.handleUserOAuthComplete)
@@ -222,6 +225,8 @@ func (s *server) handler() http.Handler {
 	mux.HandleFunc("POST /admin/api/providers/{id}/repair", handleRepairProvider)
 	mux.HandleFunc("POST /admin/api/providers/{id}/verify", handleVerifyProvider)
 	mux.HandleFunc("POST /admin/api/providers/{id}/enabled", handleProviderEnabled)
+	mux.HandleFunc("PATCH /admin/api/providers/{id}/usage-limits", handleProviderUsageLimits)
+	mux.HandleFunc("POST /admin/api/connections/{id}/quota/refresh", handleAdminRefreshProviderQuota)
 	mux.HandleFunc("POST /admin/api/endpoints", handleUpsertEndpoint)
 	mux.HandleFunc("DELETE /admin/api/endpoints/{name}", handleDeleteEndpoint)
 	// Deprecated: the routing layer is called an endpoint now. Retained until

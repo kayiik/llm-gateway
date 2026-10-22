@@ -14,10 +14,8 @@ import {
   addProviderBody,
   answeredIn,
   checkFailure,
-  daemonTypes,
   extensionPill,
   freeProviderID,
-  outdatedWarning,
   providerBaseID,
   removalReason,
   servedSummary,
@@ -61,17 +59,16 @@ export function MessageNotice({ message, icon, children }: { message: Message; i
 
 // CheckResult says what a check of a daemon found: what it serves, or why
 // the gateway cannot use it, and what about it needs attention.
-export function CheckResult({ status, address, minimumVersion }: { status: JSONRecord; address: string; minimumVersion: string }) {
+export function CheckResult({ status, address }: { status: JSONRecord; address: string; minimumVersion?: string }) {
   if (!boolValue(status.reachable)) return <MessageNotice message={checkFailure(status, address)} />;
   const served = asList(status.served).map(asRecord);
   const version = stringValue(status.version);
   return (
     <>
-      <MessageNotice message={{ tone: "success", title: "Connected", detail: `llmgw-extension ${version || "of an unreported version"} answered in ${numberValue(status.latency_ms)} ms. ${served.length ? `It serves ${served.length} provider${served.length === 1 ? "" : "s"}:` : "It serves no providers."}` }}>
-        {served.length ? <div class="chip-row">{served.map((info) => <span class="surface-chip" key={stringValue(info.id)}>{daemonTypes.find((known) => known.type === stringValue(info.id))?.label ?? (stringValue(info.name) || stringValue(info.id))}</span>)}</div> : null}
+      <MessageNotice message={{ tone: "success", title: "Connected", detail: `The extension${version ? ` (${version})` : ""} answered in ${numberValue(status.latency_ms)} ms. ${served.length ? `It serves ${served.length} provider${served.length === 1 ? "" : "s"}:` : "It serves no providers."}` }}>
+        {served.length ? <div class="chip-row">{served.map((info) => <span class="surface-chip" key={stringValue(info.id)}>{stringValue(info.name) || stringValue(info.id)}</span>)}</div> : null}
       </MessageNotice>
       {boolValue(status.unauthenticated) ? <MessageNotice message={unauthenticatedWarning} icon={Lock} /> : null}
-      {boolValue(status.outdated) ? <MessageNotice message={outdatedWarning(version, minimumVersion)} /> : null}
     </>
   );
 }
@@ -180,7 +177,7 @@ export function ExtensionForm({ extension, minimumVersion, onCancel, onSaved }: 
             </button>
           </span>
           <p class="form-help" id={`${secretID}-help`}>
-            The secret the daemon was started with, its <span class="technical">LLMGW_EXTENSION_SECRET</span>. Stored encrypted: you can replace it later, but not read it back.{editing ? " Leave it empty to keep the stored one." : ""}
+            The shared secret configured on the extension. Stored encrypted: you can replace it later, but not read it back.{editing ? " Leave it empty to keep the stored one." : ""}
           </p>
         </div>
       </div>
@@ -204,9 +201,7 @@ export function ExtensionForm({ extension, minimumVersion, onCancel, onSaved }: 
   );
 }
 
-// SetupTokenDialog stores the setup token a provider served through the
-// companion daemon signs in to Anthropic with, as the gateway's own.
-export function SetupTokenDialog({ providerID, label, onClose, onSaved }: { providerID: string; label: string; onClose: () => void; onSaved: () => Promise<void> }) {
+export function ExtensionTokenDialog({ providerID, providerType, extensionID, label, onClose, onSaved }: { providerID: string; providerType: string; extensionID: string; label: string; onClose: () => void; onSaved: () => Promise<void> }) {
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -214,19 +209,19 @@ export function SetupTokenDialog({ providerID, label, onClose, onSaved }: { prov
   const submit = async (event: Event) => {
     event.preventDefault();
     if (!token.trim()) {
-      setError("Paste the setup token first.");
+      setError("Paste the token first.");
       return;
     }
     setBusy(true);
     setError("");
     try {
-      await sendJSON<JSONRecord>("admin", "/providers", "POST", { id: providerID, type: "anthropic_setup_token", api_key: token, credential_kind: "setup_token" });
+      await sendJSON<JSONRecord>("admin", "/providers", "POST", { id: providerID, type: providerType, extension: extensionID, api_key: token, credential_kind: "api_key" });
       setToken("");
       await onSaved();
       onClose();
     } catch (cause) {
       setToken("");
-      setError(errorText(cause, "The setup token was not stored."));
+      setError(errorText(cause, "The token was not stored."));
     } finally {
       setBusy(false);
     }
@@ -246,10 +241,10 @@ export function SetupTokenDialog({ providerID, label, onClose, onSaved }: { prov
         <form class="form-stack" onSubmit={submit}>
           <p class="muted-copy">The gateway sends <span class="technical">{providerID}</span>'s requests with this token, through the extension that serves it.</p>
           <label>
-            Setup token
+            Token
             <input type="password" value={token} autoComplete="off" onInput={(event) => setToken((event.currentTarget as HTMLInputElement).value)} />
           </label>
-          <p class="form-help">The setup token is validated, encrypted, and never returned.</p>
+          <p class="form-help">The token is stored encrypted and never returned.</p>
           {error ? <p class="form-error" role="alert">{error}</p> : null}
           <footer>
             <button class="button button--secondary" type="button" onClick={onClose}>
@@ -280,7 +275,7 @@ export function ExtensionShelf({ data, extensions, search, filter, onChanged, on
   search: string;
   filter: string;
   onChanged: () => Promise<void>;
-  onAddAccount: (registryID: string, providerID: string) => void;
+  onAddAccount: (entry: JSONRecord, providerID: string) => void;
   onOpenDetail: (entryID: string) => void;
 }) {
   const [open, setOpen] = useState("");
@@ -288,7 +283,7 @@ export function ExtensionShelf({ data, extensions, search, filter, onChanged, on
   const [editing, setEditing] = useState("");
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState<PanelNotice>(null);
-  const [tokenFor, setTokenFor] = useState<{ providerID: string; label: string } | null>(null);
+  const [tokenFor, setTokenFor] = useState<{ providerID: string; providerType: string; extensionID: string; label: string } | null>(null);
   const root = useRef<HTMLElement | null>(null);
   const { listing, loading, error, minimumVersion, legacyEnvironment } = extensions;
   const all = extensions.extensions;
@@ -383,14 +378,14 @@ export function ExtensionShelf({ data, extensions, search, filter, onChanged, on
   // needs: an account, a token, or nothing.
   const addServed = async (extension: JSONRecord, row: ServedRow) => {
     const extensionID = stringValue(extension.id);
-    const providerID = freeProviderID(providerBaseID(row, data), asList(data.providers).map((provider) => stringValue(asRecord(provider).id)));
+    const providerID = freeProviderID(providerBaseID(row), asList(data.providers).map((provider) => stringValue(asRecord(provider).id)));
     setBusy(`${extensionID}-${row.type}-add`);
     setNotice(null);
     try {
       await sendJSON<JSONRecord>("admin", "/providers", "POST", addProviderBody(row, extensionID, providerID));
       await refresh();
-      if (row.credential === "oauth" && row.registryID) onAddAccount(row.registryID, providerID);
-      else if (row.credential === "token") setTokenFor({ providerID, label: row.label });
+      if (row.credential === "oauth") onAddAccount(row.entry, providerID);
+      else if (row.credential === "token") setTokenFor({ providerID, providerType: row.type, extensionID, label: row.label });
       else setNotice({ id: extensionID, message: { tone: "success", title: `${row.label} added`, detail: `It is configured as ${providerID}. Add it to a route to send requests to it.` } });
     } catch (cause) {
       setNotice({ id: extensionID, message: { tone: "error", title: `${row.label} wasn't added`, detail: errorText(cause) } });
@@ -415,13 +410,13 @@ export function ExtensionShelf({ data, extensions, search, filter, onChanged, on
                 {adding ? <LoaderCircle class="spin" size={14} /> : <Plus size={14} />} Add
               </button>
             ) : null}
-            {row.state.added && row.credential === "oauth" && row.registryID && row.instances.length === 1 ? (
-              <button class="button button--secondary button--compact" type="button" aria-label={`Add account for ${row.label}`} onClick={() => onAddAccount(row.registryID, stringValue(row.instances[0].id))}>
+            {row.state.added && row.credential === "oauth" && row.instances.length === 1 ? (
+              <button class="button button--secondary button--compact" type="button" aria-label={`Add account for ${row.label}`} onClick={() => onAddAccount(row.entry, stringValue(row.instances[0].id))}>
                 <Plug size={14} /> Add account
               </button>
             ) : null}
             {row.state.needs === "token" ? (
-              <button class="button button--secondary button--compact" type="button" aria-label={`Add token for ${row.label}`} onClick={() => setTokenFor({ providerID: stringValue(needsToken?.id), label: row.label })}>
+              <button class="button button--secondary button--compact" type="button" aria-label={`Add token for ${row.label}`} onClick={() => setTokenFor({ providerID: stringValue(needsToken?.id), providerType: row.type, extensionID: openID, label: row.label })}>
                 <KeyRound size={14} /> Add token
               </button>
             ) : null}
@@ -473,14 +468,12 @@ export function ExtensionShelf({ data, extensions, search, filter, onChanged, on
         <dl class="extension-facts">
           <div><dt>Address</dt><dd class="technical">{stringValue(extension.url)}</dd></div>
           <div><dt>Shared secret</dt><dd>{boolValue(extension.secret_set) ? "Set · stored encrypted" : "Not set"}</dd></div>
-          <div><dt>Version</dt><dd>{version ? `llmgw-extension ${version}` : "Not reported"}</dd></div>
-          {reachable && boolValue(status.outdated) ? <div><dt>This gateway expects</dt><dd>{minimumVersion} or later</dd></div> : null}
+          <div><dt>Version</dt><dd>{version || "Not reported"}</dd></div>
           <div><dt>Answered in</dt><dd>{answeredIn(status)}</dd></div>
           <div><dt>Last checked</dt><dd>{checkedAt && Number.isFinite(Date.parse(checkedAt)) ? new Date(Date.parse(checkedAt)).toLocaleString() : "Not checked"}</dd></div>
           {stringValue(status.error) ? <div class="extension-facts__wide"><dt>Error</dt><dd class="technical">{stringValue(status.error)}</dd></div> : null}
         </dl>
         {reachable && boolValue(status.unauthenticated) ? <MessageNotice message={unauthenticatedWarning} icon={Lock} /> : null}
-        {reachable && boolValue(status.outdated) ? <MessageNotice message={outdatedWarning(version, minimumVersion)} /> : null}
         {effect ? (
           <div class="notice notice--warning" role="alert">
             <CircleAlert size={18} aria-hidden="true" />
@@ -585,10 +578,7 @@ export function ExtensionShelf({ data, extensions, search, filter, onChanged, on
             <span class="provider-mark" aria-hidden="true"><Server size={18} /></span>
             <div>
               <h3>No extension yet</h3>
-              <p>An extension is a companion daemon that serves providers the gateway can't reach on its own. Run one, then add its address and shared secret here. It brings:</p>
-              <ul class="unlock-list">
-                {daemonTypes.map((known) => <li key={known.type}><ProviderMark id={known.markID} label={known.label} />{known.label}</li>)}
-              </ul>
+              <p>Connect an extension by its address and shared secret. Its providers, supported APIs, and sign-in methods appear here after discovery.</p>
               <div class="provider-actions">
                 <button class="button button--primary" type="button" data-extension-trigger="add" onClick={startAdding}>
                   <Plus size={15} /> Add extension
@@ -607,7 +597,7 @@ export function ExtensionShelf({ data, extensions, search, filter, onChanged, on
                   <span class="provider-mark" aria-hidden="true"><Server size={18} /></span>
                   <span class="extension-row__name"><strong>{stringValue(extension.name, id)}</strong><span class="technical">{stringValue(extension.url)}</span></span>
                   <span class="extension-row__served">{servedSummary(extension)}</span>
-                  <span class="extension-row__version">{version || "—"}</span>
+                  <span class="extension-row__version" title={version || undefined}>{version || "—"}</span>
                   <span class={`status-pill status-pill--${pill.tone}`}>{pill.label}</span>
                   {open === id ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
                 </button>,
@@ -622,7 +612,7 @@ export function ExtensionShelf({ data, extensions, search, filter, onChanged, on
         )}
         {adding ? addForm : null}
       </div>
-      {tokenFor ? <SetupTokenDialog providerID={tokenFor.providerID} label={tokenFor.label} onClose={() => setTokenFor(null)} onSaved={refresh} /> : null}
+      {tokenFor ? <ExtensionTokenDialog {...tokenFor} onClose={() => setTokenFor(null)} onSaved={refresh} /> : null}
     </section>
   );
 }

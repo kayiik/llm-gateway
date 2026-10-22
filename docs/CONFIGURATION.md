@@ -50,8 +50,9 @@ Supported fields depend on the runtime type:
 
 | Field | Meaning |
 | --- | --- |
-| `type` | Runtime transport, such as `openai_compatible`, `anthropic`, `ollama`, `github_copilot`, `vertex_ai`, or `edge_tts`. |
+| `type` | Built-in transport such as `openai_compatible`, `anthropic`, `ollama`, or `vertex_ai`; with `extension`, the exact provider ID advertised by that extension. |
 | `registry_id` | Optional curated integration whose defaults and onboarding metadata describe this instance. |
+| `extension` | ID of a saved extension. Its discovery declaration supplies this provider's transport, native APIs and credential requirements. |
 | `base_url` | Provider API base URL. Private/LAN addresses are allowed by design. |
 | `api_key` | Literal or `${ENV:NAME}` reference. Environment references are recommended; never commit literal secrets. |
 | `timeout` | Seconds a provider request waits for its response to begin, and then between two reads of the response. An answer that keeps arriving is never cut, however long it runs; one that sends nothing for this long fails. A provider the optional companion daemon serves passes it to the daemon, which applies it to the provider's answer; without one, such a provider waits 300 seconds, and a `github_copilot` provider `LLMGW_GITHUB_COPILOT_TIMEOUT_SECONDS`. |
@@ -62,6 +63,7 @@ Supported fields depend on the runtime type:
 | `default_voice` | Default voice for speech providers. |
 | `disabled` | Keep the instance configured while removing it from routing. |
 | `force_api_support` | Legacy narrow catalog-driven endpoint rewrite. Does not authorize compatibility or override a native-only request/route. |
+| `usage_limits` | Optional local dispatch RPM and observed daily/monthly token thresholds, with additional exact model-ID limits below. |
 
 With credential encryption configured, startup copies a provider's `api_key`
 into an encrypted system connection, which resolution then prefers. When the
@@ -72,6 +74,73 @@ the console or API is never replaced from configuration, and a revoked system
 connection is not restored.
 
 The curated integration matrix is in [`PROVIDERS.md`](PROVIDERS.md).
+
+#### Local provider/model usage limits
+
+```yaml
+providers:
+  hosted-chat:
+    type: openai_compatible
+    base_url: https://provider.example.invalid/v1
+    usage_limits:
+      rpm: 60
+      daily_tokens: 1000000
+      monthly_tokens: 20000000
+      models:
+        example-model:
+          rpm: 20
+          daily_tokens: 250000
+```
+
+All thresholds are non-negative integers; zero/omission is unlimited. Provider
+thresholds cover the instance across callers/models; model thresholds additionally
+apply to that exact upstream model ID, not a route name. Both must admit a dispatch.
+The admin provider upsert accepts the same `usage_limits` object. Omitting it
+preserves saved limits; `{}` clears them. In the administrator console, open a
+configured provider and expand **Usage limits** to edit provider-wide and exact-model
+thresholds. This uses `PATCH /admin/api/providers/{id}/usage-limits` with a
+`{"usage_limits": {...}}` body; it does not repost credentials or provider bindings.
+
+This first increment gates **prepared inference** (Chat, Responses, Messages and
+other operations using the prepared execution pipeline). Separate legacy media,
+video-job polling and realtime/session transports are not covered by these counters.
+It is not a provider-account or billing ceiling.
+
+Each admitted target dispatch attempt, including retries and upstream refusals, consumes a
+request slot atomically before dispatch. An exhausted target returns a local 429
+and can advance an eligible ordered route, without another logical product-key
+request debit, same-target retry or provider-health penalty. Storage failures are
+terminal rather than an excuse to replay inference. Existing selected-stream
+commitment is unchanged.
+Admission is not proof that the upstream received the request.
+
+Daily/monthly token thresholds settle qualified source totals (or available
+input/output components), including observed failed attempts, once after completion
+or stream termination. Invalid, synthetic and unknown counts are not measured zero;
+unobserved usage is not estimated for enforcement. These are observed lower-bound
+counters, not complete upstream balance reports. In-flight requests can overshoot
+token thresholds. Windows are UTC calendar minutes/days/months, attributed to
+admission time, and persist in the gateway SQLite state. Enabling limits begins
+local tracking; it does not import historical provider usage. No upstream allowance
+collector is required or automatically invoked.
+
+The configured provider page also shows **Upstream allowance**, separately from
+Gateway-enforced limits. **Refresh allowance** reads the selected account's optional
+control-plane evidence. The first reader supports Antigravity's best-effort model
+fractions/reset times through its configured extension; it does not call inference,
+refresh tokens, or turn a fraction into a token balance. Unsupported or failed
+collection stays unknown and does not change inference or local limit enforcement.
+Cached observations expire after at most 15 minutes, or an earlier reported reset.
+The model, source, confidence and observation/reset times remain visible; a reported
+zero is distinct from missing data. No automatic polling is enabled.
+
+Administrator refresh uses `POST /admin/api/connections/{id}/quota/refresh`; signed-in
+users can refresh their own active connection through
+`POST /user/api/connections/{id}/quota/refresh`. The response contains
+`status: observed|unknown|unsupported` and the existing authorized `quota_advisories`.
+Requests use the stored connection and credential revision; the body cannot select
+another owner or supply a replacement credential. Revocation/rotation during a
+request discards its result. Unknown/failed collection preserves existing cache age.
 
 ### Endpoints
 
@@ -87,6 +156,38 @@ endpoints:
 
 The deprecated `categories` key still loads when `endpoints` is absent. When both
 are present, `endpoints` wins and the maps are not merged.
+
+A member can instead reference another route's ordered model list:
+
+```yaml
+endpoints:
+  coding:
+    failover:
+      - { provider: hosted-chat, model: <hosted-model-id> }
+  coding-with-local:
+    failover:
+      - { route: coding }
+      - { provider: local-chat, model: <local-model-id> }
+```
+
+References expand in place, preserving order, duplicates and each leaf's
+`allow_unverified` flag. Child edits take effect on subsequent requests; references
+remain references when saved. The requested **outer route** supplies the API
+contract and route grant. Referencing a child neither grants direct access to it
+nor inherits its ingress/adaptation policy. Provider and credential checks still
+apply to every expanded target.
+
+Use either `route` or `provider`/`model` in a member, never both. Missing references,
+cycles and ambiguous case-insensitive names are rejected. Exact names take
+precedence; otherwise a unique case-insensitive match is accepted. Expansion is
+bounded to 4,096 leaves and 128 nested routes. A referenced route cannot be deleted
+until its references are removed. Console editing supports both member kinds.
+
+Administration saves reject known, disjoint operation families such as chat and
+video generation. Tools/streaming differences and unknown capabilities produce
+advice instead of blocking the save. Route discovery presents the first eligible
+member's capabilities; that is not a guarantee that every fallback can handle
+them. Request-time checks remain authoritative and never strip requested features.
 
 An endpoint without an API contract admits matching actual-native members only.
 To permit assessed adaptation, declare both the accepted entrypoints and the
@@ -112,7 +213,8 @@ and adaptation without an ingress declaration are rejected on load/save.
 
 Other accepted paths are `/v1/messages/count_tokens`, `/v1/embeddings`,
 `/v1/audio/transcriptions`, `/v1/audio/speech`, `/v1/images/generations`, and
-`/v1/videos/generations`, and `/v1/realtime/calls`. Include token counting when
+`/v1/videos/generations`, `/v1/realtime/calls`, and `/v1/realtime`. WebRTC signaling
+and WebSocket ingress are independent permissions. Include token counting when
 a client's route needs it;
 a Chat-only declaration does not permit it. Declaring a path does not add that
 operation to an otherwise incapable provider. Console route editing and both

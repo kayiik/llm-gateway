@@ -36,11 +36,12 @@ func storeOAuthConnection(ctx context.Context, done oauthflow.Completion) (strin
 		ProjectID:    record.Metadata[providers.OAuthMetadataProjectID], Status: "active",
 		OAuthProfile:  record.Metadata[providers.OAuthMetadataProfile],
 		OAuthClientID: record.Metadata[providers.OAuthMetadataClientID],
+		Metadata:      record.Metadata,
 	}
 	if done.Method == oauthflow.MethodDevice {
 		create.Name, create.Source = completion.name, completion.source
 	}
-	manual := done.Method == oauthflow.MethodManual
+	manual := done.Method == oauthflow.MethodManual && params[oauthParamLegacyManual] == "true"
 	client := providers.OAuthManualConfig(params)
 	if manual {
 		// A manual connection keeps the client it was granted to, so it can

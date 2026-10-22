@@ -25,9 +25,15 @@ import (
 const realtimeOfferFixture = "v=0\r\ns=fixture-offer\r\nt=0 0\r\na=ice-pwd:fixture-offer-credential\r\n"
 const realtimeAnswerFixture = "v=0\r\ns=fixture-answer\r\nt=0 0\r\na=ice-pwd:fixture-answer-credential\r\n"
 
-func realtimeFixture(t *testing.T, respond http.HandlerFunc) (http.Handler, *atomic.Int32) {
+func realtimeFixture(t *testing.T, respond http.HandlerFunc, nativeSurfaces ...string) (http.Handler, *atomic.Int32) {
 	t.Helper()
+	if len(nativeSurfaces) == 0 {
+		nativeSurfaces = []string{realtimeCallsPath}
+	}
 	resetState(t)
+	// ResetProviders preserves catalog evidence; each fixture owns its runtime
+	// so another fixture's native transport declaration cannot leak into it.
+	providers.InstallForTests(t)
 	t.Setenv("LLMGW_CONFIG", config.StateDir()+"/config.yaml")
 	old := *config.Get()
 	t.Cleanup(func() { config.Update(func(s *config.Settings) { *s = old }) })
@@ -35,7 +41,7 @@ func realtimeFixture(t *testing.T, respond http.HandlerFunc) (http.Handler, *ato
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
 			writeJSON(w, http.StatusOK, map[string]any{"data": []any{
-				map[string]any{"id": "voice-model", "supported_endpoints": []string{"/realtime/calls"}},
+				map[string]any{"id": "voice-model", "supported_endpoints": nativeSurfaces},
 				map[string]any{"id": "chat-model", "supported_endpoints": []string{"/chat/completions"}},
 			}})
 			return

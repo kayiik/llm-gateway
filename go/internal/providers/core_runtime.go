@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"llmgw/internal/config"
 	"llmgw/internal/iam"
@@ -53,6 +54,17 @@ func (rt *Runtime) coreVerticals() map[string]coreVertical {
 	} {
 		verticals[extType] = rt.extensionCoreVertical(extType)
 	}
+	// An explicit extension binding owns its transport even when its provider
+	// ID happens to match a built-in type. Unbound legacy configurations keep
+	// their existing dispatch.
+	for name, vertical := range verticals {
+		serves := vertical.serves
+		vertical.serves = func(settings *config.Settings, instance string, cfg *config.ProviderConfig) bool {
+			return cfg != nil && strings.TrimSpace(cfg.Extension) == "" && serves(settings, instance, cfg)
+		}
+		verticals[name] = vertical
+	}
+	verticals[extensionCoreType] = rt.extensionCoreVertical(extensionCoreType)
 	return verticals
 }
 

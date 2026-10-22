@@ -40,6 +40,8 @@ func loadProviderRegistry(overlayJSON []byte) (*coreproviders.Registry, error) {
 		return nil, fmt.Errorf("overlay: %w", err)
 	}
 	return coreproviders.DefaultRegistry().WithOverlay(
-		overlay, coreproviders.ValidationOptions{RuntimeTypes: ProviderTypes},
+		overlay, coreproviders.ValidationOptions{RuntimeTypes: append(append([]string{}, ProviderTypes...),
+			ExtensionTypeCopilot, ExtensionTypeCodex, ExtensionTypeAntigravity,
+			ExtensionTypeEdgeTTS, ExtensionTypeZenAnonymous, ExtensionTypeAnthropicSetup)},
 	)
 }

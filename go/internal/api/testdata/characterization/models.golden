@@ -117,9 +117,6 @@ body:
       }
     },
     {
-      "capabilities": {
-        "chat": true
-      },
       "failover": [
         {
           "model": "model-a",
@@ -132,13 +129,7 @@ body:
       ],
       "id": "fixture-failover",
       "object": "model",
-      "owned_by": "endpoint",
-      "supported_endpoints": [
-        "/v1/chat/completions"
-      ],
-      "supported_surfaces": [
-        "/v1/chat/completions"
-      ]
+      "owned_by": "endpoint"
     },
     {
       "emulated_surfaces": [

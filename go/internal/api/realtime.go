@@ -94,14 +94,22 @@ func realtimeMultipart(sdp string, session map[string]any) ([]byte, string, erro
 // remains unknown: the configured compatible endpoint validates its model,
 // without a model-name heuristic, a discovery call or cross-API adaptation.
 func realtimeNativeModel(provider, model string, caller core.Caller) bool {
+	return realtimeNativeSurface(provider, model, realtimeCallsPath, caller)
+}
+
+func realtimeNativeSurface(provider, model, surface string, caller core.Caller) bool {
 	row, found := providers.CatalogCachedLookupForPrincipal(provider, model, caller)
 	if !found {
 		return true
 	}
-	return realtimeCatalogSupport(row, providers.CatalogRefreshedAtForPrincipal(provider, caller), time.Now()) != core.SupportUnsupported
+	return realtimeCatalogSurfaceSupport(row, providers.CatalogRefreshedAtForPrincipal(provider, caller), time.Now(), surface) != core.SupportUnsupported
 }
 
 func realtimeCatalogSupport(row providers.ModelInfo, refreshed time.Time, now time.Time) core.Support {
+	return realtimeCatalogSurfaceSupport(row, refreshed, now, realtimeCallsPath)
+}
+
+func realtimeCatalogSurfaceSupport(row providers.ModelInfo, refreshed time.Time, now time.Time, requested string) core.Support {
 	if len(row.SupportedSurfaces) == 0 {
 		return core.SupportUnknown
 	}
@@ -116,7 +124,7 @@ func realtimeCatalogSupport(row providers.ModelInfo, refreshed time.Time, now ti
 		}
 	}
 	for _, surface := range row.SupportedSurfaces {
-		if strings.TrimPrefix(surface, "/v1") == "/realtime/calls" {
+		if strings.TrimPrefix(surface, "/v1") == strings.TrimPrefix(requested, "/v1") {
 			return core.SupportSupported
 		}
 	}
@@ -124,6 +132,10 @@ func realtimeCatalogSupport(row providers.ModelInfo, refreshed time.Time, now ti
 }
 
 func resolveRealtimeTarget(r *http.Request, p *config.Principal, requested string, settings *config.Settings) (router.Target, string, int, string) {
+	return resolveRealtimeNativeTarget(r, p, requested, settings, realtimeCallsPath)
+}
+
+func resolveRealtimeNativeTarget(r *http.Request, p *config.Principal, requested string, settings *config.Settings, ingress string) (router.Target, string, int, string) {
 	resolution, err := resolveModel(r.Context(), requested, p)
 	if err != nil {
 		var missing *router.ModelNotFoundError
@@ -136,15 +148,15 @@ func resolveRealtimeTarget(r *http.Request, p *config.Principal, requested strin
 	if status != 0 {
 		return router.Target{}, "", status, message
 	}
-	if err := validateRouteIngress(resolution.Category, realtimeCallsPath); err != nil {
+	if err := validateRouteIngress(resolution.Category, ingress); err != nil {
 		return router.Target{}, "", http.StatusBadRequest, err.Error()
 	}
 	for _, target := range targets {
-		if cfg := settings.Providers[target.Provider]; cfg != nil && !cfg.Disabled && providers.SupportsRealtimeHTTPTransport(target.Provider) && realtimeNativeModel(target.Provider, target.Model, callerOf(p)) {
+		if cfg := settings.Providers[target.Provider]; cfg != nil && !cfg.Disabled && providers.SupportsRealtimeHTTPTransport(target.Provider) && realtimeNativeSurface(target.Provider, target.Model, ingress, callerOf(p)) {
 			return target, resolution.Category, 0, ""
 		}
 	}
-	return router.Target{}, "", http.StatusBadRequest, "no route member serves native compatible realtime signaling"
+	return router.Target{}, "", http.StatusBadRequest, "no route member serves the requested native compatible realtime transport"
 }
 
 func realtimeCallLocation(value, base string) string {

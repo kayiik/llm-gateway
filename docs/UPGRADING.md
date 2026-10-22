@@ -146,9 +146,7 @@ docker compose --env-file .env up -d --build
 ## Companion daemon extensions
 
 The gateway no longer reads `LLMGW_EXTENSION_URL` or `LLMGW_EXTENSION_SECRET`.
-The optional companion daemon, which serves GitHub Copilot, OpenAI Codex, Google
-Antigravity, Edge TTS, anonymous OpenCode Zen and Anthropic setup tokens, is
-added as an **extension** instead: an address and a shared secret that the
+An optional companion daemon is added as an **extension** instead: an address and a shared secret that the
 gateway stores encrypted. Until it is added, the providers it serves report that
 no extension serves them, and while either variable is still set the gateway
 logs a startup warning.
@@ -172,8 +170,9 @@ curl -fsS https://<gateway-host>/admin/api/extensions \
   -d '{"name": "Companion daemon", "url": "<the old LLMGW_EXTENSION_URL>", "secret": "<the old LLMGW_EXTENSION_SECRET>"}'
 ```
 
-4. Upgrade the daemon to the release that the gateway's release notes name. The
-   console marks an older daemon **Update needed**.
+4. Check the extension. Its `/extension/v1/info` declaration reports its actual
+   providers, native APIs and sign-in methods. Implementation release numbers
+   are informational and are not compared across independently built extensions.
 
 With one extension, every provider the daemon serves uses it. With several, each
 provider names the extension that serves it, and adding a second extension keeps

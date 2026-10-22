@@ -14,6 +14,7 @@ import (
 	"llmgw/internal/router"
 
 	core "github.com/kayiik/llmgw-core"
+	"github.com/kayiik/llmgw-core/extension"
 )
 
 type configuredProviderSnapshot struct {
@@ -335,6 +336,16 @@ func providerStatusSnapshots(
 		if reg, ok := providers.RegistryProvider(providerConfig.RegistryID); ok && !reg.RequiresAPIKey && contains(reg.AuthMethods, "none") {
 			credentialPresent = true
 		}
+		if providerConfig.Extension != "" {
+			if info, found := providers.Current().CachedExtensionProviderInfo(providerConfig.Extension, providers.CompanionDaemonType(providerConfig)); found {
+				switch info.CredentialKind() {
+				case extension.CredentialNone:
+					credentialPresent = true
+				case extension.CredentialOAuth:
+					credentialPresent = connectionCounts[providerID] > 0
+				}
+			}
+		}
 		status, lastCheck, lastVerify := providerStatus(credentialPresent, len(models), allChecks[providerID])
 		readiness := scopedReadiness(allChecks[providerID], checkScope, checkScope == "")
 		readiness["catalog_source_scope"] = "principal"
@@ -504,7 +515,7 @@ func providerStatusSnapshots(
 			"catalog_evidence":     snapshot.catalogEvidence,
 			"completion_evidence":  snapshot.completionEvidence,
 		}, snapshot.lastCheck, snapshot.lastVerify), snapshot.openCircuits)
-		snapshots = append(snapshots, providerSnapshotRow(map[string]any{
+		custom := providerSnapshotRow(map[string]any{
 			"id": snapshot.id, "registry_id": snapshot.registryID, "label": snapshot.id, "description": "Custom configured provider.",
 			"protocol": "gateway", "availability": providers.ProviderAvailable,
 			"auth_methods": []string{}, "configured": true, "status": snapshot.status,
@@ -521,7 +532,15 @@ func providerStatusSnapshots(
 			"instances":              []map[string]any{instance},
 			"instance_status_counts": map[string]int{snapshot.status: 1},
 			"readiness":              snapshot.readiness,
-		}, snapshot.lastCheck, snapshot.lastVerify))
+		}, snapshot.lastCheck, snapshot.lastVerify)
+		if cfg := settings.Providers[snapshot.id]; cfg != nil && cfg.Extension != "" {
+			if info, found := providers.Current().CachedExtensionProviderInfo(cfg.Extension, providers.CompanionDaemonType(cfg)); found {
+				custom["label"], custom["extension_provider"] = info.Name, true
+				custom["auth_methods"] = extensionAuthMethods(info)
+				custom["oauth_methods"] = info.OAuthMethods
+			}
+		}
+		snapshots = append(snapshots, custom)
 	}
 	sort.Slice(snapshots, func(i, j int) bool {
 		return snapshots[i]["label"].(string) < snapshots[j]["label"].(string)

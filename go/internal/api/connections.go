@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"llmgw/internal/providers"
 
 	gcpauth "github.com/kayiik/llm-provider-auth/gcp"
+	"github.com/kayiik/llmgw-core/extension"
 )
 
 type connectionBody struct {
@@ -237,6 +239,19 @@ func createPersonalProviderConnection(
 	kind := strings.ToLower(strings.TrimSpace(body.Kind))
 	if kind == "" {
 		kind = "api_key"
+	}
+	if providerConfig.Extension != "" {
+		info, err := providers.Current().ExtensionProviderInfo(context.Background(), providerConfig.Extension, providers.CompanionDaemonType(providerConfig))
+		if err != nil {
+			return iam.ProviderConnection{}, err
+		}
+		if info.CredentialKind() != extension.CredentialToken || kind != "api_key" {
+			return iam.ProviderConnection{}, &providers.ConfigError{Msg: "this extension provider does not accept a pasted-token connection; use its declared sign-in method"}
+		}
+		return iam.PutProviderConnection(iam.ProviderConnectionCreate{
+			PrincipalID: principalID, ProviderID: providerID, Name: body.Name,
+			Kind: kind, Secret: body.Secret, Source: source, MakeDefault: bool(body.MakeDefault),
+		})
 	}
 	if kind == gcpauth.CredentialKind {
 		// A service-account key authenticates only the Google Cloud surface.

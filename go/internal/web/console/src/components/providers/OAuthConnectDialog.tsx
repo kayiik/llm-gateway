@@ -74,6 +74,8 @@ export function OAuthConnectDialog({
   const [redirectURI, setRedirectURI] = useState("");
   const [oauthProfile, setOAuthProfile] = useState("gateway_callback");
   const [codexFlow, setCodexFlow] = useState("browser");
+  const extensionMethods = asList(entry.oauth_methods).map(String).filter((method) => ["browser", "device", "manual"].includes(method));
+  const [extensionMethod, setExtensionMethod] = useState(extensionMethods[0] ?? "");
   const [authorizationResponse, setAuthorizationResponse] = useState("");
   const [flow, setFlow] = useState<DeviceFlow | null>(null);
   const [stage, setStage] = useState<OAuthStage>("intro");
@@ -85,8 +87,9 @@ export function OAuthConnectDialog({
   const polling = useRef(false);
   const popup = useRef<Window | null>(null);
   const requiresClientID = asList(entry.onboarding_fields).map(String).includes("client_id");
-  const supportsConsumerManual = stringValue(entry.id) === "google_antigravity";
-  const supportsCodexFlows = stringValue(entry.id) === "openai_codex";
+  const discoveredExtension = boolValue(entry.extension_provider);
+  const supportsConsumerManual = !discoveredExtension && stringValue(entry.id) === "google_antigravity";
+  const supportsCodexFlows = !discoveredExtension && stringValue(entry.id) === "openai_codex";
 
   const closePopup = useCallback(() => {
     try {
@@ -219,7 +222,7 @@ export function OAuthConnectDialog({
       return;
     }
     setStage("starting");
-    setMessage("Starting the official provider sign-in.");
+    setMessage("Starting provider sign-in.");
     setProbe(null);
     setCopied(false);
 
@@ -242,6 +245,7 @@ export function OAuthConnectDialog({
           } : {}),
           connection_name: connectionName.trim() || "personal",
           ...(supportsCodexFlows ? { flow: codexFlow } : {}),
+          ...(discoveredExtension ? { flow: extensionMethod === "device" ? "device_code" : extensionMethod } : {}),
         },
       );
       const interval = Math.max(1, numberValue(response.interval, 5));
@@ -249,7 +253,7 @@ export function OAuthConnectDialog({
         numberValue(response.expires_at) * 1000 ||
         Date.now() + Math.max(60, numberValue(response.expires_in, 900)) * 1000;
       const browser = stringValue(response.flow) === "browser";
-	  const manual = ["consumer_manual", "browser_pkce"].includes(stringValue(response.flow));
+      const manual = ["manual", "consumer_manual", "browser_pkce"].includes(stringValue(response.flow));
       const verificationURI = stringValue(response.authorization_url, stringValue(response.verification_uri));
       const nextFlow = {
         providerID: stringValue(response.provider_id, providerID),
@@ -351,7 +355,7 @@ export function OAuthConnectDialog({
       >
         <header>
           <div>
-            <p class="eyebrow">Official provider sign-in</p>
+            <p class="eyebrow">Provider sign-in</p>
             <h2 id="oauth-provider-title">Connect {label}</h2>
           </div>
           <button class="icon-button" type="button" aria-label="Close dialog" onClick={closeDialog}>
@@ -425,6 +429,12 @@ export function OAuthConnectDialog({
                 placeholder="personal"
               />
             </label>
+            {discoveredExtension && extensionMethods.length > 1 ? <label class="owner-select">
+              Sign-in method
+              <select value={extensionMethod} onChange={(event) => setExtensionMethod((event.currentTarget as HTMLSelectElement).value)}>
+                {extensionMethods.map((method) => <option value={method} key={method}>{({ browser: "Browser sign-in", device: "Device code", manual: "Paste a code" } as Record<string, string>)[method]}</option>)}
+              </select>
+            </label> : null}
             {supportsConsumerManual ? <label class="owner-select">
               OAuth profile
               <select value={oauthProfile} onChange={(event) => setOAuthProfile((event.currentTarget as HTMLSelectElement).value)}>

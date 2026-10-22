@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, Pencil, Plus, Save, Trash2, X } from "lucide-preact
 import { getJSON, sendJSON, type JSONRecord } from "../lib/api";
 import type { ConsoleMode } from "../lib/mode";
 import { asList, asRecord, endpointsOf, stringValue } from "../lib/records";
-import { commitRouteSave, keysGrantingRoute, planRouteSave, renameConfirmation, routeContract, routeIngressLabel, type RouteContract } from "../lib/routes";
+import { commitRouteSave, keysGrantingRoute, planRouteSave, renameConfirmation, routeContract, routeIngressLabel, routeMembers, routeMemberLabel, routeMemberValue, type RouteContract, type RouteMember } from "../lib/routes";
 import { principalSearch } from "../lib/directory";
 import { EmptyState, ErrorState, PageHeading } from "../components/PageState";
 import { RouteDetail } from "./RouteDetail";
@@ -11,8 +11,7 @@ import { ModelFilters, catalogModels, filterModels, modelOptionLabel, useModelFi
 import { RemoteSearchSelect, tableFooter, useTableView, type TableColumn } from "../components/DataTable";
 import { RouteContractFields } from "../components/RouteContractFields";
 
-type RouteMember = { provider: string; model: string; allow_unverified?: boolean };
-type ModelChoice = RouteMember & { label: string; publicationState: string };
+type ModelChoice = { provider: string; model: string; allow_unverified?: boolean; label: string; publicationState: string };
 
 function choicesFrom(payload: JSONRecord): ModelChoice[] {
   return asList(payload.data).map(asRecord).flatMap((row) => {
@@ -58,12 +57,13 @@ export function Routes({ data, mode, detail, onChanged, onNavigate }: { data: JS
   const routes = Object.entries(endpoints).map(([routeName, value]) => ({
     name: routeName,
     contract: routeContract(value),
-    members: asList(asRecord(value).failover).map(asRecord).map((member) => ({ provider: stringValue(member.provider), model: stringValue(member.model) })),
+    members: routeMembers(value),
+    warnings: asList(asRecord(asList(catalog.data).map(asRecord).find((row) => row.id === routeName)).capability_warnings).map((warning) => stringValue(warning)),
   }));
   // The tiles are searched by route and member, sorted by name and paged.
   const [routeSearch, setRouteSearch] = useState("");
   const needle = routeSearch.trim().toLowerCase();
-  const shownRoutes = needle ? routes.filter((route) => [route.name, ...route.members.map((member) => `${member.provider}/${member.model}`)].join(" ").toLowerCase().includes(needle)) : routes;
+  const shownRoutes = needle ? routes.filter((route) => [route.name, ...route.members.map(routeMemberLabel)].join(" ").toLowerCase().includes(needle)) : routes;
   const routeView = useTableView(shownRoutes, routeSort, { id: "name", descending: false });
 
   const loadCatalog = async () => {
@@ -77,7 +77,7 @@ export function Routes({ data, mode, detail, onChanged, onNavigate }: { data: JS
   useEffect(() => { void loadCatalog(); }, [mode, ownerID]);
   const choices = useMemo(() => choicesFrom(catalog), [catalog]);
   const catalogRows = useMemo(() => catalogModels(catalog), [catalog]);
-  // Endpoints cannot nest inside a route, so they never appear as members.
+  // Model filters narrow models; reusable routes remain a separate option group.
   const memberModels = useMemo(() => catalogRows.filter((row) => !row.isCategory), [catalogRows]);
   const visibleMemberIDs = useMemo(
     () => new Set(filterModels(memberModels, memberFilter).map((row) => row.id)),
@@ -87,6 +87,12 @@ export function Routes({ data, mode, detail, onChanged, onNavigate }: { data: JS
     () => choices.filter((choice) => visibleMemberIDs.has(`${choice.provider}/${choice.model}`)),
     [choices, visibleMemberIDs],
   );
+  const routeChoices = routes.filter((route) => ![name.trim(), originalName].some((own) => own && own.toLowerCase() === route.name.toLowerCase()));
+  const canAddMember = choices.length > 0 || routeChoices.length > 0;
+  const memberOptions = [
+    ...visibleChoices.map((choice) => ({ member: choice as RouteMember, label: choice.label })),
+    ...routeChoices.map((route) => ({ member: { route: route.name } as RouteMember, label: routeMemberLabel({ route: route.name }) })),
+  ];
   const isUnverifiedMember = (member: RouteMember) => choices.some((choice) =>
     choice.provider === member.provider && choice.model === member.model && choice.allow_unverified === true,
   );
@@ -96,7 +102,7 @@ export function Routes({ data, mode, detail, onChanged, onNavigate }: { data: JS
     ?? choices[0];
   const addMember = () => setMembers((current) => {
     const pick = defaultChoice();
-    return [...current, pick ? { provider: pick.provider, model: pick.model } : { provider: "", model: "" }];
+    return [...current, pick ? { provider: pick.provider, model: pick.model } : routeChoices[0] ? { route: routeChoices[0].name } : { provider: "", model: "" }];
   });
 
   const startCreate = () => {
@@ -105,7 +111,7 @@ export function Routes({ data, mode, detail, onChanged, onNavigate }: { data: JS
     setName("");
     setContract({ ingress: [], allow_adaptation: false });
     const pick = defaultChoice();
-    setMembers(pick ? [{ provider: pick.provider, model: pick.model, allow_unverified: pick.allow_unverified }] : []);
+    setMembers(pick ? [{ provider: pick.provider, model: pick.model, allow_unverified: pick.allow_unverified }] : routeChoices[0] ? [{ route: routeChoices[0].name }] : []);
     setMessage("");
   };
   const startEdit = (route: { name: string; members: RouteMember[]; contract: RouteContract }) => {
@@ -117,10 +123,10 @@ export function Routes({ data, mode, detail, onChanged, onNavigate }: { data: JS
     setMessage("");
   };
   const updateMember = (index: number, value: string) => {
-    const [provider, model] = value.split("::", 2);
-    const choice = choices.find((candidate) => candidate.provider === provider && candidate.model === model);
+    const choice = memberOptions.find((candidate) => routeMemberValue(candidate.member) === value);
+    if (!choice) return;
     setMembers((current) => current.map((member, memberIndex) => memberIndex === index
-      ? { provider, model, allow_unverified: choice?.allow_unverified }
+      ? choice.member.route !== undefined ? { route: choice.member.route } : { provider: choice.member.provider, model: choice.member.model, allow_unverified: choice.member.allow_unverified }
       : member));
   };
   const moveMember = (index: number, direction: -1 | 1) => {
@@ -134,8 +140,8 @@ export function Routes({ data, mode, detail, onChanged, onNavigate }: { data: JS
   };
   const save = async (event: Event) => {
     event.preventDefault();
-    if (!name.trim() || !members.length || members.some((member) => !member.provider || !member.model)) {
-      setMessage("A route name and at least one catalog-backed provider/model member are required.");
+    if (!name.trim() || !members.length || members.some((member) => member.route !== undefined ? !member.route : !member.provider || !member.model)) {
+      setMessage("A route name and at least one provider/model member or route reference are required.");
       return;
     }
     if (contract.allow_adaptation && !contract.ingress.length) {
@@ -164,6 +170,7 @@ export function Routes({ data, mode, detail, onChanged, onNavigate }: { data: JS
     let outcome = "";
     try {
       const failover = members.map((member) => {
+        if (member.route !== undefined) return { route: member.route };
         const choice = choices.find((candidate) => candidate.provider === member.provider && candidate.model === member.model);
         return { ...member, allow_unverified: choice?.allow_unverified === true };
       });
@@ -171,6 +178,7 @@ export function Routes({ data, mode, detail, onChanged, onNavigate }: { data: JS
       setEditing(false);
       setMessage(outcome);
       await onChanged();
+      await loadCatalog();
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : "Route could not be saved.";
       // Once the write landed only the refresh can fail; keep its outcome in view.
@@ -203,7 +211,7 @@ export function Routes({ data, mode, detail, onChanged, onNavigate }: { data: JS
 
   return (
     <div class="page-stack">
-      <PageHeading eyebrow="Routing policy" title="Routes" detail="Endpoint routes try eligible provider/model members in order. Each route declares its accepted APIs and whether compatible mappings are allowed." actions={<><RemoteSearchSelect class="owner-select" label="Catalog owner" noun="owners" value={ownerID} emptyLabel="Shared catalogs only" {...principalSearch(mode, { kinds: ["human"], status: "active" })} onChange={setOwnerID} /><button class="button button--primary" type="button" disabled={!choices.length || busy} onClick={startCreate}><Plus size={16} /> Create route</button></>} />
+      <PageHeading eyebrow="Routing policy" title="Routes" detail="Endpoint routes try eligible models in order, including the members of other routes. The requested route controls accepted APIs and compatible mappings." actions={<><RemoteSearchSelect class="owner-select" label="Catalog owner" noun="owners" value={ownerID} emptyLabel="Shared catalogs only" {...principalSearch(mode, { kinds: ["human"], status: "active" })} onChange={setOwnerID} /><button class="button button--primary" type="button" disabled={!canAddMember || busy} onClick={startCreate}><Plus size={16} /> Create route</button></>} />
       {catalogError ? <ErrorState title="Model catalog is unavailable" detail={catalogError} action={<button class="button button--secondary" type="button" onClick={() => void loadCatalog()}>Retry catalog</button>} /> : null}
       {message ? <p class="route-message" role="status">{message}</p> : null}
       {editing && members.some(isUnverifiedMember) ? <p class="form-error" role="alert"><strong>Unverified target selected.</strong> Saving explicitly publishes it for public routing without a successful probe. Failed and stale targets cannot be selected.</p> : null}
@@ -214,11 +222,14 @@ export function Routes({ data, mode, detail, onChanged, onNavigate }: { data: JS
         <RouteContractFields value={contract} onChange={setContract} disabled={busy} />
         <div class="route-editor__members">
           <ModelFilters models={memberModels} filter={memberFilter} onChange={setMemberFilter} includeCategories={false} />
-          <div class="section-heading"><h3>Provider and model members</h3><button class="button button--secondary" type="button" disabled={!choices.length || busy} onClick={addMember}><Plus size={15} /> Add member</button></div>
-          {members.map((member, index) => <div class="route-editor__member" key={`${index}-${member.provider}-${member.model}`}>
+          <div class="section-heading"><h3>Models and route references</h3><button class="button button--secondary" type="button" disabled={!canAddMember || busy} onClick={addMember}><Plus size={15} /> Add member</button></div>
+          <p class="form-help">A route reference reuses its ordered models. This route's API policy applies. Known operation mismatches are refused; tool and streaming differences are warnings.</p>
+          {members.map((member, index) => <div class="route-editor__member" key={`${index}-${routeMemberValue(member)}`}>
             <span class="route-order">{index + 1}</span>
-            <select value={`${member.provider}::${member.model}`} disabled={busy} onInput={(event) => updateMember(index, (event.currentTarget as HTMLSelectElement).value)}>
-              {(visibleChoices.some((choice) => choice.provider === member.provider && choice.model === member.model) ? visibleChoices : [...visibleChoices, { provider: member.provider, model: member.model, label: `${member.provider}/${member.model}`, publicationState: "" }]).map((choice) => <option value={`${choice.provider}::${choice.model}`} key={`${choice.provider}::${choice.model}`}>{choice.label}</option>)}
+            <select aria-label={`Member ${index + 1}`} value={routeMemberValue(member)} disabled={busy} onInput={(event) => updateMember(index, (event.currentTarget as HTMLSelectElement).value)}>
+              {!memberOptions.some((choice) => routeMemberValue(choice.member) === routeMemberValue(member)) ? <option value={routeMemberValue(member)}>{routeMemberLabel(member)}</option> : null}
+              <optgroup label="Models">{memberOptions.filter((choice) => choice.member.route === undefined).map((choice) => <option value={routeMemberValue(choice.member)} key={routeMemberValue(choice.member)}>{choice.label}</option>)}</optgroup>
+              <optgroup label="Routes">{memberOptions.filter((choice) => choice.member.route !== undefined).map((choice) => <option value={routeMemberValue(choice.member)} key={routeMemberValue(choice.member)}>{choice.label}</option>)}</optgroup>
             </select>
             <div class="route-editor__member-actions">
               <button class="icon-button" type="button" disabled={index === 0 || busy} aria-label="Move member up" onClick={() => moveMember(index, -1)}><ArrowUp size={15} /></button>
@@ -229,7 +240,7 @@ export function Routes({ data, mode, detail, onChanged, onNavigate }: { data: JS
         </div>
         <footer><button class="button button--secondary" type="button" disabled={busy} onClick={() => setEditing(false)}>Cancel</button><button class="button button--primary" type="submit" disabled={busy}><Save size={16} /> Save ordered route</button></footer>
       </form> : null}
-      {routes.length === 0 ? <EmptyState title="No fallback routes yet" detail="Create a route after provider catalogs contain the models you want to order." action={!editing ? <button class="button button--primary" type="button" disabled={!choices.length} onClick={startCreate}>Create route</button> : undefined} /> : null}
+      {routes.length === 0 ? <EmptyState title="No fallback routes yet" detail="Create a route after provider catalogs contain the models you want to order." action={!editing ? <button class="button button--primary" type="button" disabled={!canAddMember} onClick={startCreate}>Create route</button> : undefined} /> : null}
       {routes.length > 1 ? <label class="search-field route-search"><span class="sr-only">Search routes</span><input type="search" value={routeSearch} onInput={(event) => setRouteSearch((event.currentTarget as HTMLInputElement).value)} placeholder="Search routes and their members" /></label> : null}
       {routes.length && !shownRoutes.length ? <EmptyState title="No route matches this search" detail="Search by a route name or a member provider/model." /> : null}
       <section class="route-list route-list--grid">
@@ -240,7 +251,8 @@ export function Routes({ data, mode, detail, onChanged, onNavigate }: { data: JS
             <button class="icon-button" type="button" disabled={busy} aria-label={`Delete ${route.name}`} onClick={() => void remove(route.name)}><Trash2 size={16} /></button>
           </div></header>
           <p class="route-contract-summary"><strong>{route.contract.allow_adaptation ? "Compatible mappings allowed" : "Native only"}</strong><span>{route.contract.ingress.length ? route.contract.ingress.map(routeIngressLabel).join(", ") : "Any matching native API"}</span></p>
-          <ol>{route.members.map((member, index) => <li key={`${route.name}-${index}`}><span class="route-order">{index + 1}</span><span class="technical">{member.provider}/{member.model}</span>{index < route.members.length - 1 ? <ArrowDown size={16} aria-label="then" /> : <span class="route-terminal">served</span>}</li>)}</ol>
+          <ol>{route.members.map((member, index) => <li key={`${route.name}-${index}`}><span class="route-order">{index + 1}</span><span class="technical">{routeMemberLabel(member)}</span>{index < route.members.length - 1 ? <ArrowDown size={16} aria-label="then" /> : <span class="route-terminal">served</span>}</li>)}</ol>
+          {route.warnings.length ? <ul class="form-help" aria-label="Capability warnings">{route.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
           <button class="button button--secondary" type="button" onClick={() => onNavigate("keys", `route=${encodeURIComponent(route.name)}`)}>Create key for this route</button>
         </article>)}
       </section>
