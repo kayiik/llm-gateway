@@ -1,0 +1,207 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "change",
+  "contract": {
+    "digest": "da05219969e051b692980ada8e8066ac909bf88d11ad6a5af6338834a8cc384f"
+  },
+  "authoring_provenance": {
+    "status": "established",
+    "path": ".release-harness/drafts/llm-gateway.record.json",
+    "digest": "e819045146db82b3754d02e0950d13ca8527706a2b478ada58c176c24e706d2b"
+  },
+  "sources": [
+    {
+      "source_id": "primary",
+      "status": "established",
+      "repository_identity": "https://github.com/kayiik/llm-gateway.git",
+      "base_ref": "v0.0.5",
+      "base_commit": "cc5c0bb867e2dd3db4be83129f7cd30b8792042d",
+      "merge_base": "cc5c0bb867e2dd3db4be83129f7cd30b8792042d",
+      "head_commit": "f47ec68783cb74b549fcb08b2b877dfb69073de5",
+      "head_tree": "8320bf24f7b90f92c5ff76033c0f17aa161185b5",
+      "reviewed_source_digest": "28b167b914d3a51bf2a77da559641cab6456702e365dd565f02b63d17cb2be8a",
+      "changed_paths": [
+        {
+          "status": "modified",
+          "path": "docs/CLIENTS.md",
+          "old_blob": "454faf0816e77df4fe83c4e0b861d60f5598a50d",
+          "new_blob": "3f3ff3b5e726bdf83c772d2ba657425166f5819b"
+        },
+        {
+          "status": "modified",
+          "path": "go/go.mod",
+          "old_blob": "9eb510b98631ec293058152e97db9330d5e67f03",
+          "new_blob": "459ea7ad8ecca766f0bc1bb0898a0ce21cb67433"
+        },
+        {
+          "status": "modified",
+          "path": "go/go.sum",
+          "old_blob": "b401bc861e73fcb6ec56909908f5b8f62390e384",
+          "new_blob": "ce5cf04c87430566760993573cc26c5b91386c5b"
+        },
+        {
+          "status": "modified",
+          "path": "test/live-acceptance/run.mjs",
+          "old_blob": "6ada6b130fbc13ec07b2078e46bd175b850dc8fe",
+          "new_blob": "96be96e22e0e405fd19bda102b048f3f4ae3fa8a"
+        }
+      ]
+    }
+  ],
+  "facts": [
+    {
+      "id": "F1",
+      "claim": "Every accepted assertion A1-A10 was freshly exercised against a readonly Go 1.27.3 build of exact source f47ec68783cb74b549fcb08b2b877dfb69073de5. The CLI version and health commands exit0; /health returns200 with status ok; /v1/models returns200 with object list; invalid JSON returns422 with the expected Chat, Responses and Messages error shapes; unauthenticated admin state returns401 with Admin authentication required.; the embedded console returns200 with its title; unconfigured metrics returns404. All ten assertions pass.",
+      "status": "observed",
+      "evidence": {
+        "source": "f47ec68783cb74b549fcb08b2b877dfb69073de5",
+        "method": "Fresh local CLI and HTTP evaluation of the exact accepted predicates, not a historical or live-provider observation"
+      }
+    },
+    {
+      "id": "F2",
+      "claim": "The source-check binary has SHA256 c4798e8ae3e4791a3055934972b8b9a00ea7bfcbc060b0a3d66319efffed4206. Its isolated process used new temporary state and an ephemeral loopback port, cleared inherited Gateway/provider credential variables, disabled roster refresh, permitted unauthenticated data-plane access only and blocked external HTTP(S) through a closed loopback proxy. The child process was stopped in finally. No inference was performed by these ten checks.",
+      "status": "observed",
+      "evidence": {
+        "source": "f47ec68783cb74b549fcb08b2b877dfb69073de5",
+        "method": "Fresh binary checksum, isolated fixture configuration and process termination"
+      }
+    },
+    {
+      "id": "F3",
+      "claim": "The consumer selects the ACTUAL published Translate v0.0.4 module and go.mod sums h1:+DKMrmn21OkeDW0vcNFDRIImkGIdAS0GG12l3ZZ0sng= and h1:TCmZ3uDwod5ZenNLa07GeA/aMutKKZCJnmfMLvmvl/0=. The public module origin is 62d7717a98291b0e6eeda9753c1aa18c87bd2d21. Core remains v0.0.4 and Auth v0.0.1. Readonly actual module selection, module verification, tidy-diff and the new binary build pass without replacements or a workspace. Producer source, PR and main CI passed; required Gateway CI for this exact revision remains separate and is not claimed green here.",
+      "status": "observed",
+      "evidence": {
+        "source": "go/go.mod, go/go.sum and https://github.com/kayiik/llm-translate/releases/tag/v0.0.4",
+        "method": "Fresh public-proxy/sumdb module resolution and real consumer graph/build"
+      }
+    },
+    {
+      "id": "F4",
+      "claim": "The baseline-to-current diff contains exactly docs/CLIENTS.md, go/go.mod, go/go.sum and test/live-acceptance/run.mjs: the direct Translate pin, Claude's literal X-LLMGW-Compatibility: allow header and its setup instructions. The actual producer delta adds string response-root provider for Responses-to-Chat or Messages-to-Chat assessment, string choices.N.native_finish_reason only beside standard stop/length/tool_calls, and string choices.N.message.reasoning. Nonempty dropped reasoning text produces advisory loss; nontext reasoning and material replay/content loss are unsupported. Model/system_fingerprint were already recognized observations, not the entirety of the new allowance. Existing request reasoning controls and object/numeric annotation forms are rejected by the retained negative tests. No workflow, CLI implementation, HTTP handler, console, Docker or toolchain path occurs in the four-file Gateway diff. The selected accepted contract contains no requires identities.",
+      "status": "observed",
+      "evidence": {
+        "source": "git diff v0.0.5..f47ec68783cb74b549fcb08b2b877dfb69073de5; published Translate v0.0.4; selected accepted contract",
+        "method": "Exact four-file diff, producer correction review and accepted assertion comparison"
+      }
+    },
+    {
+      "id": "F5",
+      "claim": "The preceding bounded correction verification used real Claude CLI2.1.278 against one free target for nine cases: direct output, one tool, multi-turn, route, native rejection, explicit opt-in, hard refusal, soft retry and pre-commit failover. That fixture bound the tested producer source locally. No published image or additional provider/client combination was executed in those nine cases. The current Gateway readonly build, vet and full Go test suite also pass with the real published dependency graph; the full test command completed in127.463 seconds and every tested package passed. No current Gateway remote CI or shipped-image observation is recorded by those local results.",
+      "status": "observed",
+      "evidence": {
+        "source": "test/live-acceptance/run.mjs and tested Translate source 8eb050739a9a9db42e159d48951a8d2458f78c7f",
+        "method": "Bounded real-client observations and explicit comparison of evidence scope"
+      }
+    }
+  ],
+  "impact": {
+    "assertions": [
+      {
+        "id": "A1",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F4"
+        ]
+      },
+      {
+        "id": "A2",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F4"
+        ]
+      },
+      {
+        "id": "A3",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F4"
+        ]
+      },
+      {
+        "id": "A4",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F4"
+        ]
+      },
+      {
+        "id": "A5",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F3",
+          "F4"
+        ]
+      },
+      {
+        "id": "A6",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F3",
+          "F4"
+        ]
+      },
+      {
+        "id": "A7",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F3",
+          "F4"
+        ]
+      },
+      {
+        "id": "A8",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F4"
+        ]
+      },
+      {
+        "id": "A9",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F4"
+        ]
+      },
+      {
+        "id": "A10",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F4"
+        ]
+      }
+    ],
+    "requires": [],
+    "possible_binding_changes": []
+  },
+  "questions": [],
+  "conclusion": {
+    "action": "reuse_contract",
+    "summary": "Reuse the accepted contract for exact source f47ec68783cb74b549fcb08b2b877dfb69073de5. Fresh evaluation of A1-A10 against its new real-published-graph binary passes all ten predicates. The narrow Translate dependency correction and explicit Claude conversion opt-in do not change those boundary propositions, and there are no requires identities. Required normal CI, deterministic release certification and shipped-image real-client acceptance remain distinct; this review does not certify a broad live provider matrix or unresolved accurate-heard realtime history. Attributable confirmation is by the actual owner-delegated release coordinator, not an invented personal owner inspection."
+  },
+  "proposed": {
+    "by": "gateway-release-coordinator (owner-delegated)",
+    "at": "2026-10-23T23:12:39.199Z"
+  },
+  "digest": "4e11a7bf3d4872869c7755cdbb66ade12a6b4745946872426d53e582cd9f639a"
+}
