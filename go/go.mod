@@ -1,11 +1,11 @@
 module llmgw
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/kayiik/llm-provider-auth v0.0.1
-	github.com/kayiik/llm-translate v0.0.2
-	github.com/kayiik/llmgw-core v0.0.3
+	github.com/kayiik/llm-translate v0.0.3
+	github.com/kayiik/llmgw-core v0.0.4
 	golang.org/x/sys v0.49.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.60.1
@@ -14,6 +14,7 @@ require (
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect

@@ -10,7 +10,7 @@ on:
         type: boolean
         default: false
       allow_inconclusive:
-        description: Explicitly allow promotion when every anonymous provider is unavailable
+        description: Explicitly accept inconclusive qualification when every anonymous provider is unavailable
         type: boolean
         default: false
       candidate_image:
