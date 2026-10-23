@@ -216,50 +216,6 @@ func responsesPayloadContainsType(value any, types ...string) bool {
 	return false
 }
 
-// streamResponsesSSE streams a Responses request, recording its usage under
-// endpoint.
-func streamResponsesSSE(
-	w http.ResponseWriter,
-	ctx context.Context,
-	targets []router.Target,
-	payload, publicPayload map[string]any,
-	requested string,
-	principal *config.Principal,
-	started time.Time,
-	endpoint string,
-) {
-	execution, served, err := router.ExecuteResponsesStreamContext(
-		governed(ctx, principal), targets, payload, requested, callerOf(principal),
-	)
-	if err != nil {
-		if ctx.Err() != nil {
-			recordClientCancelled(endpoint, requested, principal, started)
-			return
-		}
-		recordFailureUsage(
-			endpoint, requested, principal,
-			upstreamErrorStatus(err), "upstream", started,
-		)
-		writeUpstreamError(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.WriteHeader(http.StatusOK)
-	defer execution.Iter.Close()
-	meter := newStreamUsage(endpoint, requested, principal, served, started, responsesPromptBytes(payload))
-	if execution.Native {
-		if err := streamNativeResponseEventsContext(w, ctx, execution.Iter, publicPayload, meter); err != nil {
-			meter.cancelled()
-		}
-		return
-	}
-	if err := streamChatAsResponseEventsContext(w, ctx, execution.Iter, publicPayload, meter); err != nil {
-		meter.cancelled()
-	}
-}
-
 // responsesPromptBytes is the size of what a Responses request sends as its
 // prompt: its instructions and its input.
 func responsesPromptBytes(payload map[string]any) int {

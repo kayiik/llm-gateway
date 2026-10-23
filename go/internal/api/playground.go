@@ -10,7 +10,6 @@ import (
 
 	"llmgw/internal/config"
 	"llmgw/internal/iam"
-	"llmgw/internal/providers"
 	"llmgw/internal/router"
 
 	core "github.com/kayiik/llmgw-core"
@@ -400,11 +399,6 @@ func authorizePlaygroundPolicy(principal *config.Principal, requestedModel, reso
 func responseUsage(response map[string]any) (int, int) {
 	usage, _ := response["usage"].(map[string]any)
 	return firstInt(usage, "prompt_tokens", "input_tokens"), firstInt(usage, "completion_tokens", "output_tokens")
-}
-
-func playgroundStub(providerID string, principal *config.Principal) bool {
-	provider, err := providers.GetProviderForPrincipal(providerID, callerOf(principal))
-	return err == nil && provider.IsStub()
 }
 
 func safePlaygroundValue(value any) any {

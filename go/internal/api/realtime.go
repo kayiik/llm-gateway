@@ -93,10 +93,6 @@ func realtimeMultipart(sdp string, session map[string]any) ([]byte, string, erro
 // Catalog declarations constrain native selection while current. A cache miss
 // remains unknown: the configured compatible endpoint validates its model,
 // without a model-name heuristic, a discovery call or cross-API adaptation.
-func realtimeNativeModel(provider, model string, caller core.Caller) bool {
-	return realtimeNativeSurface(provider, model, realtimeCallsPath, caller)
-}
-
 func realtimeNativeSurface(provider, model, surface string, caller core.Caller) bool {
 	row, found := providers.CatalogCachedLookupForPrincipal(provider, model, caller)
 	if !found {

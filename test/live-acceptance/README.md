@@ -17,6 +17,12 @@ a structured report.
   comparison before classification.
 - `policy`: evaluate an existing report with `node policy.mjs <report.json>`.
 
+Fixture catalogs are explicitly refreshed for the scoped acceptance owner before
+the Playground reads them; catalog reads do not initiate provider discovery.
+The test routes declare Chat and Messages ingress with adaptation enabled, and
+exact-model Messages calls explicitly allow compatibility. This preserves
+Messages-to-Chat translation coverage without relying on implicit adaptation.
+
 Each model call waits `LLMGW_ACCEPTANCE_MODEL_TIMEOUT_MS`, 180 seconds by
 default. The candidate gateway is started with a provider timeout of two thirds
 of that, so a slow upstream is recorded as the gateway's own outcome rather

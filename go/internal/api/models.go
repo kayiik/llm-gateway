@@ -358,12 +358,11 @@ func listModels(principal *config.Principal, options modelListOptions) (map[stri
 		if len(warnings) > 0 {
 			categoryEntry["capability_warnings"] = warnings
 		}
-		if capabilities, surfaces := categoryPresentationMetadata(
-			modelSnapshot, presentationMembers,
-		); len(capabilities) > 0 {
+		capabilities, surfaces := categoryPresentationMetadata(modelSnapshot, presentationMembers)
+		if len(capabilities) > 0 {
 			categoryEntry["capabilities"] = capabilities
-			setSurfaces(categoryEntry, surfaces)
 		}
+		setSurfaces(categoryEntry, surfaces)
 		data = append(data, categoryEntry)
 	}
 
@@ -631,48 +630,6 @@ func commonCategoryPresentationMetadata(
 		}
 	}
 	return nil, nil
-}
-
-func modalitySet(
-	capabilities map[string]any, surfaces []string,
-) map[string]bool {
-	out := map[string]bool{}
-	for key, value := range capabilities {
-		if enabled, ok := value.(bool); ok && !enabled {
-			continue
-		}
-		switch strings.ToLower(key) {
-		case "transcription", "stt", "asr":
-			out["transcription"] = true
-		case "tts", "speech":
-			out["tts"] = true
-		case "image":
-			out["image"] = true
-		case "video":
-			out["video"] = true
-		case "embedding", "embeddings":
-			out["embedding"] = true
-		case "chat", "completion", "tools":
-			out["chat"] = true
-		}
-	}
-	for _, surface := range surfaces {
-		switch {
-		case strings.Contains(surface, "/audio/transcriptions"):
-			out["transcription"] = true
-		case strings.Contains(surface, "/audio/speech"):
-			out["tts"] = true
-		case strings.Contains(surface, "/images/generations"):
-			out["image"] = true
-		case strings.Contains(surface, "/videos/generations"):
-			out["video"] = true
-		case strings.Contains(surface, "/embeddings"):
-			out["embedding"] = true
-		case strings.Contains(surface, "/chat/completions"), strings.Contains(surface, "/responses"), strings.Contains(surface, "/messages"):
-			out["chat"] = true
-		}
-	}
-	return out
 }
 
 func providerAllowed(

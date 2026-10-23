@@ -194,17 +194,6 @@ func providerMessages(messages []map[string]any) []providers.Message {
 	return out
 }
 
-func requestHasTools(value any) bool {
-	switch tools := value.(type) {
-	case []any:
-		return len(tools) > 0
-	case []map[string]any:
-		return len(tools) > 0
-	default:
-		return false
-	}
-}
-
 func payloadBytes(value any) int {
 	if value == nil {
 		return 0
@@ -440,71 +429,6 @@ func upstreamErrorStatus(err error) int {
 	return 502
 }
 
-func streamChatSSE(w http.ResponseWriter, ctx context.Context, targets []router.Target, msgs []providers.Message, requested string, principal *config.Principal, kw providers.Kwargs, endpoint string, started time.Time) {
-	it, served, err := router.ExecuteStreamContext(governed(ctx, principal), targets, msgs, requested, callerOf(principal), kw)
-	if err != nil {
-		if ctx.Err() != nil {
-			recordClientCancelled(endpoint, requested, principal, started)
-			return
-		}
-		// Pre-first-byte failure: no SSE headers sent yet, so surface a real
-		// HTTP error (with the upstream status) rather than a 200 error chunk.
-		recordFailureUsage(
-			endpoint, requested, principal, upstreamErrorStatus(err), "upstream",
-			started,
-		)
-		writeUpstreamError(w, err)
-		return
-	}
-	defer it.Close()
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-LLMGW-TTFB-Ms", strconv.FormatInt(time.Since(started).Milliseconds(), 10))
-	w.Header().Set("X-LLMGW-Prompt-Bytes", strconv.Itoa(payloadBytes(msgs)))
-	w.Header().Set("X-LLMGW-Tool-Schema-Bytes", strconv.Itoa(payloadBytes(kw["tools"])))
-	w.WriteHeader(200)
-
-	meter := newStreamUsage(endpoint, requested, principal, served, started, payloadBytes(msgs))
-	toolState := chatToolStream{choices: map[int]*chatToolChoice{}}
-	for {
-		chunk, more := it.Next()
-		if !more {
-			break
-		}
-		meter.chatChunk(chunk)
-		if ctx.Err() != nil {
-			meter.cancelled()
-			return
-		}
-		if err := writeChatSSE(w, toolState.normalize(chunk)); err != nil {
-			meter.cancelled()
-			return
-		}
-	}
-	if ctx.Err() != nil {
-		meter.cancelled()
-		return
-	}
-	if it.Err() != nil {
-		// The status line went out with the first byte, so the failure
-		// travels as one error event. [DONE] is what tells a client the
-		// answer is complete; a failed stream never sends it.
-		if err := writeSSE(w, jsonStr(providerErrorPayloadOpenAI())); err != nil {
-			meter.cancelled()
-			return
-		}
-		meter.failed()
-		return
-	}
-	if err := writeSSE(w, "[DONE]"); err != nil {
-		meter.cancelled()
-		return
-	}
-	meter.completed()
-}
-
 func writeAndFlush(w http.ResponseWriter, payload []byte) error {
 	for len(payload) > 0 {
 		n, err := w.Write(payload)
@@ -680,10 +604,6 @@ func (s *chatToolStream) normalize(data string) string {
 		}
 	}
 	return data
-}
-
-func recordClientCancelled(endpoint, requested string, principal *config.Principal, started time.Time) {
-	recordFailureUsage(endpoint, requested, principal, 499, "client_cancelled", started)
 }
 
 func providerErrorPayloadOpenAI() map[string]any {
