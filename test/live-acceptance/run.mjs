@@ -607,6 +607,7 @@ async function testClaude(identity, healthy, plans) {
     ANTHROPIC_BASE_URL: baseURL,
     ANTHROPIC_API_KEY: identity.token,
     ANTHROPIC_AUTH_TOKEN: "",
+    ANTHROPIC_CUSTOM_HEADERS: "X-LLMGW-Compatibility: allow",
     DISABLE_PROMPT_CACHING: "1",
     CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: "1",
   };

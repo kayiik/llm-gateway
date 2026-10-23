@@ -45,6 +45,7 @@ Process-scoped API-key setup for a controlled compatibility test:
 ```bash
 export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
 export ANTHROPIC_API_KEY='<GATEWAY_PROJECT_KEY>'
+export ANTHROPIC_CUSTOM_HEADERS='X-LLMGW-Compatibility: allow'
 claude --bare --model '<MODEL_SELECTOR>'
 ```
 
@@ -72,16 +73,24 @@ member is prepared independently: a native member retains native execution even
 on a mixed endpoint. Explicitly permitted adapted targets use a strict
 compatibility profile and reject fields that cannot be preserved.
 
-For an explicitly compatible Chat-only target, disable thinking and prompt
-caching for a core-profile smoke:
+For a Chat-only target, explicitly opt into conversion and disable thinking and
+prompt caching for a core-profile smoke:
 
 ```json
 {
   "alwaysThinkingEnabled": false,
   "showThinkingSummaries": false,
-  "env": {"DISABLE_PROMPT_CACHING": "1"}
+  "env": {
+    "ANTHROPIC_CUSTOM_HEADERS": "X-LLMGW-Compatibility: allow",
+    "DISABLE_PROMPT_CACHING": "1"
+  }
 }
 ```
+
+Claude sends the custom header on its requests; a model override alone does not
+grant conversion permission. Omit this header for native-only operation. A named
+route must still accept Messages ingress and allow adaptation in its own
+configuration; this header cannot broaden the route's policy.
 
 Adaptive/enabled thinking, structured output, cache controls, unsupported image
 forms, documents, error tool results, and unknown fields fail closed when a
