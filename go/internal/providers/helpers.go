@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	"llmgw/internal/config"
 
 	core "github.com/kayiik/llmgw-core"
+	"github.com/kayiik/llmgw-core/extension"
+	"github.com/kayiik/llmgw-core/oauthflow"
 )
 
 func isContextError(err error) bool {
@@ -152,6 +155,10 @@ func ProviderHTTPTarget(providerID string, caller core.Caller) (string, http.Hea
 	return Current().ProviderHTTPTarget(providerID, caller)
 }
 
+func SupportsRealtimeHTTPTransport(providerID string) bool {
+	return Current().SupportsRealtimeHTTPTransport(providerID)
+}
+
 func CoreServesSurfaceForPrincipal(providerID, model string, surface core.ModelSurface, caller core.Caller) bool {
 	return Current().CoreServesSurfaceForPrincipal(providerID, model, surface, caller)
 }
@@ -211,12 +218,19 @@ type RevocableProviderAuthAdapter interface {
 }
 
 type mockAuthAdapter struct {
-	id string
+	id      string
+	methods []oauthflow.Method
 }
 
 func (m mockAuthAdapter) ID() string             { return m.id }
 func (m mockAuthAdapter) AdapterID() string      { return m.id }
 func (m mockAuthAdapter) CredentialKind() string { return "oauth" }
+func (m mockAuthAdapter) OAuthMethods() []oauthflow.Method {
+	if m.methods == nil {
+		return []oauthflow.Method{oauthflow.MethodBrowser, oauthflow.MethodDevice, oauthflow.MethodManual}
+	}
+	return slices.Clone(m.methods)
+}
 func (m mockAuthAdapter) BrowserAuth(context.Context, string, any) (any, error) {
 	return nil, errors.New("OAuth is handled via oauthflow service or extension")
 }
@@ -229,6 +243,13 @@ func (m mockAuthAdapter) PollDeviceToken(context.Context, string) (any, error) {
 
 func NewProviderAuthAdapter(adapterID, providerID string) (mockAuthAdapter, error) {
 	return mockAuthAdapter{id: adapterID}, nil
+}
+
+func NewExtensionAuthAdapter(info extension.ProviderInfo) (ProviderAuthAdapter, error) {
+	if info.CredentialKind() != extension.CredentialOAuth || !info.HasOAuth || len(info.OAuthMethods) == 0 {
+		return nil, &ConfigError{Msg: "the extension provider does not advertise an OAuth sign-in method"}
+	}
+	return mockAuthAdapter{id: info.ID, methods: slices.Clone(info.OAuthMethods)}, nil
 }
 
 // EffectiveCodexClientID returns the Codex OAuth client ID settings configure,

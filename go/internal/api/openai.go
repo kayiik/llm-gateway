@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -54,7 +55,9 @@ type chatRequest struct {
 type chatRequestBody chatRequest
 
 func (body *chatRequestBody) UnmarshalJSON(data []byte) error {
-	if err := json.Unmarshal(data, (*chatRequest)(body)); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode((*chatRequest)(body)); err != nil {
 		return err
 	}
 	var members map[string]json.RawMessage
@@ -66,7 +69,9 @@ func (body *chatRequestBody) UnmarshalJSON(data []byte) error {
 			continue
 		}
 		var value any
-		if err := json.Unmarshal(raw, &value); err != nil {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&value); err != nil {
 			return err
 		}
 		if body.Extra == nil {
@@ -189,17 +194,6 @@ func providerMessages(messages []map[string]any) []providers.Message {
 	return out
 }
 
-func requestHasTools(value any) bool {
-	switch tools := value.(type) {
-	case []any:
-		return len(tools) > 0
-	case []map[string]any:
-		return len(tools) > 0
-	default:
-		return false
-	}
-}
-
 func payloadBytes(value any) int {
 	if value == nil {
 		return 0
@@ -233,7 +227,7 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req chatRequest
-	if err := json.NewDecoder(r.Body).Decode((*chatRequestBody)(&req)); err != nil {
+	if err := decodeInferenceBody(r.Body, (*chatRequestBody)(&req)); err != nil {
 		writeBodyError(w, err, 422, "invalid request body")
 		return
 	}
@@ -298,6 +292,7 @@ func responsesToChatRequest(rr *responsesRequest) *chatRequest {
 
 func chatDispatch(w http.ResponseWriter, r *http.Request, req *chatRequest, principal *config.Principal, endpoint string) {
 	started := time.Now()
+	settings, generation := config.Snapshot()
 	resolution, err := resolveModel(r.Context(), req.Model, principal)
 	if err != nil {
 		if _, ok := err.(*router.ModelNotFoundError); ok {
@@ -318,8 +313,6 @@ func chatDispatch(w http.ResponseWriter, r *http.Request, req *chatRequest, prin
 		for index := range req.Messages {
 			msgs[index] = providers.Message(req.Messages[index])
 		}
-		// Set before targets are weighed for the request's fields, so they
-		// are weighed as the target serves a transparent request.
 		kw["_force_api_support"] = false
 	}
 
@@ -329,85 +322,21 @@ func chatDispatch(w http.ResponseWriter, r *http.Request, req *chatRequest, prin
 		writeError(w, polStatus, polMsg)
 		return
 	}
-	targets, err = router.FilterCompatibleTargets(targets, callerOf(principal), router.CompatibilityRequest{
-		Surface: core.ModelSurfaceChatCompletions, Tools: requestHasTools(req.Tools),
-		Vision: requestIsMultimodal(req.Messages), Streaming: req.Stream,
+	payload := map[string]any{"model": req.Model, "messages": msgs, "stream": req.Stream}
+	for field, value := range kw {
+		if !strings.HasPrefix(field, "_") {
+			payload[field] = value
+		}
+	}
+	if req.ForceApiSupport != nil {
+		payload["force_api_support"] = *req.ForceApiSupport
+	}
+	r = r.WithContext(fallbackContext(r, req.FallbackTimeoutMS, req.AffinityKey))
+	dispatchPreparedInference(w, r, principal, preparedInput{
+		endpoint: endpoint, model: req.Model, surface: core.ModelSurfaceChatCompletions,
+		settings: settings, generation: generation, resolution: resolution, targets: targets,
+		payload: payload, stream: req.Stream, started: started,
 	})
-	if err == nil {
-		targets, err = router.FilterChatFieldTargets(targets, config.Get(), callerOf(principal), kw)
-	}
-	if err != nil {
-		recordFailureUsage(endpoint, req.Model, principal, 400, "compatibility", started)
-		writeError(w, 400, err.Error())
-		return
-	}
-	if transportMode == "transparent" {
-		target, transparentErr := exactNativeTransparentTarget(req.Model, "/v1/chat/completions", resolution, callerOf(principal))
-		if transparentErr != nil {
-			recordFailureUsage(endpoint, req.Model, principal, 400, "transparent_contract", started)
-			writeError(w, http.StatusBadRequest, transparentErr.Error())
-			return
-		}
-		if rejectTransparentStream(w, req.Stream) {
-			recordFailureUsage(endpoint, req.Model, principal, 400, "transparent_stream", started)
-			return
-		}
-		provider, providerErr := providers.GetProviderForPrincipal(target.Provider, callerOf(principal))
-		if providerErr != nil {
-			writeUpstreamError(w, providerErr)
-			return
-		}
-		if !admitRequest(w, endpoint, req.Model, principal, "policy", started) {
-			return
-		}
-		ctx := fallbackContext(r, req.FallbackTimeoutMS, req.AffinityKey)
-		response, providerErr := providers.CompleteProviderContext(ctx, provider, target.Model, msgs, kw)
-		if providerErr != nil {
-			recordFailureUsage(endpoint, req.Model, principal, upstreamErrorStatus(providerErr), "upstream", started)
-			writeUpstreamError(w, providerErr)
-			return
-		}
-		served := target
-		w.Header().Set(transportModeHeader, "transparent")
-		recordFromResponse(endpoint, req.Model, &served, principal, response, time.Since(started).Milliseconds())
-		writeJSON(w, http.StatusOK, response)
-		return
-	}
-	if !admitRequest(w, endpoint, req.Model, principal, "policy", started) {
-		return
-	}
-
-	ctx := fallbackContext(r, req.FallbackTimeoutMS, req.AffinityKey)
-
-	if req.Stream {
-		streamChatSSE(w, ctx, targets, msgs, req.Model, principal, kw, endpoint, started)
-		return
-	}
-
-	response, served, trace, err := router.ExecuteCompleteWithTraceContext(governed(ctx, principal), targets, msgs, req.Model, callerOf(principal), kw)
-	setChatDiagnostics(w, started, msgs, req.Tools, trace)
-	if err != nil {
-		recordFailureUsage(
-			endpoint, req.Model, principal, upstreamErrorStatus(err), "upstream",
-			started,
-		)
-		writeUpstreamError(w, err)
-		return
-	}
-	if _, adapted := response["forced_support"]; adapted {
-		w.Header().Set("X-LLMGW-Adapted", "chat->responses")
-		// Echo the no-op provenance in the body only when the caller explicitly
-		// asked; a config/global-triggered adaptation stays header-only so we
-		// never surprise a strict client with an unknown field.
-		if req.ForceApiSupport == nil || !*req.ForceApiSupport {
-			delete(response, "forced_support")
-		}
-	}
-	response["model"] = served.Model
-	normalizeChatResponseEnvelope(response)
-	recordFromResponse(endpoint, req.Model, served, principal, response, time.Since(started).Milliseconds())
-	w.Header().Set(transportModeHeader, targetTransportMode(*served, callerOf(principal), "/v1/chat/completions"))
-	writeJSON(w, 200, response)
 }
 
 func normalizeChatResponseEnvelope(response map[string]any) {
@@ -463,13 +392,13 @@ func writeUpstreamError(w http.ResponseWriter, err error) {
 	if retryAfter := safeRetryAfter(providers.InvocationRetryAfter(err)); retryAfter != "" {
 		w.Header().Set("Retry-After", retryAfter)
 	}
+	if providers.IsConfig(err) {
+		writeError(w, 500, "Upstream provider is misconfigured.")
+		return
+	}
 	var atf *router.AllTargetsFailed
 	if errors.As(err, &atf) && status >= 400 {
 		writeError(w, status, atf.Error())
-		return
-	}
-	if providers.IsConfig(err) {
-		writeError(w, 500, "Upstream provider is misconfigured.")
 		return
 	}
 	writeError(w, status, "Upstream provider request failed.")
@@ -498,71 +427,6 @@ func upstreamErrorStatus(err error) int {
 		return status
 	}
 	return 502
-}
-
-func streamChatSSE(w http.ResponseWriter, ctx context.Context, targets []router.Target, msgs []providers.Message, requested string, principal *config.Principal, kw providers.Kwargs, endpoint string, started time.Time) {
-	it, served, err := router.ExecuteStreamContext(governed(ctx, principal), targets, msgs, requested, callerOf(principal), kw)
-	if err != nil {
-		if ctx.Err() != nil {
-			recordClientCancelled(endpoint, requested, principal, started)
-			return
-		}
-		// Pre-first-byte failure: no SSE headers sent yet, so surface a real
-		// HTTP error (with the upstream status) rather than a 200 error chunk.
-		recordFailureUsage(
-			endpoint, requested, principal, upstreamErrorStatus(err), "upstream",
-			started,
-		)
-		writeUpstreamError(w, err)
-		return
-	}
-	defer it.Close()
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-LLMGW-TTFB-Ms", strconv.FormatInt(time.Since(started).Milliseconds(), 10))
-	w.Header().Set("X-LLMGW-Prompt-Bytes", strconv.Itoa(payloadBytes(msgs)))
-	w.Header().Set("X-LLMGW-Tool-Schema-Bytes", strconv.Itoa(payloadBytes(kw["tools"])))
-	w.WriteHeader(200)
-
-	meter := newStreamUsage(endpoint, requested, principal, served, started, payloadBytes(msgs))
-	toolState := chatToolStream{choices: map[int]*chatToolChoice{}}
-	for {
-		chunk, more := it.Next()
-		if !more {
-			break
-		}
-		meter.chatChunk(chunk)
-		if ctx.Err() != nil {
-			meter.cancelled()
-			return
-		}
-		if err := writeChatSSE(w, toolState.normalize(chunk)); err != nil {
-			meter.cancelled()
-			return
-		}
-	}
-	if ctx.Err() != nil {
-		meter.cancelled()
-		return
-	}
-	if it.Err() != nil {
-		// The status line went out with the first byte, so the failure
-		// travels as one error event. [DONE] is what tells a client the
-		// answer is complete; a failed stream never sends it.
-		if err := writeSSE(w, jsonStr(providerErrorPayloadOpenAI())); err != nil {
-			meter.cancelled()
-			return
-		}
-		meter.failed()
-		return
-	}
-	if err := writeSSE(w, "[DONE]"); err != nil {
-		meter.cancelled()
-		return
-	}
-	meter.completed()
 }
 
 func writeAndFlush(w http.ResponseWriter, payload []byte) error {
@@ -742,10 +606,6 @@ func (s *chatToolStream) normalize(data string) string {
 	return data
 }
 
-func recordClientCancelled(endpoint, requested string, principal *config.Principal, started time.Time) {
-	recordFailureUsage(endpoint, requested, principal, 499, "client_cancelled", started)
-}
-
 func providerErrorPayloadOpenAI() map[string]any {
 	return map[string]any{"error": map[string]any{
 		"message": "Upstream provider request failed.", "type": "provider_error",
@@ -802,6 +662,22 @@ func recordFromResponse(endpoint, requested string, served *router.Target, princ
 	if usage, ok := response["usage"].(map[string]any); ok {
 		in = firstInt(usage, "prompt_tokens", "input_tokens")
 		out = firstInt(usage, "completion_tokens", "output_tokens")
+		if endpoint == "anthropic.messages" && usage["prompt_tokens"] == nil {
+			in = 0
+			for _, category := range anthropicInputKinds {
+				value, valid := nativeUsageCount(usage[category])
+				if !valid || in > math.MaxInt-value {
+					in = -1
+					break
+				}
+				in += value
+			}
+			if value, valid := nativeUsageCount(usage["output_tokens"]); valid {
+				out = value
+			} else {
+				out = -1
+			}
+		}
 	}
 	recordUsage(router.UsageRecord{
 		RequestID: principal.RequestID, Endpoint: endpoint, RequestedModel: requested, RoutedModel: served.Model,

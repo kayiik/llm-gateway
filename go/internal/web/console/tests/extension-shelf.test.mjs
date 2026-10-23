@@ -43,7 +43,7 @@ function mountShelf(extensions, { search = "", filter = "all", state, stateData 
   const render = mount(() => shelf.ExtensionShelf({
     data: stateData, extensions: shelfState, search: view.search, filter: view.filter,
     onChanged: async () => { view.changed += 1; },
-    onAddAccount: (registryID, providerID) => view.added.push([registryID, providerID]),
+    onAddAccount: (entry, providerID) => view.added.push([entry.id, providerID]),
     onOpenDetail: (entryID) => view.opened.push(entryID),
   }));
   return { render, view, state: shelfState };
@@ -77,7 +77,7 @@ test("an open extension shows its facts, the providers it serves and what each n
   const panel = find(tree, (node) => node.type === "article");
   assert.equal(panel.props.id, "extension-panel-workstation");
   const facts = findAll(find(panel, (node) => node.type === "dl"), (node) => node.type === "div").map(text);
-  assert.deepEqual(facts.slice(0, 4), ["Addresshttp://127.0.0.1:18888", "Shared secretSet · stored encrypted", "Versionllmgw-extension 0.0.4", "Answered in14 ms"]);
+  assert.deepEqual(facts.slice(0, 4), ["Addresshttp://127.0.0.1:18888", "Shared secretSet · stored encrypted", "Version0.0.4", "Answered in14 ms"]);
   assert.match(facts[4], /^Last checked/);
   assert.deepEqual(rowsOf(tree).map((row) => findAll(row, (node) => node.type === "td").slice(1, 4).map(text)), [
     ["ChatResponses", "Device code", "2 accounts · catalog synced"],
@@ -99,34 +99,34 @@ test("an open extension shows its facts, the providers it serves and what each n
   find(rowFor(tree, "Anthropic, setup token"), (node) => node.type === "button" && text(node) === "Details").props.onClick();
   find(rowFor(tree, "GitHub Copilot"), (node) => node.type === "button" && text(node) === "Details").props.onClick();
   assert.deepEqual(view.added, [["github_copilot", "copilot"]]);
-  assert.deepEqual(view.opened, ["claude-max", "github_copilot"]);
+  assert.deepEqual(view.opened, ["claude-max", "copilot"]);
   find(rowFor(tree, "Anthropic, setup token"), (node) => node.type === "button" && text(node).includes("Add token")).props.onClick();
   assert.deepEqual(find(render(), (node) => node.props?.providerID === "claude-max").props.label, "Anthropic, setup token");
 });
 
 test("Add creates the provider the extension serves, then takes the step it needs", async () => {
   const sent = api();
-  const { render, view } = mountShelf([workstation], { stateData: { ...data, providers: [...data.providers, { id: "codex" }] } });
+  const { render, view } = mountShelf([workstation], { stateData: { ...data, providers: [...data.providers, { id: "openai_codex" }] } });
   trigger(render(), "workstation").props.onClick();
   find(rowFor(render(), "OpenAI Codex"), (node) => node.type === "button").props.onClick();
   await settle();
-  assert.deepEqual(sent, [["POST", "/providers", { registry_id: "openai_codex", id: "codex-2", extension: "workstation" }]]);
+  assert.deepEqual(sent, [["POST", "/providers", { type: "openai_codex", id: "openai_codex-2", extension: "workstation" }]]);
   assert.equal(view.changed, 1, "the state reloads, and the listing with it");
-  assert.deepEqual(view.added, [["openai_codex", "codex-2"]], "a sign-in provider asks for an account");
+  assert.deepEqual(view.added, [["openai_codex", "openai_codex-2"]], "a sign-in provider asks for an account");
 
   find(rowFor(render(), "OpenCode Zen, anonymous"), (node) => node.type === "button").props.onClick();
   await settle();
-  assert.deepEqual(sent.at(-1), ["POST", "/providers", { id: "opencode-zen-anonymous", type: "opencode_zen_anonymous", extension: "workstation" }]);
+  assert.deepEqual(sent.at(-1), ["POST", "/providers", { id: "opencode_zen_anonymous", type: "opencode_zen_anonymous", extension: "workstation" }]);
   assert.deepEqual(notices(render()), ["OpenCode Zen, anonymous added"]);
-  assert.match(find(render(), (node) => node.props?.message).props.message.detail, /^It is configured as opencode-zen-anonymous\./);
+  assert.match(find(render(), (node) => node.props?.message).props.message.detail, /^It is configured as opencode_zen_anonymous\./);
 
   const tokenless = { ...workstation, providers: workstation.providers.slice(0, 2) };
   const second = mountShelf([tokenless]);
   trigger(second.render(), "workstation").props.onClick();
   find(rowFor(second.render(), "Anthropic, setup token"), (node) => node.type === "button").props.onClick();
   await settle();
-  assert.deepEqual(sent.at(-1), ["POST", "/providers", { id: "anthropic-setup-token", type: "anthropic_setup_token", extension: "workstation" }]);
-  assert.equal(find(second.render(), (node) => node.props?.providerID).props.providerID, "anthropic-setup-token", "a token provider asks for its token");
+  assert.deepEqual(sent.at(-1), ["POST", "/providers", { id: "anthropic_setup_token", type: "anthropic_setup_token", extension: "workstation" }]);
+  assert.equal(find(second.render(), (node) => node.props?.providerID).props.providerID, "anthropic_setup_token", "a token provider asks for its token");
 });
 
 test("a provider the gateway refuses to add says why in the panel", async () => {
@@ -137,6 +137,23 @@ test("a provider the gateway refuses to add says why in the panel", async () => 
   await settle();
   assert.deepEqual(notices(render()), ["OpenAI Codex wasn't added"]);
   assert.deepEqual(view.added, []);
+});
+
+test("unlisted extension providers can be added with their discovered auth methods", async () => {
+  const sent = api();
+  const discovered = { ...workstation, providers: [], status: { ...workstation.status, served: [
+    { id: "fixture_account", name: "Fixture account", surfaces: ["responses"], credential: "oauth", has_oauth: true, oauth_methods: ["manual", "device"] },
+    { id: "fixture_text", name: "Fixture text", surfaces: ["messages"], credential: "none" },
+  ] } };
+  const { render, view } = mountShelf([discovered], { stateData: { providers: [], provider_registry: [], provider_statuses: [] } });
+  trigger(render(), "workstation").props.onClick();
+  find(rowFor(render(), "Fixture account"), (node) => node.type === "button").props.onClick();
+  await settle();
+  assert.deepEqual(sent[0], ["POST", "/providers", { id: "fixture_account", type: "fixture_account", extension: "workstation" }]);
+  assert.deepEqual(view.added, [["fixture_account", "fixture_account"]]);
+  find(rowFor(render(), "Fixture text"), (node) => node.type === "button").props.onClick();
+  await settle();
+  assert.deepEqual(sent[1], ["POST", "/providers", { id: "fixture_text", type: "fixture_text", extension: "workstation" }]);
 });
 
 test("Check now replaces the extension's status, and says when it could not run", async () => {
@@ -187,11 +204,11 @@ test("a daemon that needs attention says so in its panel, and what it affects", 
   api();
   const exposed = { ...workstation, status: { ...workstation.status, unauthenticated: true, outdated: true, version: "0.0.3" } };
   let shown = mountShelf([exposed]);
-  assert.match(text(trigger(shown.render(), "workstation")), /Update needed$/);
+  assert.match(text(trigger(shown.render(), "workstation")), /Reachable · 14 ms$/);
   trigger(shown.render(), "workstation").props.onClick();
   let tree = shown.render();
-  assert.deepEqual(notices(tree), ["This daemon answers without its secret", "Upgrade this daemon to 0.0.4 or later"]);
-  assert.ok(findAll(tree, (node) => node.type === "div").map(text).includes("This gateway expects0.0.4 or later"));
+  assert.deepEqual(notices(tree), ["This daemon answers without its secret"]);
+  assert.doesNotMatch(text(tree), /This gateway expects/);
 
   const silent = { ...workstation, status: buildBox.status };
   shown = mountShelf([silent]);
@@ -201,7 +218,7 @@ test("a daemon that needs attention says so in its panel, and what it affects", 
   assert.equal(text(find(alert, (node) => node.type === "strong")), "copilot, edge_tts and claude-max can't serve requests");
   assert.match(text(alert), /Start the daemon, or change the address\.$/);
   assert.ok(findAll(tree, (node) => node.type === "div").map(text).includes("Errorthe extension did not answer within 5s"));
-  assert.deepEqual(rowsOf(tree).map((row) => text(findAll(row, (node) => node.type === "td")[0])), ["GitHub Copilot", "Edge TTS", "Anthropic, setup token"], "what is known of the configured providers stands in");
+  assert.deepEqual(rowsOf(tree).map((row) => text(findAll(row, (node) => node.type === "td")[0])), ["github_copilot", "edge_tts", "anthropic_setup_token"], "offline rows do not invent names or capabilities");
 });
 
 test("a search opens the extension a match is in, showing what matches", () => {
@@ -226,15 +243,16 @@ test("a search opens the extension a match is in, showing what matches", () => {
   assert.deepEqual(rowsOf(tree).map((row) => text(findAll(row, (node) => node.type === "td")[0])), ["GitHub Copilot", "OpenAI Codex", "Google Antigravity"]);
 });
 
-test("without an extension the shelf explains what one is and brings", () => {
+test("without an extension the shelf explains discovery without advertising providers", () => {
   api();
   const { render, view } = mountShelf([]);
   let tree = render();
   assert.match(text(tree), /No extension yet/);
-  assert.match(text(tree), /An extension is a companion daemon that serves providers the gateway can't reach on its own\. Run one, then add its address and shared secret here\. It brings:/);
-  assert.deepEqual(findAll(find(tree, (node) => node.type === "ul"), (node) => node.type === "li").map(text), ["GitHub Copilot", "OpenAI Codex", "Google Antigravity", "Edge TTS", "OpenCode Zen, anonymous", "Anthropic, setup token"]);
+  assert.match(text(tree), /Its providers, supported APIs, and sign-in methods appear here after discovery/);
+  assert.doesNotMatch(text(tree), /Copilot|Codex|Antigravity|Edge TTS|Zen|Anthropic/);
+  assert.equal(find(tree, (node) => node.type === "ul"), undefined);
   view.search = "copilot";
-  assert.match(text(render()), /No extension yet/, "a search for what one brings lands here");
+  assert.equal(render(), null, "an unknown extension does not claim this provider");
   view.search = "ollama";
   assert.equal(render(), null);
   view.search = "";
@@ -314,16 +332,16 @@ test("a check tries the address and secret as typed, and says what it found", as
 
   const connected = shelf.CheckResult({ status: { ...workstation.status, latency_ms: 12 }, address: "http://127.0.0.1:18888", minimumVersion: "0.0.4" });
   const success = find(connected, (node) => node.props?.message?.tone === "success");
-  assert.deepEqual([success.props.message.title, success.props.message.detail], ["Connected", "llmgw-extension 0.0.4 answered in 12 ms. It serves 6 providers:"]);
+  assert.deepEqual([success.props.message.title, success.props.message.detail], ["Connected", "The extension (0.0.4) answered in 12 ms. It serves 6 providers:"]);
   assert.deepEqual(findAll(success, (node) => node.props?.class === "surface-chip").map(text), ["GitHub Copilot", "OpenAI Codex", "Google Antigravity", "Edge TTS", "OpenCode Zen, anonymous", "Anthropic, setup token"]);
   const warned = shelf.CheckResult({ status: { ...workstation.status, unauthenticated: true, outdated: true, version: "0.0.3" }, address: "x", minimumVersion: "0.0.4" });
-  assert.deepEqual(findAll(warned, (node) => node.props?.message).map((node) => node.props.message.title), ["Connected", "This daemon answers without its secret", "Upgrade this daemon to 0.0.4 or later"]);
+  assert.deepEqual(findAll(warned, (node) => node.props?.message).map((node) => node.props.message.title), ["Connected", "This daemon answers without its secret"]);
   const failed = shelf.CheckResult({ status: buildBox.status, address: "http://127.0.0.1:18888", minimumVersion: "0.0.4" });
   assert.equal(failed.props.message.title, "Nothing answered at http://127.0.0.1:18888");
-  // A notice sets the names an operator types in the technical type.
+  // Independent extensions need not use one implementation's environment names.
   const notice = shelf.MessageNotice({ message: ext.unauthenticatedWarning });
   assert.equal(notice.props.role, "alert");
-  assert.deepEqual(findAll(notice, (node) => node.props?.class === "technical").map(text), ["LLMGW_EXTENSION_SECRET"]);
+  assert.deepEqual(findAll(notice, (node) => node.props?.class === "technical").map(text), []);
 });
 
 test("a check without what it needs says so before sending anything", async () => {
@@ -408,18 +426,18 @@ test("the secret can be shown while it is typed", () => {
   assert.match(form.field(form.render(), "Shared secret").props["aria-describedby"], /-help$/);
 });
 
-test("a setup token is stored as the provider's own, and never kept in the form", async () => {
+test("a discovered provider's token is stored on its own binding and cleared from the form", async () => {
   let fail = false;
   const sent = api(() => { if (fail) throw new Error("LLMGW_CREDENTIAL_ENCRYPTION_KEY is required to store an Anthropic setup token"); return { ok: true }; });
   let saved = 0;
   let closed = 0;
-  const render = mount(() => shelf.SetupTokenDialog({ providerID: "claude-max", label: "Anthropic, setup token", onClose: () => { closed += 1; }, onSaved: async () => { saved += 1; } }));
+  const render = mount(() => shelf.ExtensionTokenDialog({ providerID: "fixture-token", providerType: "fixture_token", extensionID: "workstation", label: "Fixture token", onClose: () => { closed += 1; }, onSaved: async () => { saved += 1; } }));
   find(render(), (node) => node.type === "form").props.onSubmit({ preventDefault() {} });
-  assert.equal(text(find(render(), (node) => node.props?.role === "alert")), "Paste the setup token first.");
+  assert.equal(text(find(render(), (node) => node.props?.role === "alert")), "Paste the token first.");
   find(render(), (node) => node.type === "input").props.onInput(input("sk-ant-oat01-fixture"));
   find(render(), (node) => node.type === "form").props.onSubmit({ preventDefault() {} });
   await settle();
-  assert.deepEqual(sent, [["POST", "/providers", { id: "claude-max", type: "anthropic_setup_token", api_key: "sk-ant-oat01-fixture", credential_kind: "setup_token" }]]);
+  assert.deepEqual(sent, [["POST", "/providers", { id: "fixture-token", type: "fixture_token", extension: "workstation", api_key: "sk-ant-oat01-fixture", credential_kind: "api_key" }]]);
   assert.deepEqual([saved, closed], [1, 1]);
   fail = true;
   find(render(), (node) => node.type === "input").props.onInput(input("sk-ant-oat01-fixture"));
@@ -429,10 +447,11 @@ test("a setup token is stored as the provider's own, and never kept in the form"
   assert.equal(find(render(), (node) => node.type === "input").props.value, "");
 });
 
-const otherRegistry = [...registry, { id: "openai", label: "OpenAI", protocol: "openai", availability: "available", auth_methods: ["api_key"], categories: ["api-key"] }];
+const otherRegistry = [registry[4], { id: "openai", label: "OpenAI", protocol: "openai", availability: "available", auth_methods: ["api_key"], categories: ["api-key"] }];
 function hub(mode, listing = { extensions: [workstation], minimum_version: "0.0.4", legacy_environment: false }) {
   const sent = api((method, path) => path === "/extensions" ? listing : { entries: [] });
-  const hubData = { ...data, provider_registry: otherRegistry, provider_statuses: [...data.provider_statuses, { ...otherRegistry.at(-1), configured: false, configured_provider_ids: [], instances: [] }] };
+  const configured = data.provider_statuses.filter((entry) => entry.configured).map((entry) => ({ ...entry, custom: true }));
+  const hubData = { ...data, provider_registry: otherRegistry, provider_statuses: [...configured, ...otherRegistry.map((entry) => ({ ...entry, configured: false, configured_provider_ids: [], instances: [] }))] };
   const view = { search: "" };
   const render = mount(() => ProviderHub({ data: hubData, mode, onChanged: async () => {}, onOpenDetail() {} }));
   return { render, sent, view };
@@ -454,7 +473,7 @@ test("the administrator's hub shows Extensions first, and the daemon's providers
   assert.ok(shown.includes("openai") && shown.includes("anthropic"), "the providers the gateway reaches itself stay");
 
   // An account added from an extension's panel uses the hub's sign-in.
-  shelfNode(tree).props.onAddAccount("github_copilot", "copilot");
+  shelfNode(tree).props.onAddAccount({ id: "github_copilot", extension_provider: true, oauth_methods: ["device"] }, "copilot");
   const dialog = find(admin.render(), (node) => node.props?.entry && node.props?.providerID === "copilot" && node.props?.ownerID !== undefined);
   assert.equal(dialog.props.entry.id, "github_copilot");
 

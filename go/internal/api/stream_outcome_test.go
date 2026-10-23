@@ -139,9 +139,17 @@ func streamRequestBody(path, model string) string {
 	return `{"model":"` + model + `","stream":true,"messages":[{"role":"user","content":"Say hello"}]}`
 }
 
-func streamThroughGateway(t *testing.T, gateway *httptest.Server, path, body string) string {
+func streamThroughGateway(t *testing.T, gateway *httptest.Server, path, body string, compatibility ...string) string {
 	t.Helper()
-	response, err := http.Post(gateway.URL+path, "application/json", strings.NewReader(body))
+	request, err := http.NewRequest(http.MethodPost, gateway.URL+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	if len(compatibility) > 0 && compatibility[0] != "" {
+		request.Header.Set(compatibilityHeader, compatibility[0])
+	}
+	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,27 +225,42 @@ func TestStreamOutcomesFollowTheUpstreamsEnd(t *testing.T) {
 	for _, tc := range []struct {
 		name, provider string
 		surface        surface
+		compatibility  string
 	}{
-		{"Chat", "chat", chat},
-		{"Chat from Anthropic", "claude", chat},
-		{"Messages from Chat", "chat", messages},
-		{"Messages from Anthropic", "claude", messages},
-		{"native Responses", "native", responses},
-		{"Responses from Chat", "chat", responses},
-		{"Responses from Anthropic", "claude", responses},
+		{"Chat", "chat", chat, ""},
+		{"Chat from Anthropic", "claude", chat, "allow"},
+		{"Messages from Chat", "chat", messages, "allow"},
+		{"Messages from Anthropic", "claude", messages, ""},
+		{"native Responses", "native", responses, ""},
+		{"Responses from Chat", "chat", responses, "allow"},
+		{"Responses from Anthropic", "claude", responses, "allow"},
 	} {
 		for _, outcome := range []string{"complete", "broken", "cut"} {
 			t.Run(tc.name+" "+outcome, func(t *testing.T) {
 				gateway := setupStreamOutcomeTest(t, upstream.URL)
-				body := streamThroughGateway(t, gateway, tc.surface.path, streamRequestBody(tc.surface.path, tc.provider+"/"+outcome))
+				body := streamThroughGateway(t, gateway, tc.surface.path, streamRequestBody(tc.surface.path, tc.provider+"/"+outcome), tc.compatibility)
 				if !strings.Contains(body, "Hello there") {
 					t.Fatalf("the streamed text was lost: %q", body)
 				}
 				row := readStreamUsageRow(t)
 				// Whatever the end, the stream consumed a model: its row
 				// names what served it and charges the tokens consumed.
-				if row.provider != tc.provider || row.model != outcome || row.input <= 0 || row.output <= 0 || row.credits != 1000 {
+				if row.provider != tc.provider || row.model != outcome || row.input <= 0 || row.output < 0 || row.credits != 1000 {
 					t.Fatalf("usage=%+v", row)
+				}
+				if row.output == 0 {
+					// A native cumulative zero before failure remains a lower bound;
+					// it must not become an estimate or a final measured total.
+					events, _, err := iam.ListUsageEvents(iam.UsageEventFilter{})
+					if err != nil || len(events) != 1 || events[0].SourceUsage == nil {
+						t.Fatalf("zero lacks source evidence: events=%+v error=%v", events, err)
+					}
+					evidence := events[0].SourceUsage
+					selected := evidence.Attempts[evidence.SelectedAttempt]
+					count := selected.Counts["output_tokens"]
+					if outcome == "complete" || !evidence.OutputIncomplete || evidence.OutputBasis != "reported_partial" || count.Presence != "present" || count.Value != 0 || selected.Quality == "complete" {
+						t.Fatalf("zero lost partial-source qualification: %+v", evidence)
+					}
 				}
 				if outcome == "complete" {
 					if !strings.Contains(body, tc.surface.success) || strings.Contains(body, tc.surface.failure) ||

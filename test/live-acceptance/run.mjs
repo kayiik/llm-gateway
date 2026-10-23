@@ -108,7 +108,7 @@ async function docker(...args) {
   return command("docker", args, options);
 }
 
-async function request(path, { method = "GET", key = adminKey, body, timeout = 30_000 } = {}) {
+async function request(path, { method = "GET", key = adminKey, body, headers = {}, timeout = 30_000 } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   const started = Date.now();
@@ -120,6 +120,7 @@ async function request(path, { method = "GET", key = adminKey, body, timeout = 3
         Accept: "application/json",
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
         ...(key ? { Authorization: `Bearer ${key}` } : {}),
+        ...headers,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -229,14 +230,17 @@ async function waitFixture(name, timeoutMs = 30_000) {
   throw new Error(`fixture ${name} did not answer within ${timeoutMs / 1000}s`);
 }
 
-async function configureProvider(id, registry_id, base_url) {
+async function configureProvider(id, registry_id, base_url, identity) {
   const result = await request("/admin/api/providers", {
     method: "POST",
     body: { id, registry_id, base_url, force_api_support: true },
   });
   if (result.status !== 200) throw new Error(`configure ${id}: ${result.status} ${errorText(result)}`);
-  const refresh = await request(`/admin/api/providers/${encodeURIComponent(id)}/refresh`, { method: "POST", body: {} , timeout: 60_000 });
-  const catalog = await request(`/admin/api/providers/${encodeURIComponent(id)}/catalog`);
+  // Catalog reads are cache-only and scoped to the acting owner. Refresh the
+  // fixture under the same identity the Playground will use, not the admin key.
+  const scope = new URLSearchParams({ principal_id: identity.principalID, project_id: identity.projectID });
+  const refresh = await request(`/admin/api/providers/${encodeURIComponent(id)}/refresh?${scope}`, { method: "POST", body: {} , timeout: 60_000 });
+  const catalog = await request(`/admin/api/providers/${encodeURIComponent(id)}/catalog?${scope}`);
   const models = catalog.json?.models || [];
   const diagnostics = catalog.json?.catalog || {};
   report.providers.push({
@@ -414,7 +418,10 @@ async function createIdentityAndKey() {
 async function createRoutes(healthy) {
   const plans = buildRoutePlans(healthy);
   for (const plan of plans) {
-    const result = await request("/admin/api/endpoints", { method: "POST", body: { name: plan.name, failover: plan.members } });
+    const result = await request("/admin/api/endpoints", { method: "POST", body: {
+      name: plan.name, failover: plan.members,
+      ingress: ["/v1/chat/completions", "/v1/messages"], allow_adaptation: true,
+    } });
     report.routes.push({ ...plan, create_status: result.status });
     if (result.status !== 200) throw new Error(`route ${plan.name}: ${result.status} ${errorText(result)}`);
   }
@@ -445,7 +452,7 @@ async function testAPIs(key, plans, healthy) {
       const valid = attempts === target.expectedAttempts && served === expectedServed && JSON.stringify(order) === JSON.stringify(expectedOrder) && (target.expectedAttempts < 2 || event?.attempts?.[0]?.throttled === true);
       check(`trace:${target.name}`, valid ? "passed" : "failed", `attempts=${attempts}, served=${served}, order=${order.join(" -> ")}`, true);
     }
-    const messagesRequest = { method: "POST", key, body: { model: target.name, messages: [{ role: "user", content: "hi" }], max_tokens: completionMaxTokens }, timeout: 90_000 };
+    const messagesRequest = { method: "POST", key, headers: { "X-LLMGW-Compatibility": "allow" }, body: { model: target.name, messages: [{ role: "user", content: "hi" }], max_tokens: completionMaxTokens }, timeout: 90_000 };
     const messagesAnswered = (result) => result.status === 200 && Boolean(messagesText(result.json)) && validModels.includes(result.json?.model);
     const messages = await requestWithReplay(`messages:${target.name}`, "/v1/messages", messagesRequest, messagesAnswered, validModels[0]);
     const messageBody = messagesText(messages.json);
@@ -792,7 +799,7 @@ async function runAcceptance() {
         await docker("run", "-d", "--name", name, "--network", network, "-e", `STATUS=${status}`, "-e", `MODELS=${models.join(",")}`, "-v", `${resolve(import.meta.dirname)}:/harness:ro`, "node:22.23.3-alpine", "node", "/harness/fixture-server.mjs");
         servers.push(name);
         await waitFixture(name);
-        await configureProvider(id, "custom_openai", `http://${name}:8080`);
+        await configureProvider(id, "custom_openai", `http://${name}:8080`, identity);
         return models.map((model) => ({ id: model }));
       };
       const fault429 = await createFixture("fault-429", 429, ["fault-model"]);
@@ -809,7 +816,7 @@ async function runAcceptance() {
         await docker("run", "-d", "--name", name, "--network", network, "-e", `STATUS=${status}`, "-e", "MODELS=fault-model", "-v", `${resolve(import.meta.dirname)}:/harness:ro`, "node:22.23.3-alpine", "node", "/harness/fixture-server.mjs");
         servers.push(name);
         await waitFixture(name);
-        await configureProvider(id, "custom_openai", `http://${name}:8080`);
+        await configureProvider(id, "custom_openai", `http://${name}:8080`, identity);
       }
     }
     progress("models: starting published-model sweep");

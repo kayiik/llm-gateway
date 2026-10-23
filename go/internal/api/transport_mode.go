@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"llmgw/internal/config"
@@ -23,9 +24,20 @@ const transportCatalogFreshness = time.Hour
 var errTransportMode = errors.New("X-LLMGW-Transport-Mode must be transparent when present")
 
 func requestedTransportMode(r *http.Request) (core.TransportRequirement, error) {
-	requirement, err := core.ParseTransportRequirement(r.Header.Get(transportModeHeader))
+	value, _, valid := singlePolicyHeader(r.Header, transportModeHeader)
+	if !valid {
+		return "", errTransportMode
+	}
+	requirement, err := core.ParseTransportRequirement(value)
 	if err != nil {
 		return "", errTransportMode
+	}
+	compatibility, err := requestedCompatibility(r)
+	if err != nil {
+		return "", err
+	}
+	if requirement == core.TransportRequirementTransparent && compatibility == "allow" {
+		return "", errors.New("transparent mode cannot allow compatibility adaptation")
 	}
 	return requirement, nil
 }
@@ -104,7 +116,22 @@ func modelTransportSurfaces(
 ) ([]string, []string, []string) {
 	provider, credential, _ := transportDeclaration(providerID, caller)
 	model.Capabilities, model.SupportedSurfaces = capabilities, surfaces
-	return core.ListingSurfaces(provider, credential, transportEvidence(model, refreshedAt), evaluatedAt)
+	native, emulated, unknown := core.ListingSurfaces(provider, credential, transportEvidence(model, refreshedAt), evaluatedAt)
+	// This signaling path is served directly by the gateway rather than the
+	// core conversation adapters. Only a current explicit API declaration is
+	// positive listing evidence; neither the provider label nor model name is.
+	for _, surface := range surfaces {
+		if strings.TrimPrefix(surface, "/v1") != "/realtime/calls" {
+			continue
+		}
+		if providers.SupportsRealtimeHTTPTransport(providerID) && realtimeCatalogSupport(model, refreshedAt, evaluatedAt) == core.SupportSupported {
+			native = append(native, realtimeCallsPath)
+		} else {
+			unknown = append(unknown, realtimeCallsPath)
+		}
+		break
+	}
+	return native, emulated, unknown
 }
 
 // transportDeclaration returns the core provider whose declarations say

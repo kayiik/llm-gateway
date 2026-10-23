@@ -107,6 +107,13 @@ func providerQuotaAdvisories(principalID string) ([]map[string]any, error) {
 			source = quotaAdvisorySummaryValue(fresh, func(snapshot iam.ProviderQuotaSnapshot) string {
 				return snapshot.Source
 			})
+		} else {
+			for _, snapshot := range fresh {
+				if snapshot.RemainingValue != nil || snapshot.UsedValue != nil || snapshot.LimitValue != nil {
+					source = quotaAdvisorySummaryValue(fresh, func(snapshot iam.ProviderQuotaSnapshot) string { return snapshot.Source })
+					break
+				}
+			}
 		}
 		out = append(out, map[string]any{
 			"provider_id": id, "status": status, "source": source,
@@ -141,6 +148,9 @@ func providerQuotaDimensions(snapshots []iam.ProviderQuotaSnapshot) []map[string
 		}
 		if snapshot.RemainingValue != nil {
 			dimension["remaining"] = *snapshot.RemainingValue
+		}
+		if snapshot.Confidence == "unknown" && (snapshot.RemainingValue != nil || snapshot.UsedValue != nil || snapshot.LimitValue != nil) {
+			dimension["unverified"] = true
 		}
 		if snapshot.ResetAt > 0 {
 			dimension["reset_at"] = time.Unix(snapshot.ResetAt, 0).UTC().Format(time.RFC3339)

@@ -80,7 +80,7 @@ func setupCLIContractTest(t *testing.T) (*httptest.Server, func() []cliUpstreamC
 			"fixture-b": {Type: "openai_compatible", BaseURL: upstreamB.URL, APIKey: "upstream-secret-do-not-leak"},
 		}
 		s.Endpoints = map[string]*config.EndpointConfig{
-			"coding": {Failover: []config.EndpointMember{{Provider: "fixture-b", Model: "model-b"}}},
+			"coding": {Failover: []config.EndpointMember{{Provider: "fixture-b", Model: "model-b"}}, Ingress: []string{"/v1/chat/completions", "/v1/responses", "/v1/messages", "/v1/messages/count_tokens"}, AllowAdaptation: true},
 		}
 	})
 	providers.ResetProviders()
@@ -225,7 +225,11 @@ func TestCLIRequestRoutingAndShapeContract(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.body["model"] = tc.model
-			status, responseBody := cliRequest(t, server.URL+tc.path, tc.body)
+			compatibility := ""
+			if tc.path == "/v1/messages" || tc.path == "/messages" {
+				compatibility = "allow"
+			}
+			status, responseBody := cliRequest(t, server.URL+tc.path, tc.body, compatibility)
 			if status != http.StatusOK {
 				t.Fatalf("status=%d body=%s", status, responseBody)
 			}
@@ -260,7 +264,11 @@ func TestCLIStreamContract(t *testing.T) {
 		{"copilot", "/v1/chat/completions", map[string]any{"model": "fixture-a/model-a", "messages": []any{map[string]any{"role": "user", "content": "copilot-stream"}}, "tools": cliTool(true), "stream": true}, []string{`"model":"model-a"`, `"tool_calls"`, "data: [DONE]"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			status, body := cliRequest(t, server.URL+tc.path, tc.body)
+			compatibility := ""
+			if tc.path == "/v1/messages" {
+				compatibility = "allow"
+			}
+			status, body := cliRequest(t, server.URL+tc.path, tc.body, compatibility)
 			if status != http.StatusOK {
 				t.Fatalf("status=%d body=%s", status, body)
 			}
@@ -314,12 +322,15 @@ func TestCLIErrorEnvelopeContract(t *testing.T) {
 	}
 }
 
-func cliRequest(t *testing.T, url string, body map[string]any) (int, []byte) {
+func cliRequest(t *testing.T, url string, body map[string]any, compatibility ...string) (int, []byte) {
 	t.Helper()
 	raw, _ := json.Marshal(body)
 	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(raw))
 	req.Header.Set("Authorization", "Bearer gateway-token")
 	req.Header.Set("Content-Type", "application/json")
+	if len(compatibility) > 0 && compatibility[0] != "" {
+		req.Header.Set(compatibilityHeader, compatibility[0])
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

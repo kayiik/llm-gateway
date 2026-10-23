@@ -15,8 +15,8 @@ export const served = [
   { id: "openai_codex", name: "OpenAI Codex", surfaces: ["chat_completions", "responses"], has_oauth: true, credential: "oauth", oauth_methods: ["browser", "device"] },
   { id: "google_antigravity", name: "Google Antigravity", surfaces: ["chat_completions"], has_oauth: true, credential: "oauth", oauth_methods: ["manual"] },
   { id: "edge_tts", name: "Edge TTS", surfaces: ["audio_speech"], credential: "none" },
-  { id: "opencode_zen_anonymous", name: "OpenCode Zen", surfaces: ["chat_completions", "responses"], credential: "none" },
-  { id: "anthropic_setup_token", name: "Anthropic", surfaces: ["messages"], credential: "token" },
+  { id: "opencode_zen_anonymous", name: "OpenCode Zen, anonymous", surfaces: ["chat_completions", "responses"], credential: "none" },
+  { id: "anthropic_setup_token", name: "Anthropic, setup token", surfaces: ["messages"], credential: "token" },
 ];
 
 export const workstation = {

@@ -26,7 +26,7 @@ func TestServiceProviderCredentialControlsModelsAndRoutes(t *testing.T) {
 			t.Errorf("catalog credential %q is neither the bound nor the human's", token)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"models": []any{
-			map[string]any{"id": "model-a"}, map[string]any{"id": "model-b"},
+			map[string]any{"id": "model-a", "supported_apis": []string{"/chat/completions"}}, map[string]any{"id": "model-b", "supported_apis": []string{"/chat/completions"}},
 		}})
 	})
 	daemon.HandleFunc("POST /extension/v1/github_copilot/invoke", func(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +35,7 @@ func TestServiceProviderCredentialControlsModelsAndRoutes(t *testing.T) {
 		}
 		chatRequests.Add(1)
 		writeJSON(w, http.StatusOK, map[string]any{
-			"id": "local-test", "choices": []any{map[string]any{
+			"id": "local-test", "model": "reported-model-a", "choices": []any{map[string]any{
 				"message": map[string]any{"role": "assistant", "content": "local-test"},
 			}},
 		})
@@ -94,7 +94,7 @@ func TestServiceProviderCredentialControlsModelsAndRoutes(t *testing.T) {
 	status, response := jsonRequest(t, server.URL+"/v1/chat/completions", http.MethodPost, authorizedToken, map[string]any{
 		"model": "copilot/model-a", "messages": []map[string]any{{"role": "user", "content": "test"}},
 	})
-	if status != http.StatusOK || response["model"] != "model-a" || chatRequests.Load() != 1 {
+	if status != http.StatusOK || response["model"] != "reported-model-a" || chatRequests.Load() != 1 {
 		t.Fatalf("authorized service route status=%d response=%+v requests=%d", status, response, chatRequests.Load())
 	}
 	if err := iam.SetProviderCredentialStatus(credential.ID, "revoked"); err != nil {

@@ -417,11 +417,15 @@ func (rt *Runtime) ResolveForPrincipal(
 		} else if governance != nil && governance.RoutesOnly && len(governance.AllowedRoutes) == 0 {
 			return Resolution{}, &ModelNotFoundError{Requested: name}
 		}
-		if len(cat.Failover) == 0 {
+		members, err := config.ExpandEndpointMembers(settings.Endpoints, categoryName)
+		if err != nil {
+			return Resolution{}, err
+		}
+		if len(members) == 0 {
 			return Resolution{}, &ModelNotFoundError{Requested: name}
 		}
-		out := make([]Target, 0, len(cat.Failover))
-		for _, m := range cat.Failover {
+		out := make([]Target, 0, len(members))
+		for _, m := range members {
 			if cfg := settings.Providers[m.Provider]; cfg != nil && cfg.Disabled {
 				continue
 			}
@@ -438,7 +442,7 @@ func (rt *Runtime) ResolveForPrincipal(
 			// Preserve identity for policy checks on unavailable routes only.
 			// In a mixed route, disabled members must not mask an enabled
 			// member's provider-policy or credential denial.
-			for _, m := range cat.Failover {
+			for _, m := range members {
 				published, err := rt.routeMemberPublished(m, caller)
 				if err != nil {
 					return Resolution{}, err

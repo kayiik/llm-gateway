@@ -10,7 +10,7 @@ import { ProviderMark } from "../ProviderMark";
 import { DisabledReason, EmptyState, PageHeading } from "../PageState";
 import { useDialogFocus } from "../useDialogFocus";
 import { ExtensionShelf } from "./ExtensionShelf";
-import { daemonRegistryIDs, shelfItems, shelfShows, useExtensions } from "./extensions";
+import { shelfItems, shelfShows, useExtensions } from "./extensions";
 import { OAuthConnectDialog } from "./OAuthConnectDialog";
 import { discoveryFilters, matchesDiscoveryFilter, mergeProviderRoster, providerShelves, RosterMark, RosterMetadata, RosterStatus, rosterCandidateSetup, rosterSetupEntry, rosterSetupUnavailableReason, safeRosterURL, shelfFor, useProviderRoster } from "./ProviderRoster";
 import "./provider-hub.css";
@@ -485,9 +485,8 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
   const daemonProviders = new Set(asList(data.companion_daemon_providers).map((providerID) => stringValue(providerID)));
   const servedByExtension = (entry: JSONRecord) => {
     if (mode !== "admin") return false;
-    if (daemonRegistryIDs.has(stringValue(entry.id))) return true;
     const providerIDs = configuredProviderIDs(entry);
-    return boolValue(entry.custom) && providerIDs.length > 0 && providerIDs.every((providerID) => daemonProviders.has(providerID));
+    return providerIDs.length > 0 && providerIDs.every((providerID) => daemonProviders.has(providerID));
   };
   const closeExpansion = () => {
     const trigger = Array.from(shelfRef.current?.querySelectorAll<HTMLButtonElement>("[data-provider-trigger]") ?? []).find((button) => button.dataset.providerTrigger === expanded);
@@ -653,8 +652,7 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
 
   // An extension's panel adds an account to one provider instance it serves,
   // through the same sign-in as a tile's Add account.
-  const addAccount = (registryID: string, providerID: string) => {
-    const entry = entries.find((candidate) => stringValue(candidate.id) === registryID) ?? registry.find((candidate) => stringValue(candidate.id) === registryID) ?? { id: registryID };
+  const addAccount = (entry: JSONRecord, providerID: string) => {
     setOAuthEntry({ entry, providerID });
   };
 

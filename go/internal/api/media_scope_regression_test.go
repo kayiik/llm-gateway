@@ -59,7 +59,7 @@ func TestVideoPollingEnforcesResolvedRouteTarget(t *testing.T) {
 					if r.Method != http.MethodPost || r.URL.Path != "/v1/projects/test-project/locations/global/publishers/google/models/veo-a:fetchPredictOperation" {
 						t.Errorf("unexpected poll: %s %s", r.Method, r.URL.Path)
 					}
-				} else if r.Method != http.MethodGet || r.URL.Path != "/v1/operations/job-1" {
+				} else if r.Method != http.MethodGet || r.URL.Path != "/v1/models/veo-a/operations/job-1" {
 					t.Errorf("unexpected poll: %s %s", r.Method, r.URL.Path)
 				}
 				_, _ = w.Write([]byte(`{"done":false}`))

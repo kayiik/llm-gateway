@@ -117,9 +117,6 @@ body:
       }
     },
     {
-      "capabilities": {
-        "chat": true
-      },
       "failover": [
         {
           "model": "model-a",
@@ -134,10 +131,10 @@ body:
       "object": "model",
       "owned_by": "endpoint",
       "supported_endpoints": [
-        "/v1/chat/completions"
+        "/chat/completions"
       ],
       "supported_surfaces": [
-        "/v1/chat/completions"
+        "/chat/completions"
       ]
     },
     {

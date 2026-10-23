@@ -588,6 +588,24 @@ CREATE TABLE extensions (
 );
 `,
 	},
+	{
+		version: 25,
+		sql:     `ALTER TABLE usage_events ADD COLUMN source_usage_json TEXT;`,
+	},
+	{
+		version: 26,
+		sql: `
+CREATE TABLE target_quota_counters (
+    provider_id TEXT NOT NULL,
+    model TEXT NOT NULL,
+    period TEXT NOT NULL CHECK (period IN ('minute','day','month')),
+    period_start INTEGER NOT NULL,
+    requests INTEGER NOT NULL DEFAULT 0 CHECK (typeof(requests)='integer' AND requests>=0),
+    observed_tokens INTEGER NOT NULL DEFAULT 0 CHECK (typeof(observed_tokens)='integer' AND observed_tokens>=0),
+    PRIMARY KEY (provider_id,model,period,period_start)
+);
+`,
+	},
 }
 
 func SchemaVersion() int { return len(migrations) }

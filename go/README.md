@@ -30,6 +30,12 @@ internal/web          embedded Preact console bundle
 
 ## Build and test
 
+For fast iteration from the repository root, use
+`node scripts/test-local.mjs policy` or
+`node scripts/test-local.mjs api --run TestName`. The runner reuses exact-input
+test executables and isolated state; see [local testing](../docs/TESTING.md).
+The complete checks are:
+
 ```bash
 go build ./...
 go vet ./...

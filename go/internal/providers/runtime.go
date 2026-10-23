@@ -72,6 +72,7 @@ func newRuntime(open func(oauth bool) (core.CredentialStore, error)) *Runtime {
 	runtime := &Runtime{}
 	runtime.instances.instances = map[string]Provider{}
 	runtime.quotaAdapters.values = map[string]QuotaAdapter{}
+	runtime.quotaAdapters.values[ExtensionTypeAntigravity] = extensionQuotaAdapter{runtime: runtime}
 	runtime.openCredentials = open
 	runtime.settings = config.Source{}
 	if s, err := open(true); err == nil {

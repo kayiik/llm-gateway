@@ -246,7 +246,7 @@ func TestProjectPolicyAdminAPIRoundTripReplacement(t *testing.T) {
 }
 
 func jsonRequest(
-	t *testing.T, url, method, token string, body any,
+	t *testing.T, url, method, token string, body any, headers ...http.Header,
 ) (int, map[string]any) {
 	t.Helper()
 	var payload []byte
@@ -263,6 +263,13 @@ func jsonRequest(
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	for _, header := range headers {
+		for name, values := range header {
+			for _, value := range values {
+				req.Header.Add(name, value)
+			}
+		}
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

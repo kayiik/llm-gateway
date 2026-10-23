@@ -66,12 +66,12 @@ func TestHTTPCharacterization(t *testing.T) {
 			"openai-chat-native-stream":        {charPost("Chat Completions stream, native OpenAI-compatible", chat, "fixture/chat-model", hello+stream)},
 			"anthropic-messages-native":        {charPost("Messages, native Anthropic", messages, "native/claude-fixture", hello64)},
 			"anthropic-messages-native-stream": {charPost("Messages stream, native Anthropic", messages, "native/claude-fixture", hello64+stream)},
-			"openai-messages-via-chat":         {charPost("Messages translated to a Chat-only model", messages, "fixture/chat-model", hello64)},
-			"openai-messages-via-chat-stream":  {charPost("Messages stream translated to a Chat-only model", messages, "fixture/chat-model", hello64+stream)},
+			"openai-messages-via-chat":         {charPost("Messages translated to a Chat-only model", messages, "fixture/chat-model", hello64).compatible()},
+			"openai-messages-via-chat-stream":  {charPost("Messages stream translated to a Chat-only model", messages, "fixture/chat-model", hello64+stream).compatible()},
 			"openai-responses-native":          {charPost("Responses, native OpenAI-compatible", responses, "fixture/responses-model", input)},
 			"openai-responses-native-stream":   {charPost("Responses stream, native OpenAI-compatible", responses, "fixture/responses-model", input+stream)},
-			"openai-responses-via-chat":        {charPost("Responses translated to a Chat-only model", responses, "fixture/chat-model", input)},
-			"openai-responses-via-chat-stream": {charPost("Responses stream translated to a Chat-only model", responses, "fixture/chat-model", input+stream)},
+			"openai-responses-via-chat":        {charPost("Responses translated to a Chat-only model", responses, "fixture/chat-model", input).compatible()},
+			"openai-responses-via-chat-stream": {charPost("Responses stream translated to a Chat-only model", responses, "fixture/chat-model", input+stream).compatible()},
 			"failover-before-output-stream":    {charPost("First member fails before output; the second member serves", chat, "fixture-failover", hello+stream).failing("before")},
 			"failover-after-output-stream":     {charPost("First member fails after output; no failover", chat, "fixture-failover", hello+stream).failing("after")},
 			"models":                           {{title: "Model list", method: http.MethodGet, path: "/v1/models"}},
@@ -88,12 +88,12 @@ func TestHTTPCharacterization(t *testing.T) {
 				charPost("Chat Completions stream, Bedrock", chat, "bedrock/chat-fixture", hello64+stream),
 				charPost("Responses, native Bedrock", responses, "bedrock/responses-fixture", input),
 				charPost("Responses stream, native Bedrock", responses, "bedrock/responses-fixture", input+stream),
-				charPost("Responses translated to a Chat-only model, Bedrock", responses, "bedrock/chat-fixture", input),
+				charPost("Responses translated to a Chat-only model, Bedrock", responses, "bedrock/chat-fixture", input).compatible(),
 				charPost("Refused upstream, Bedrock", chat, "bedrock/throttled-fixture", hello64),
 			},
 			"openai-compatible-edges": {
-				charPost("Chat Completions to a reasoning model, forced adaptation", chat, "adapt/reasoning-fixture", hello64),
-				charPost("Chat Completions stream to a reasoning model, forced adaptation", chat, "adapt/reasoning-fixture", hello64+stream),
+				charPost("Chat Completions to a reasoning model, forced adaptation", chat, "adapt/reasoning-fixture", hello64).compatible(),
+				charPost("Chat Completions stream to a reasoning model, forced adaptation", chat, "adapt/reasoning-fixture", hello64+stream).compatible(),
 				charPost("Chat Completions, keyless Pollinations", chat, "pollinations/openai-fast", hello64),
 				charPost("Stream refused upstream, keyless Pollinations", chat, "pollinations/throttled-fixture", hello64+stream),
 			},
@@ -105,15 +105,15 @@ func TestHTTPCharacterization(t *testing.T) {
 		},
 		goldens: map[string][]charCase{
 			"google-chat": {
-				charPost("Chat Completions, AI Studio", chat, "studio/gemini-fixture", briefly),
-				charPost("Chat Completions stream, AI Studio", chat, "studio/gemini-fixture", briefly+stream),
-				charPost("Chat Completions, Vertex AI", chat, "vertex/gemini-fixture", briefly),
-				charPost("Messages translated to Chat, AI Studio", messages, "studio/gemini-fixture", `"system":"Answer briefly.",`+hello64),
-				charPost("Responses translated to Chat, Vertex AI", responses, "vertex/gemini-fixture", input),
-				charPost("Billing exhausted, Vertex AI", chat, "vertex/gemini-billing-fixture", briefly),
-				charPost("Model not available, Vertex AI", chat, "vertex/missing-model-fixture", briefly),
-				charPost("Credential rejected, AI Studio", chat, "studio/gemini-denied-fixture", briefly),
-				charPost("Budget spent on reasoning, AI Studio", chat, "studio/gemini-thinking-fixture", briefly),
+				charPost("Chat Completions, AI Studio", chat, "studio/gemini-fixture", briefly).compatible(),
+				charPost("Chat Completions stream, AI Studio", chat, "studio/gemini-fixture", briefly+stream).compatible(),
+				charPost("Chat Completions, Vertex AI", chat, "vertex/gemini-fixture", briefly).compatible(),
+				charPost("Messages translated to Chat, AI Studio", messages, "studio/gemini-fixture", `"system":"Answer briefly.",`+hello64).compatible(),
+				charPost("Responses translated to Chat, Vertex AI", responses, "vertex/gemini-fixture", input).compatible(),
+				charPost("Billing exhausted, Vertex AI", chat, "vertex/gemini-billing-fixture", briefly).compatible(),
+				charPost("Model not available, Vertex AI", chat, "vertex/missing-model-fixture", briefly).compatible(),
+				charPost("Credential rejected, AI Studio", chat, "studio/gemini-denied-fixture", briefly).compatible(),
+				charPost("Budget spent on reasoning, AI Studio", chat, "studio/gemini-thinking-fixture", briefly).compatible(),
 			},
 			"google-embeddings": {
 				charPost("Embeddings, AI Studio", "/v1/embeddings", "studio/gemini-embedding-fixture", input),
@@ -182,6 +182,7 @@ func setupCharacterization(t *testing.T) *httptest.Server {
 // first upstream request the case causes a failure of that kind.
 type charCase struct {
 	title, method, path, body, fail string
+	allowCompatibility              bool
 }
 
 func charPost(title, path, model, fields string) charCase {
@@ -190,6 +191,11 @@ func charPost(title, path, model, fields string) charCase {
 
 func (c charCase) failing(kind string) charCase {
 	c.fail = kind
+	return c
+}
+
+func (c charCase) compatible() charCase {
+	c.allowCompatibility = true
 	return c
 }
 
@@ -214,6 +220,9 @@ func (f *charFixture) replay(t *testing.T, gateway *httptest.Server, c charCase)
 	}
 	request.Header.Set("Authorization", "Bearer fixture-gateway-token")
 	request.Header.Set("Content-Type", "application/json")
+	if c.allowCompatibility {
+		request.Header.Set(compatibilityHeader, "allow")
+	}
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		t.Fatal(err)

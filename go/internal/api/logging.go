@@ -120,7 +120,7 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		start := time.Now()
-		includeBodies := requestBodyLoggingEnabled()
+		includeBodies := requestBodyLoggingEnabled() && !isRealtimeSignalingPath(r.URL.Path)
 		var captured *capturingReadCloser
 		if r.Body != nil {
 			captured = &capturingReadCloser{rc: r.Body, captureBody: includeBodies}
@@ -172,6 +172,11 @@ func writeRequestLog(
 	includeBodies bool,
 	adapted string,
 ) {
+	// SDP carries live ICE credentials, including in otherwise successful
+	// answers. Its bytes must stay out of even explicitly enabled body logs.
+	if isRealtimeSignalingPath(r.URL.Path) {
+		includeBodies = false
+	}
 	model := ""
 	var m map[string]any
 	// Model-level telemetry already lives in the usage ledger. In metadata-only

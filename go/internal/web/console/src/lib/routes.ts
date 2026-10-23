@@ -1,6 +1,46 @@
 import type { JSONRecord } from "./api";
 import { keyLabel, keysPath } from "./directory";
-import { asList, asRecord, numberValue } from "./records";
+import { asList, asRecord, numberValue, stringValue } from "./records";
+
+export type RouteContract = { ingress: string[]; allow_adaptation: boolean };
+export type RouteMember = { route: string; provider?: never; model?: never; allow_unverified?: never }
+  | { provider: string; model: string; route?: never; allow_unverified?: boolean };
+
+export function routeMembers(value: unknown): RouteMember[] {
+  return asList(asRecord(value).failover).map(asRecord).map((member) => stringValue(member.route)
+    ? { route: stringValue(member.route) }
+    : { provider: stringValue(member.provider), model: stringValue(member.model), ...(member.allow_unverified === true ? { allow_unverified: true } : {}) });
+}
+
+export function routeMemberLabel(member: RouteMember): string {
+  return member.route !== undefined ? `Route: ${member.route}` : `${member.provider}/${member.model}`;
+}
+
+export function routeMemberValue(member: RouteMember): string {
+  return member.route !== undefined ? `route::${member.route}` : `model::${member.provider}::${member.model}`;
+}
+
+export const routeIngressOptions = [
+  { path: "/v1/chat/completions", label: "Chat Completions" },
+  { path: "/v1/responses", label: "Responses" },
+  { path: "/v1/messages", label: "Messages" },
+  { path: "/v1/messages/count_tokens", label: "Token counting" },
+  { path: "/v1/embeddings", label: "Embeddings" },
+  { path: "/v1/audio/transcriptions", label: "Audio transcription" },
+  { path: "/v1/audio/speech", label: "Speech" },
+  { path: "/v1/realtime/calls", label: "Realtime WebRTC signaling" },
+  { path: "/v1/images/generations", label: "Image generation" },
+  { path: "/v1/videos/generations", label: "Video generation" },
+];
+
+export function routeContract(value: unknown): RouteContract {
+  const record = asRecord(value);
+  return { ingress: asList(record.ingress).map((path) => stringValue(path)).filter(Boolean), allow_adaptation: record.allow_adaptation === true };
+}
+
+export function routeIngressLabel(path: string): string {
+  return routeIngressOptions.find((option) => option.path === path)?.label ?? path;
+}
 
 export type RouteSavePlan =
   | { kind: "refused"; message: string }
@@ -56,14 +96,19 @@ export function renameConfirmation(plan: { name: string; from: string }, granted
 // commitRouteSave writes a planned save. A rename creates the new route before
 // deleting the original, so a failure never leaves neither route in place; when
 // only the delete fails, the outcome names the route that is left to remove.
-export async function commitRouteSave(plan: Exclude<RouteSavePlan, { kind: "refused" }>, failover: JSONRecord[], principalQuery: string, send: RouteRequest): Promise<string> {
-  await send(`/endpoints${principalQuery}`, "POST", { name: plan.name, failover });
-  if (plan.kind !== "rename") return "Route saved in the selected failover order.";
+export async function commitRouteSave(plan: Exclude<RouteSavePlan, { kind: "refused" }>, failover: JSONRecord[], principalQuery: string, send: RouteRequest, contract?: RouteContract): Promise<string> {
+  const result = asRecord(await send(`/endpoints${principalQuery}`, "POST", {
+    name: plan.name, failover,
+    ...(contract ? { ingress: [...contract.ingress], allow_adaptation: contract.allow_adaptation } : {}),
+  }));
+  const warnings = asList(result.warnings).map((warning) => stringValue(warning)).filter(Boolean);
+  const advice = warnings.length ? ` Warnings: ${warnings.join(" ")}` : "";
+  if (plan.kind !== "rename") return `Route saved in the selected failover order.${advice}`;
   try {
     await send(`/endpoints/${encodeURIComponent(plan.from)}`, "DELETE");
   } catch (cause) {
     const detail = (cause instanceof Error ? cause.message : "the request failed").replace(/[.\s]+$/, "");
     return `Route ${plan.name} was created, but ${plan.from} could not be deleted: ${detail}. Delete ${plan.from} from the route list to finish the rename.`;
   }
-  return `Route ${plan.from} was renamed to ${plan.name}.`;
+  return `Route ${plan.from} was renamed to ${plan.name}.${advice}`;
 }

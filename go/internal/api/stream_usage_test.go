@@ -27,18 +27,19 @@ func TestStreamUsageIsReportedOrEstimated(t *testing.T) {
 	for _, tc := range []struct {
 		name, path, provider string
 		estimatedInput       int
+		compatibility        string
 	}{
-		{"Chat", "/v1/chat/completions", "chat", 10},
-		{"Messages", "/v1/messages", "chat", 10},
-		{"Chat from Anthropic", "/v1/chat/completions", "claude", 10},
-		{"Messages from Anthropic", "/v1/messages", "claude", 10},
-		{"native Responses", "/v1/responses", "native", 3},
-		{"Responses from Chat", "/v1/responses", "chat", 3},
+		{"Chat", "/v1/chat/completions", "chat", 10, ""},
+		{"Messages", "/v1/messages", "chat", 10, "allow"},
+		{"Chat from Anthropic", "/v1/chat/completions", "claude", 10, "allow"},
+		{"Messages from Anthropic", "/v1/messages", "claude", 10, ""},
+		{"native Responses", "/v1/responses", "native", 3, ""},
+		{"Responses from Chat", "/v1/responses", "chat", 3, "allow"},
 	} {
 		for _, model := range []string{"complete", "unmetered"} {
 			t.Run(tc.name+" "+model, func(t *testing.T) {
 				gateway := setupStreamOutcomeTest(t, upstream.URL)
-				streamThroughGateway(t, gateway, tc.path, streamRequestBody(tc.path, tc.provider+"/"+model))
+				streamThroughGateway(t, gateway, tc.path, streamRequestBody(tc.path, tc.provider+"/"+model), tc.compatibility)
 				row := readStreamUsageRow(t)
 				wantInput, wantOutput := 11, 7
 				if model == "unmetered" {
@@ -46,6 +47,21 @@ func TestStreamUsageIsReportedOrEstimated(t *testing.T) {
 				}
 				if row.status != http.StatusOK || row.input != wantInput || row.output != wantOutput || row.credits != 1000 {
 					t.Fatalf("usage=%+v, want %d/%d tokens", row, wantInput, wantOutput)
+				}
+				events, _, err := iam.ListUsageEvents(iam.UsageEventFilter{})
+				if err != nil || len(events) != 1 || events[0].SourceUsage == nil {
+					t.Fatalf("source evidence missing: events=%+v error=%v", events, err)
+				}
+				evidence := events[0].SourceUsage
+				selected := evidence.Attempts[evidence.SelectedAttempt]
+				if selected.Provider != tc.provider || selected.Model != model || selected.Quality != "complete" {
+					t.Fatalf("source scope/lifecycle changed: %+v", selected)
+				}
+				if model == "unmetered" && (evidence.InputBasis != "estimated" || evidence.OutputBasis != "estimated") {
+					t.Fatalf("absent usage was labeled measured: %+v", evidence)
+				}
+				if tc.provider == "claude" && model == "complete" && (!evidence.InputIncomplete || selected.Counts["input_tokens"].Presence != "absent" || selected.Counts["base_input_tokens"].Value != 11) {
+					t.Fatalf("incomplete inclusive input was invented: %+v", evidence)
 				}
 			})
 		}

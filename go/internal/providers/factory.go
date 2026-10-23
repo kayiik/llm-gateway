@@ -27,9 +27,8 @@ type providerCache struct {
 // (echo is an internal test stub, intentionally not listed.) It is constant
 // after init: nothing writes it.
 var ProviderTypes = []string{
-	"openai_compatible", "anthropic", "bedrock", "github_copilot", "ollama", "litellm", "edge_tts",
-	"ai_studio", "vertex_ai", "azure_openai", "google_antigravity", "elevenlabs", "mimo",
-	"opencode_zen_anonymous", "anthropic_setup_token",
+	"openai_compatible", "anthropic", "bedrock", "ollama", "litellm",
+	"ai_studio", "vertex_ai", "azure_openai", "elevenlabs", "mimo",
 }
 
 // instantiate builds the facade of providerID, configured as cfg, for
@@ -46,19 +45,13 @@ func (rt *Runtime) instantiate(
 	if cfg.Timeout != nil {
 		timeout = *cfg.Timeout
 	}
-	extensionType := ptype
-	// Codex intentionally retains the OpenAI-compatible public runtime type in
-	// the provider registry. Its registry identity, not that compatibility type,
-	// selects the private extension transport and OAuth credential store.
-	if strings.EqualFold(strings.TrimSpace(cfg.RegistryID), ExtensionTypeCodex) {
-		extensionType = ExtensionTypeCodex
-	}
-	if ptype == retiredExtensionType {
+	extensionType := CompanionDaemonType(cfg)
+	if ptype == retiredExtensionType && strings.TrimSpace(cfg.Extension) == "" {
 		return nil, retiredExtensionTypeError(providerID)
 	}
 	// The facade resolves the extension that serves it on each request, so
 	// one built before its extension was configured serves once it is.
-	if isExtensionType(extensionType) {
+	if extensionType != "" {
 		return rt.newExtensionFacade(providerID, extensionType, caller, extensionTimeout(settings, extensionType, cfg)), nil
 	}
 	switch ptype {
@@ -216,8 +209,12 @@ func AsSpeechSynthesizer(provider Provider) (SpeechSynthesizer, bool) {
 			}
 			return resilient, true
 		}
-		if extension, ok := provider.(*ExtensionProviderFacade); ok && extension.providerID != ExtensionTypeEdgeTTS {
-			return nil, false
+		if extension, ok := provider.(*ExtensionProviderFacade); ok {
+			// Explicit bindings use the full native core surface, not the
+			// legacy voice/text/rate facade with its MP3-only contract.
+			if extension.credentialVertical() == extensionCoreType || !extension.serves(core.ModelSurfaceAudioSpeech) {
+				return nil, false
+			}
 		}
 		if synthesizer, ok := provider.(SpeechSynthesizer); ok {
 			return synthesizer, true
@@ -308,6 +305,20 @@ func resolveCredentialObserved(
 		return secret, strings.TrimSpace(connection.Kind), nil, nil
 	}
 	return config.ResolveProviderAPIKey(providerID, cfg), CredentialKindAPIKey, nil, nil
+}
+
+// ProviderCredentialIsAnonymous uses the same connection precedence as provider
+// construction without exposing the resolved secret to verification callers.
+func ProviderCredentialIsAnonymous(settings *config.Settings, providerID string, caller core.Caller) (bool, error) {
+	cfg, ok := settings.Providers[providerID]
+	if !ok {
+		return false, &ConfigError{Msg: "provider is not configured"}
+	}
+	secret, kind, _, err := resolveCredentialObserved(settings, providerID, cfg, caller)
+	if err != nil {
+		return false, err
+	}
+	return strings.EqualFold(strings.TrimSpace(kind), CredentialKindAPIKey) && AnonymousAPIKey(secret), nil
 }
 
 // newVertexProvider builds the gateway's Vertex transport, which serves the
@@ -424,7 +435,7 @@ func ProviderCredentialAuthorized(
 		return true, nil
 	}
 	privateCatalog := CatalogRequiresPrincipal(providerID)
-	if !strings.EqualFold(cfg.Type, "github_copilot") && !privateCatalog {
+	if !privateCatalog && (cfg.Extension != "" || !strings.EqualFold(cfg.Type, "github_copilot")) {
 		return true, nil
 	}
 	if callerPrincipalID(caller) == "" {

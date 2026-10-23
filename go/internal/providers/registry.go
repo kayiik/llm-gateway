@@ -3,6 +3,8 @@ package providers
 import (
 	"strings"
 
+	"llmgw/internal/config"
+
 	coreproviders "github.com/kayiik/llmgw-core/providers"
 )
 
@@ -22,8 +24,18 @@ const (
 // llmgw-core; see registry_overlay.go.
 type RegistryEntry = coreproviders.RegistryEntry
 
-// ProviderRegistry returns copies so callers cannot mutate registry metadata.
-func ProviderRegistry() []RegistryEntry { return providerRegistry.Entries() }
+// ProviderRegistry is the public built-in catalog. Legacy extension identities
+// remain lookupable for stored configurations, but are not discovery offers.
+func ProviderRegistry() []RegistryEntry {
+	entries := providerRegistry.Entries()
+	visible := entries[:0]
+	for _, entry := range entries {
+		if CompanionDaemonType(&config.ProviderConfig{Type: entry.RuntimeType, RegistryID: entry.ID}) == "" {
+			visible = append(visible, entry)
+		}
+	}
+	return visible
+}
 
 // EffectiveRegistry returns the effective registry itself, for the llmgw-core
 // APIs that vet against one. A Registry is immutable, so sharing it is safe.

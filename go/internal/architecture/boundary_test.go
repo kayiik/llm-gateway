@@ -66,6 +66,11 @@ var productAdapters = []adapterUnit{
 		// (anonymous_publication.go); checks and quota snapshots in IAM's
 		// shapes (provider_contract_adapter.go, quota_adapter.go); and a
 		// caller's IAM principal (caller.go).
+		// The optional connection-bound allowance adapter adds four IAM
+		// references for its revision fence, freshness and snapshot shape.
+		// Per-attempt target limits add three for admission, settlement and
+		// distinguishing a local capacity refusal from a storage failure.
+		// Both are gateway product-store seams, not core library dependencies.
 		//
 		// config.Get(): one snapshot per facade build, read after the
 		// instance cache's epoch, and the disabled check ahead of that cache
@@ -78,7 +83,7 @@ var productAdapters = []adapterUnit{
 		// refresh (auth_adapter.go, antigravity_credentials.go).
 		path:    "internal/providers",
 		allowed: []string{"llmgw/internal/config", "llmgw/internal/iam"},
-		budget:  map[string]int{metricIAM: 27, metricConfigGet: 7, metricConfigPrincipal: 0},
+		budget:  map[string]int{metricIAM: 34, metricConfigGet: 7, metricConfigPrincipal: 0},
 	},
 	{
 		// The gateway's routing policy over llmgw-core's execution
@@ -88,6 +93,8 @@ var productAdapters = []adapterUnit{
 		// iam.*: project policy and model evidence in route and alias
 		// resolution (failover.go), and the IAM usage event each request
 		// records (savings.go).
+		// Unverified publication eligibility also compares the persisted
+		// evidence state; unknown is not a substitute for that explicit state.
 		//
 		// config.Get(): one snapshot per resolution, per alias table and per
 		// ledger operation, and the per-target provider lookups of
@@ -95,7 +102,7 @@ var productAdapters = []adapterUnit{
 		// (failover.go, savings.go).
 		path:    "internal/router",
 		allowed: []string{"database/sql", "llmgw/internal/config", "llmgw/internal/iam", "modernc.org/sqlite"},
-		budget:  map[string]int{metricIAM: 6, metricConfigGet: 10, metricConfigPrincipal: 0},
+		budget:  map[string]int{metricIAM: 7, metricConfigGet: 10, metricConfigPrincipal: 0},
 	},
 	{
 		// Transparent-mode planning, composed from llmgw-core's transport

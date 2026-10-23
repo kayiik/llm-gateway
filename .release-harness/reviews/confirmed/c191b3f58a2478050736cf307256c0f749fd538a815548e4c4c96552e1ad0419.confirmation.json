@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "review_digest": "c191b3f58a2478050736cf307256c0f749fd538a815548e4c4c96552e1ad0419",
+  "events": [
+    {
+      "by": "gateway-release-coordinator (owner-delegated)",
+      "at": "2026-10-23T04:14:52.548Z",
+      "note": "The Gateway release coordinator reviewed this exact source and confirms reuse under the existing owner-delegated release and routine engineering authority. This records the coordinator's own confirmation; it does not claim the owner personally inspected this review or source. Normal required CI and publication/privacy checks remain independent prerequisites."
+    }
+  ]
+}

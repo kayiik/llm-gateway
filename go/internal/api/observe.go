@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"log/slog"
@@ -249,6 +250,16 @@ func (s *statusRecorder) FlushError() error {
 }
 
 func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
+func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, rw, err := http.NewResponseController(s.ResponseWriter).Hijack()
+	if err == nil {
+		// ReverseProxy writes the upgrade on the hijacked socket, bypassing
+		// WriteHeader. Do not report a successful tunnel as an HTTP 200.
+		s.status = http.StatusSwitchingProtocols
+	}
+	return conn, rw, err
+}
 
 // statusCode is the status the response was sent with; a handler that wrote
 // nothing sent 200.

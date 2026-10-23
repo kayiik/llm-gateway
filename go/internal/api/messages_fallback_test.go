@@ -52,6 +52,7 @@ func TestMessagesStreamReadsTheFailoverBudget(t *testing.T) {
 				"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 			}
 			header := http.Header{}
+			header.Set(compatibilityHeader, "allow")
 			apply(body, header)
 			started := time.Now()
 			response := messagesRequest(handler, body, header)

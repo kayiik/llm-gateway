@@ -98,13 +98,30 @@ type UsageRecord struct {
 	ErrorCode      string
 	CreditsMilli   int64
 	IsStub         bool
+	SourceUsage    *iam.UsageEvidence
 }
 
 // RecordUsage appends one usage row. Best-effort.
 func (rt *Runtime) RecordUsage(r UsageRecord) {
+	if r.InputTokens < 0 || r.OutputTokens < 0 || r.CreditsMilli < 0 || r.LatencyMS < 0 ||
+		int64(r.InputTokens) > math.MaxInt64-int64(r.OutputTokens) {
+		log.Print("record usage: invalid metering values")
+		return
+	}
 	s := config.Get()
 	overrides := s.Savings.PriceCatalog
-	cost := computeCost(r.RoutedModel, r.InputTokens, r.OutputTokens, overrides)
+	invalidSource := r.SourceUsage != nil && r.SourceUsage.Invalid
+	if invalidSource {
+		r.InputTokens, r.OutputTokens, r.CreditsMilli = 0, 0, 0
+	}
+	cost, microUSD, valid := 0.0, int64(0), true
+	if !invalidSource {
+		cost, microUSD, valid = meteredCost(r.RoutedModel, r.InputTokens, r.OutputTokens, overrides)
+	}
+	if !valid {
+		log.Print("record usage: invalid or unrepresentable price")
+		return
+	}
 	status := r.StatusCode
 	if status == 0 {
 		status = 200
@@ -114,7 +131,7 @@ func (rt *Runtime) RecordUsage(r UsageRecord) {
 	// stream that failed or lost its client midway did. One that consumed
 	// none and failed never reached a model, and costs nothing.
 	consumed := r.InputTokens > 0 || r.OutputTokens > 0
-	if credits == 0 && !r.IsStub && (status < 400 || consumed) {
+	if credits == 0 && !invalidSource && !r.IsStub && (status < 400 || consumed) {
 		credits = 1000 // one neutral model-credit; weighted policies can override later
 	}
 	if err := iam.RecordUsageEvent(iam.UsageEvent{
@@ -122,17 +139,19 @@ func (rt *Runtime) RecordUsage(r UsageRecord) {
 		RequestedModel: r.RequestedModel, RoutedModel: r.RoutedModel,
 		Provider: r.Provider, ProjectID: r.ProjectID, PrincipalID: r.PrincipalID,
 		KeyID: r.KeyID, InputTokens: r.InputTokens, OutputTokens: r.OutputTokens,
-		CostMicroUSD: int64(math.Round(cost * 1_000_000)), CreditsMilli: credits,
-		ErrorCode: r.ErrorCode, IsStub: r.IsStub,
+		CostMicroUSD: microUSD, CreditsMilli: credits,
+		ErrorCode: r.ErrorCode, IsStub: r.IsStub, SourceUsage: r.SourceUsage,
 	}); err != nil {
 		log.Printf("record IAM usage: %v", err)
 	}
-	if !s.Savings.Enabled {
+	if invalidSource || !s.Savings.Enabled {
 		return
 	}
 	var baseline any
 	if bm := s.Savings.BaselineModel; bm != "" {
-		baseline = computeCost(bm, r.InputTokens, r.OutputTokens, overrides)
+		if value, _, valid := meteredCost(bm, r.InputTokens, r.OutputTokens, overrides); valid {
+			baseline = value
+		}
 	}
 	stub := 0
 	if r.IsStub {
@@ -149,6 +168,20 @@ func (rt *Runtime) RecordUsage(r UsageRecord) {
 		time.Now().Unix(), r.Endpoint, r.RequestedModel, r.RoutedModel, r.Provider, nullStr(r.Project),
 		nullStr(r.Key), r.InputTokens, r.OutputTokens, cost, baseline, stub,
 	)
+}
+
+func meteredCost(model string, input, output int, overrides map[string]map[string]float64) (float64, int64, bool) {
+	in, out, _ := lookupPrice(model, overrides)
+	if in < 0 || out < 0 || math.IsNaN(in) || math.IsNaN(out) || math.IsInf(in, 0) || math.IsInf(out, 0) {
+		return 0, 0, false
+	}
+	cost := computeCost(model, input, output, overrides)
+	amount := math.Round(cost * 1_000_000)
+	// MaxInt64 rounds to 2^63 as a float, which cannot be converted safely.
+	if math.IsNaN(amount) || math.IsInf(amount, 0) || amount < 0 || amount >= math.Ldexp(1, 63) {
+		return 0, 0, false
+	}
+	return cost, int64(amount), true
 }
 
 func nullStr(s string) any {

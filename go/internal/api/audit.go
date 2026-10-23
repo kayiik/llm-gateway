@@ -98,20 +98,25 @@ func providerConfigChanges(before, after *config.ProviderConfig) []string {
 
 // auditEndpointSaved records an endpoint an administrator created or
 // replaced, with the failover members it now routes to.
-func auditEndpointSaved(r *http.Request, name string, existed bool, members []config.EndpointMember) {
+func auditEndpointSaved(r *http.Request, name string, existed bool, contract config.EndpointConfig) {
 	action := "endpoint.update"
 	if !existed {
 		action = "endpoint.create"
 	}
-	recorded := make([]map[string]any, 0, len(members))
-	for _, member := range members {
+	recorded := make([]map[string]any, 0, len(contract.Failover))
+	for _, member := range contract.Failover {
 		entry := map[string]any{"provider": member.Provider, "model": member.Model}
+		if member.Route != "" {
+			entry = map[string]any{"route": member.Route}
+		}
 		if member.AllowUnverified {
 			entry["allow_unverified"] = true
 		}
 		recorded = append(recorded, entry)
 	}
-	auditAdmin(r, action, "endpoint", name, map[string]any{"members": recorded})
+	auditAdmin(r, action, "endpoint", name, map[string]any{
+		"members": recorded, "ingress": append([]string{}, contract.Ingress...), "allow_adaptation": contract.AllowAdaptation,
+	})
 }
 
 // auditCodexClientID records an administrator's sign-in start that changed

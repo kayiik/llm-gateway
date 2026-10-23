@@ -34,6 +34,8 @@ from a non-loopback `Origin` are refused with `403`; see
 | `POST` | `/v1/embeddings` | Single-target OpenAI-shaped embedding proxy. |
 | `POST` | `/v1/audio/transcriptions` | Multipart single-target speech-to-text proxy. |
 | `POST` | `/v1/audio/speech` | Single-target speech synthesis, including native Edge TTS. |
+| `POST` | `/v1/realtime/calls` | Native multipart WebRTC SDP/session signaling. |
+| `GET` | `/v1/realtime?model=…` | Native WebSocket relay or explicitly permitted bounded Gemini Live adaptation. |
 | `POST` | `/v1/images/generations` | Image generation from a capable provider; returns inline `b64_json`. |
 | `POST` | `/v1/videos/generations` | Starts a video operation or polls one when `operation` is supplied. |
 
@@ -51,6 +53,8 @@ The same handlers accept:
 /embeddings
 /audio/transcriptions
 /audio/speech
+/realtime/calls
+/realtime
 /images/generations
 /videos/generations
 ```
@@ -69,6 +73,32 @@ credential and policy. It is not a global list of every model a provider sells.
 
 ## Chat Completions
 
+### Native and compatible execution
+
+Direct `provider/model` requests and bare aliases default to the deployment's
+actual native API. An OpenAI-shaped adapter in front of Google `generateContent`
+or Ollama `/api/chat` is an adaptation, even when ordinary text converts without
+loss. A deployment implementing Chat Completions itself is native regardless of
+its provider brand. Unknown underlying APIs are not assumed to be native.
+
+`X-LLMGW-Compatibility: allow` explicitly permits an assessed conversion for a
+direct request; `deny` requires native execution. Named routes instead use their
+configured `ingress` and `allow_adaptation` contract. Request `allow` cannot
+broaden that contract, while `deny` can tighten it. Repeated, empty, combined or
+invalid policy values fail before inference. These rules also apply to the
+built-in playground.
+
+`X-LLMGW-Transport-Mode: transparent` is a separate, stronger requirement for an
+exact, catalog-confirmed target and wire-preserving transport. It cannot be
+combined with compatibility `allow`; transparent streaming remains unsupported.
+Actual-native execution does not itself promise byte-for-byte wire preservation.
+
+Preparation checks the concrete payload before consuming an inference request
+slot. Execution uses that selected API and mapping, bound to the caller,
+credential scope and configuration generation. A changed binding requires a new
+request. It does not silently switch APIs or strip rejected controls. Once a
+stream opens, a failure cannot replay it against another target.
+
 The core profile supports non-streaming and SSE streaming, ordinary chat
 messages, function tools, tool calls, usage normalization, vision filtering, and
 request cancellation. A streaming request's `stream_options` reaches the
@@ -78,9 +108,10 @@ starts. Chat Completions, Responses, and Messages accept request-level controls
 for the failover deadline and member order; see
 [failover budget and affinity](ROUTING.md#failover-budget-and-affinity).
 
-Opt-in Chat-to-Responses adaptation uses `force_api_support` and catalog
-`supported_surfaces`. Adapted non-streaming responses include
-`X-LLMGW-Adapted`. Do not assume every streaming path includes that header.
+`force_api_support` is a legacy endpoint-rewrite control, not compatibility
+authorization. It cannot override native-only policy. `X-LLMGW-Transport-Mode`
+describes the selected native or translated execution; a model listing or an
+empty conversion-loss report does not prove native support.
 
 ### Request fields
 
@@ -95,13 +126,9 @@ wire carries:
 | --- | --- |
 | OpenAI-compatible, OpenAI, LiteLLM | Every field. |
 | Bedrock | `temperature`, `top_p`, `max_tokens`, `max_completion_tokens`, `stop`, `tools`, `tool_choice`, `reasoning_effort`, `metadata`, `parallel_tool_calls`, `thinking`. |
-| Anonymous OpenCode Zen | The same. |
-| GitHub Copilot | The same, and `response_format`, which reaches a model Copilot serves over Responses as its `text.format`. |
-| OpenAI Codex | The Bedrock fields but `thinking`, and `response_format`, which reaches Codex as the Responses `text.format`. |
-| Google Antigravity | The Bedrock fields but `parallel_tool_calls`, `thinking` and `tool_choice`, and `response_format`, which reaches Antigravity as Gemini's structured output. |
-| Anthropic setup token | The Bedrock fields but `parallel_tool_calls` and `thinking`. |
+| Explicitly extension-bound provider | Every native request field; the extension owns upstream mapping and losses. |
 | Azure OpenAI | Every request property of Azure's v1 Chat Completions, and `service_tier`: `audio`, `frequency_penalty`, `function_call`, `functions`, `logit_bias`, `logprobs`, `max_completion_tokens`, `max_tokens`, `metadata`, `modalities`, `n`, `parallel_tool_calls`, `prediction`, `presence_penalty`, `prompt_cache_key`, `prompt_cache_retention`, `reasoning_effort`, `response_format`, `safety_identifier`, `seed`, `service_tier`, `stop`, `store`, `temperature`, `tool_choice`, `tools`, `top_logprobs`, `top_p`, `user`, `user_security_context`, `verbosity`. |
-| Chat adapted to a Responses-only model (`force_api_support`) | `temperature`, `top_p`, `max_tokens`, `max_completion_tokens`, `tools`, `tool_choice`, `metadata`, `reasoning_effort`, and `response_format` as the Responses `text.format`. |
+| Explicitly permitted Chat adaptation to a Responses-only model | `temperature`, `top_p`, `max_tokens`, `max_completion_tokens`, `tools`, `tool_choice`, `metadata`, `reasoning_effort`, and `response_format` as the Responses `text.format`, subject to assessment of their concrete values. |
 | Anthropic | `temperature`, `top_p`, `max_tokens`, `stop`, `tools`, `metadata`, `thinking`, `output_config`. |
 | Google AI Studio, Vertex AI | `temperature`, `max_tokens`, `tools`, `tool_choice`, and a `response_format` of type `json_object` or `json_schema`, which reaches Gemini as its structured output, the schema as written. |
 | Ollama | `temperature`, `top_p`, `max_tokens`, `tools`. |
@@ -113,18 +140,18 @@ request declares; tool calls come back with Gemini's thought signature at
 `extra_content.google.thought_signature`, which a client returns on its next
 turn.
 
-The companion daemon's providers send these fields from its matching release
-on. An older daemon drops or refuses `response_format`; the console's
-**Extensions** shelf marks it **Update needed**.
+Extension native surfaces and sign-in methods come from its discovery response,
+not a gateway vendor table or the extension implementation's release number.
 
 A request that sets a field whose loss would change the answer, and that its
 target does not send, fails with `400` naming the field before anything is sent;
 for example `response_format`, `n` above 1, `logprobs`, `stop`, or `tools` on a
-target that cannot carry them. Advisory fields are dropped for such targets, as
-earlier releases dropped them, and do not refuse the request: `user`,
-`metadata`, `store`, `service_tier`, `prompt_cache_key`, `safety_identifier`,
-`seed`, `top_p`, `presence_penalty`, `frequency_penalty`, and
-`reasoning_effort`. A value that asks for nothing does not count either:
+target that cannot carry them. Compatibility permission does not authorize loss
+of schema constraints, billing/cache controls, or opaque continuation state.
+Unassessed required semantics also refuse an adapting target. Native unknown
+fields may pass through for upstream validation; that is not a guarantee of
+model support. Display-only reasoning omissions may remain advisory. A value
+that asks for nothing does not count either:
 `null`, `false`, an empty value, `n: 1`, a zero `top_logprobs`, a
 `response_format` of type `text`, text-only `modalities`, `tool_choice: "auto"`,
 and `parallel_tool_calls: true`. In an endpoint, a member that cannot send a
@@ -135,7 +162,9 @@ refused.
 ## Responses
 
 Native Responses targets preserve the Responses envelope and streaming events.
-Compatible stateless requests can fall back through a strict Chat translation.
+Explicitly compatible stateless requests can select a strict Chat translation
+during preparation. An unavailable selected Responses endpoint is an upstream
+failure, not permission to discover and retry a different API after dispatch.
 The fallback sends a `text.format` as `response_format` to a target that sends
 that Chat field, as listed above, and the answer carries the format back; a
 `text.format` of type `text` asks for nothing and is served everywhere. A
@@ -156,15 +185,89 @@ Native Anthropic targets receive non-streaming Messages payloads directly after
 resolved-model and gateway-preamble changes. Adapted targets reject unsupported
 or lossy fields before dispatch.
 
-A stream whose every target is a native Anthropic target is sent the same way,
+A stream served by a native Anthropic member is sent the same way,
 with `stream: true`, and each record the target sends reaches the client
 unchanged, `ping` and thinking deltas included. Its usage is read from those
 records: input and cache tokens from `message_start`, output tokens from
-`message_delta`. A stream with any adapted target, such as an endpoint that
-mixes native and adapted members, is translated and uses a narrower
+`message_delta`. Other members do not force this native member through a
+conversion. A stream served by an explicitly permitted adapted member uses a narrower
 compatibility profile: adaptive/enabled thinking, `redacted_thinking`, cache
 controls, structured output, documents, unsupported images, error tool results,
 and unknown fields fail closed when they cannot be preserved.
+
+## Media inputs
+
+Native Chat Completions, Responses and Messages retain their API's ordered
+content arrays, file references and media controls, including through native
+companion-daemon transport. A native input is passed to the selected provider
+for model-specific validation; the gateway does not decode videos or transcode
+audio to forward a request.
+
+OpenAI-compatible targets and the Bedrock compatible endpoint share this
+native content-part transport. Accepted modalities are still specific to the
+model and API. The Bedrock integration uses its compatible Chat/Responses
+surfaces; native AWS Converse/InvokeModel and bidirectional speech APIs are
+separate interfaces and are not implemented by that adapter.
+
+Explicitly permitted adaptations support these carriers:
+
+- Chat `file` parts and Responses `input_file` parts map `filename`,
+  `file_data` and `file_id` between the nested and flat envelopes. Exactly one
+  data/ID carrier is required. Responses `file_url` stays native-only because
+  Chat has no equivalent URL field.
+- Messages user images with base64 or URL sources map to Chat image parts.
+  A base64 `application/pdf` document maps to a Chat file. Document titles,
+  citations, context and cache controls still require a native Messages target
+  when that adapting path cannot retain them.
+- Google AI Studio and Vertex Gemini preserve ordered user text/media parts.
+  Inline images and typed file data become `inlineData`; remote media URIs
+  become `fileData` without a gateway-side fetch. PDF, audio and video use the
+  same documented MIME/data carriers. Chat `input_audio` requires explicit
+  `wav` or `mp3` format. A bare file's MIME type can be derived from a recognized
+  filename; a data URL carries its own type. Opaque provider file IDs are not
+  interpreted as Google file URIs.
+- Ollama receives inline base64 user images in its native `images` list, in
+  image order, alongside the message text. Remote images and non-default image
+  detail require a different/native target rather than a hidden download or
+  silently dropped control.
+
+Unsupported carriers and unmapped nested controls fail during preparation.
+These mappings retain the existing native-first policy; they do not enable
+adaptation implicitly or change a model's declared input capabilities.
+
+## Source usage evidence
+
+Recorded request listings include optional `source_usage` evidence for prepared
+operations and explicitly scoped signaling requests. Older rows and providers
+without an observation interface omit it.
+Its versioned object contains accounting bases, incomplete/invalid flags, a
+bounded attempt history and the `selected_attempt` index used by the legacy
+aggregate counters. Attempts retain the actual upstream API, provider/model,
+source completion quality and cancellation state. If a later target fails before
+making a native attempt, earlier history remains available with
+`selection_unavailable: true` and `selected_attempt: -1`; it is not relabeled as
+that later target's measured usage. Counts preserve presence,
+provenance and source paths for totals, cache/reasoning, audio/prediction details
+and reported web-tool requests. Detail counters are not added to their parent
+totals again.
+
+Reported zero is distinct from absence and overrides an estimate. Client
+`include_usage` controls target wire emission, not collection for accounting.
+When native Messages omits cache categories, inclusive input remains absent;
+the legacy input aggregate may use observed base/cache counts as an explicitly
+incomplete lower bound. Reported cumulative output on a failed or truncated
+source is likewise marked partial rather than presented as a final total.
+Estimates remain labeled when no native count was reported.
+
+Invalid provider counts/relationships are retained diagnostically without
+settling token, money or credit counters. Evidence contains recognized counts
+and fixed scalar usage fields; arbitrary provider payloads are excluded.
+History and raw truncation are explicit. Native retry/fallback observations stay
+separate rather than being summed as cumulative frames or priced as though they
+all belonged to the selected model. A response-conversion failure retains the
+original attempt's usage and source completion independently of delivery status.
+Final stream observations are recorded after closure, not fabricated in
+stream-open HTTP headers.
 
 ## Token counting
 
@@ -185,13 +288,168 @@ and usage accounting.
 
 Transcription accepts multipart form data with `file` and `model`. Speech accepts
 an OpenAI-shaped JSON body. OpenAI-compatible providers receive proxied requests;
-`edge_tts` synthesizes MP3 through its native provider implementation. The
+extensions can declare native audio surfaces through discovery. The
 `nvr-tts-*` voices of an OVHcloud AI Endpoints instance speak WAV at their own
 hosts: the model names the language, and `voice` is one of that language's
 voices, such as `English-US.Male-1`, or else its base voice speaks.
 
 Audio resolves one target. Transcription uploads count against the
 [request size limit](#request-size).
+
+Direct OpenAI-compatible audio proxies forward successful response bytes as
+they arrive, preserving the upstream content type. Speech can return binary
+audio (`stream_format: "audio"`, the upstream default) or audio events
+(`stream_format: "sse"`) where the selected endpoint/model supports them.
+Multipart transcription `stream=true` requests transcript SSE. The proxy also
+retains `chunking_strategy` and repeated `include[]`,
+`timestamp_granularities[]`, `known_speaker_names[]` and
+`known_speaker_references[]` fields. Query values retain their existing
+precedence over multipart fields.
+
+Buffered native provider adapters reject an explicitly requested SSE mode
+instead of ignoring it. Immediate upstream failures use the normal safe JSON
+error envelope. After audio bytes have been delivered, a transport failure
+aborts the HTTP response rather than appending JSON to audio or replaying the
+request. Client cancellation closes the upstream, and the request's recorded
+outcome is finalized when forwarding ends. These HTTP audio streams are
+distinct from the separate realtime WebRTC/WebSocket session APIs.
+
+## Realtime WebRTC signaling
+
+`POST /v1/realtime/calls` implements the
+[native call-creation contract](https://developers.openai.com/api/reference/resources/realtime/subresources/calls/methods/create).
+Supply multipart `sdp` and `session` fields once each. The session is a JSON
+object with `type: "realtime"` and a `model` naming an exact provider/model,
+alias or route. Other session fields, including audio settings, instructions,
+tools and provider extensions, retain their values; routing replaces only the
+model selector with the selected upstream model.
+
+```bash
+curl "$LLMGW_URL/v1/realtime/calls" \
+  -H "Authorization: Bearer $LLMGW_PROJECT_KEY" \
+  -F 'sdp=<offer.sdp;type=application/sdp' \
+  -F 'session={"type":"realtime","model":"voice","audio":{"output":{"voice":"marin"}}};type=application/json'
+```
+
+The selected registered OpenAI-compatible HTTP transport sends the request to
+its configured base URL's `/realtime/calls`. Current explicit model API
+declarations constrain selection; missing or expired evidence remains unknown
+for upstream validation. Native signaling uses no Chat/Responses conversion.
+Routes with an ingress list must include `/v1/realtime/calls`. One selected
+target receives one creation request, and an upstream failure is returned to
+the caller rather than replaying session creation.
+
+The successful upstream status and SDP bytes are returned with their SDP/plain
+text content type. A valid `Location` retains its call ID at a gateway-relative
+path. This handler covers creation; server-side call control, sideband events
+and the separate `/live/sessions` API are follow-up work. The independent
+WebSocket entrypoint is described below.
+Clients manage the peer connection and data channel using the provider's protocol.
+
+The gateway applies normal key/project routing and request admission at
+creation, recording a project-attributed signaling request. The response carries
+`X-LLMGW-Usage-Scope: signaling`. WebRTC media and data-channel usage events travel
+between client and provider, so the gateway does not observe their token counts
+or final session cost through this HTTP exchange. Recorded source evidence uses
+`unobserved_session` bases, incomplete flags and a signaling attempt with unknown
+completion quality and absent counters. Legacy zero aggregates are not measured
+zero-token sessions. Ongoing media token/cost enforcement requires a separate
+session-usage observation path.
+
+SDP contains ICE credentials. Signaling bodies are excluded from request/response
+body logs even when general body logging is enabled; metadata and byte counts remain.
+
+## Realtime WebSocket relay
+
+Connect an OpenAI-native WebSocket client to
+`ws://<gateway>/v1/realtime?model=<provider/model-or-route>` (use `wss` behind TLS).
+Authenticate with a gateway project key in `Authorization: Bearer …` or
+`x-api-key`; the gateway resolves the selected provider credential separately.
+Exactly one `model` query parameter is accepted. Query-string keys, browser
+subprotocol authentication, session-resumption endpoints and transcription-only
+handshakes without a model are not implemented.
+
+The gateway applies normal caller, provider, model, route and request-quota
+policy before opening one upstream connection. Explicit route ingress must
+include `/v1/realtime`; `/v1/realtime/calls` alone does not grant it. A compatible
+provider's configured HTTP(S) base URL supplies the upstream `/realtime` path,
+with the selected model in its query. Current explicit API declarations constrain
+selection; missing or expired evidence remains unknown for upstream validation.
+AI Studio/Gemini Live is a different native protocol. The bounded adaptation
+profile below is opt-in, not an implicit native fallback.
+
+After a validated upgrade, native text, binary, audio, tool and control frames
+pass without event conversion. Gateway credentials, cookies and routing headers
+are not forwarded; only provider credentials and the required handshake headers
+reach the upstream. The optional `OpenAI-Beta` header and negotiated WebSocket
+compression are retained. There is no redirect, reconnect, retry, target switch
+or replay after dispatch. A disconnect/cancellation closes the relay; each
+connection also has a fixed 30-minute maximum lifetime. Transparent transport
+mode is refused. Native transport remains preferred over adaptation.
+
+Request admission is counted once. The handshake carries
+`X-LLMGW-Usage-Scope: unobserved_session`; the ledger records the selected attempt
+and final relay duration but marks token/cost evidence incomplete with absent
+counters, rather than inventing a zero-token session. This opaque transport does
+not aggregate usage events or enforce a measured ongoing session token budget.
+Session frames are never captured by HTTP body logging. Failed handshakes retain
+upstream refusal status and safe `Retry-After`, with sanitized response bodies.
+
+### Bounded Gemini Live adaptation
+
+For an exact AI Studio target, explicitly request `X-LLMGW-Compatibility: allow`.
+For a route, its contract must declare `/v1/realtime` ingress and
+`allow_adaptation: true`; a request cannot override a route's denial. Explicit
+native/transparent requirements never enable adaptation. Vertex and extension
+bindings do not acquire this transport by sharing a model name. No configured
+model is changed or inferred to support Live: the selected endpoint validates it.
+
+This representative server-to-server profile uses OpenAI GA-style nested
+`session.audio` settings and `response.output_audio.*` events, not every SDK or
+all OpenAI controls. The handshake identifies it as
+`X-LLMGW-Realtime-Profile: openai-ga-gemini-live-manual-pcm`. Send one initial
+`session.update` with these audio settings:
+
+```json
+{"audio":{"input":{"format":{"type":"audio/pcm","rate":24000},"turn_detection":null},"output":{"format":{"type":"audio/pcm","rate":24000},"voice":"Puck"}},"output_modalities":["audio"]}
+```
+
+The payload above is the `session` object, optionally with `type: "realtime"`,
+instructions and supported function declarations. If supplied, `session.model`
+must match the selected upstream model; omit it when connecting through an alias.
+PCM is mono, signed 16-bit little-endian, base64 encoded, at 24 kHz in both
+directions. Input bytes are forwarded unchanged with `audio/pcm;rate=24000`.
+Gemini's [documented input resampling](https://ai.google.dev/gemini-api/docs/live-guide#audio-formats)
+accepts this rate even though its native input rate is 16 kHz; the gateway does
+not relabel 24 kHz samples as 16 kHz or add a local resampler. Output stays at
+24 kHz without conversion. A client-declared 16 kHz input is not this GA profile.
+`Puck` is explicitly a Gemini voice, not a silent replacement for `marin` or
+another OpenAI voice. Wait for actual upstream setup confirmation before sending
+audio. Append audio, commit it, then send `response.create` to own the manual
+turn boundary. Function-call arguments/results retain call identities; the client
+executes tools, submits `function_call_output`, then creates the next response.
+Unsupported controls, schema constraints, VAD, session updates and codecs are
+refused rather than dropped.
+
+**Exact played-history interoperability is not supported.** Google's documented
+interruption retains audio **sent to the client**; OpenAI WebSocket truncation
+reconciles audio actually **played**. The reviewed public Live protocol exposes
+no corresponding playback-cursor/history-edit request. The bridge must not emit
+a successful `conversation.item.truncated` for a local-only queue edit; unsafe
+history reconciliation requests are explicitly refused and can require closure.
+Manual interruption/continuation does not change this distinction. Treat this as
+a limited protocol increment, not a complete replacement for an OpenAI voice
+client requiring exact heard-context continuity. See the primary
+[Google interruption guide](https://ai.google.dev/gemini-api/docs/live-guide#voice-activity-detection-vad),
+[Live wire reference](https://ai.google.dev/api/live), and
+[OpenAI conversation reference](https://developers.openai.com/api/docs/guides/realtime-conversations).
+
+The bridge bounds JSON text messages to 1 MiB and one connection to 30 minutes,
+without redirect, reconnect, retry or hidden context replay. Caller-bound Google
+credentials stay in an upstream header. Usage remains explicitly
+`unobserved_session`; local PCM/event fixtures establish protocol handling, not
+provider speech quality, actual model compatibility, live billing or a measured
+ongoing token budget. WebRTC media conversion is not implemented by this profile.
 
 ## Images and video
 
@@ -202,6 +460,13 @@ implemented by capable Google AI Studio/Vertex providers.
 Video start returns `202` with an operation ID. Poll with the same model selector
 and the `operation` value. Canceling the HTTP request does not cancel an upstream
 job after the operation was created.
+
+When an AI Studio job completes with a file resource on its configured API
+origin, the gateway downloads it using that request's provider credential and
+returns `video_base64`, `video_bytes`, and `mime_type` for the console player.
+Downloads use the provider response-size bound and do not follow redirects.
+Other result locations remain `video_uri` metadata; provider credentials are
+never appended to the URI or sent to another origin.
 
 ## Request size
 

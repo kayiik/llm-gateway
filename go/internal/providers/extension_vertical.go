@@ -21,7 +21,8 @@ import (
 	"github.com/kayiik/llmgw-core/extension"
 )
 
-// Extension-served provider types
+// Legacy configuration aliases. New extension bindings use the provider ID
+// discovered from the named extension, without a gateway type registration.
 const (
 	ExtensionTypeCopilot        = "github_copilot"
 	ExtensionTypeCodex          = "openai_codex"
@@ -69,7 +70,7 @@ const retiredExtensionType = "extension"
 
 func retiredExtensionTypeError(providerID string) error {
 	return &ConfigError{Msg: fmt.Sprintf(
-		"provider '%s': type 'extension' names no provider; give the provider the type of the one the companion daemon serves, such as github_copilot, and name the extension that serves it",
+		"provider '%s': type 'extension' names no provider; set type to a provider ID advertised by the extension and name that extension in the provider's settings",
 		providerID)}
 }
 
@@ -99,6 +100,9 @@ func CompanionDaemonType(cfg *config.ProviderConfig) string {
 	}
 	if strings.EqualFold(strings.TrimSpace(cfg.RegistryID), ExtensionTypeCodex) {
 		return ExtensionTypeCodex
+	}
+	if strings.TrimSpace(cfg.Extension) != "" {
+		return strings.TrimSpace(cfg.Type)
 	}
 	if providerType := strings.ToLower(strings.TrimSpace(cfg.Type)); isExtensionType(providerType) {
 		return providerType
@@ -176,6 +180,9 @@ type sharedExtensionClient struct {
 	url, secret string
 	http        *http.Client
 	client      *extension.Client
+	infoMu      sync.Mutex
+	info        extension.InfoResponse
+	infoUntil   time.Time
 }
 
 // newExtensionHTTPClient returns an HTTP client like the one llmgw-core's
@@ -208,6 +215,14 @@ func newExtensionHTTPClient() *http.Client {
 // provider unhealthy; it names the extension but not its address, which may
 // carry credentials.
 func (rt *Runtime) extensionClient(settings *config.Settings, ext config.Extension) (*extension.Client, error) {
+	shared, err := rt.extensionConnection(settings, ext)
+	if err != nil {
+		return nil, err
+	}
+	return shared.client, nil
+}
+
+func (rt *Runtime) extensionConnection(settings *config.Settings, ext config.Extension) (*sharedExtensionClient, error) {
 	if ext.Unusable != "" {
 		return nil, &ConfigError{Msg: fmt.Sprintf("extension '%s' cannot be used: %s", ext.ID, ext.Unusable)}
 	}
@@ -224,7 +239,7 @@ func (rt *Runtime) extensionClient(settings *config.Settings, ext config.Extensi
 	}
 	current := cache.clients[ext.ID]
 	if current != nil && current.url == ext.URL && current.secret == ext.Secret {
-		return current.client, nil
+		return current, nil
 	}
 	httpClient := newExtensionHTTPClient()
 	client, err := extension.NewClient(extension.Config{BaseURL: ext.URL, Secret: ext.Secret, HTTPClient: httpClient})
@@ -241,8 +256,9 @@ func (rt *Runtime) extensionClient(settings *config.Settings, ext config.Extensi
 	if cache.clients == nil {
 		cache.clients = map[string]*sharedExtensionClient{}
 	}
-	cache.clients[ext.ID] = &sharedExtensionClient{url: ext.URL, secret: ext.Secret, http: httpClient, client: client}
-	return client, nil
+	current = &sharedExtensionClient{url: ext.URL, secret: ext.Secret, http: httpClient, client: client}
+	cache.clients[ext.ID] = current
+	return current, nil
 }
 
 // extensionClientFor returns the client of the extension that serves
@@ -272,6 +288,9 @@ func (rt *Runtime) instanceExtensionClient(instance string) (*extension.Client, 
 // an extension or of a provider's binding publishes, so none outlives the
 // address and secret it was built for.
 func (rt *Runtime) extensionCoreVertical(providerType string) coreVertical {
+	if providerType == extensionCoreType {
+		return rt.discoveredExtensionVertical()
+	}
 	isOAuth := providerType == ExtensionTypeCodex || providerType == ExtensionTypeCopilot || providerType == ExtensionTypeAntigravity
 	return coreVertical{
 		serves: func(_ *config.Settings, _ string, cfg *config.ProviderConfig) bool {
@@ -290,7 +309,8 @@ func (rt *Runtime) extensionCoreVertical(providerType string) coreVertical {
 			if err != nil {
 				return nil, err
 			}
-			return extension.NewProvider(client, extension.ProviderInfo{ID: providerType, Surfaces: extensionSurfaces(providerType)}), nil
+			info := extension.ProviderInfo{ID: providerType, Surfaces: extensionSurfaces(providerType)}
+			return &extensionPreparedProvider{Provider: extension.NewProvider(client, info), client: client, info: info, runtime: rt, instance: instance}, nil
 		},
 		refresh: func(settings *config.Settings, instance string) tokenstore.RefreshFunc {
 			return func(ctx context.Context, current tokenstore.Record) (tokenstore.Record, error) {
@@ -307,11 +327,34 @@ func (rt *Runtime) extensionCoreVertical(providerType string) coreVertical {
 	}
 }
 
+// Bind model evidence at the operation boundary: the provider factory is shared,
+// while catalogs belong to the calling identity and configured instance.
+type extensionPreparedProvider struct {
+	*extension.Provider
+	client   *extension.Client
+	info     extension.ProviderInfo
+	runtime  *Runtime
+	instance string
+}
+
+func (p *extensionPreparedProvider) PrepareCall(ctx context.Context, request core.Request, options core.CallPreparationOptions) (core.PreparedCall, error) {
+	caller := coreOperationFrom(ctx).caller
+	provider := extension.NewProviderWithModelLookup(p.client, p.info, func(model string) (core.ModelInfo, bool) {
+		row, found := p.runtime.CatalogCachedLookupForPrincipal(p.instance, model, caller)
+		return CoreModelInfo(row), found
+	})
+	return provider.PrepareCall(ctx, request, options)
+}
+
 type extensionCredentials struct {
-	open func() (core.CredentialStore, error)
+	open    func() (core.CredentialStore, error)
+	resolve func(context.Context, core.Caller, string) (string, error)
 }
 
 func (c extensionCredentials) Resolve(ctx context.Context, caller core.Caller, instance string) (string, error) {
+	if c.resolve != nil {
+		return c.resolve(ctx, caller, instance)
+	}
 	store, err := c.open()
 	if err != nil {
 		return "", err
@@ -483,7 +526,25 @@ func (f *ExtensionProviderFacade) StreamResponsesContext(ctx context.Context, mo
 
 // serves reports whether the daemon serves surface for the facade's provider.
 func (f *ExtensionProviderFacade) serves(surface core.ModelSurface) bool {
+	if f.runtime != nil && f.runtime.settings != nil {
+		settings, _ := f.runtime.settings.Snapshot()
+		if cfg := settings.Providers[f.instance]; cfg != nil && strings.TrimSpace(cfg.Extension) != "" {
+			info, err := f.runtime.extensionProviderInfo(context.Background(), settings, f.instance)
+			return err == nil && slices.Contains(info.Surfaces, surface)
+		}
+	}
 	return slices.Contains(extensionSurfaces(f.providerID), surface)
+}
+
+func (f *ExtensionProviderFacade) credentialVertical() string {
+	if f.runtime == nil || f.runtime.settings == nil {
+		return f.providerID
+	}
+	settings, _ := f.runtime.settings.Snapshot()
+	if cfg := settings.Providers[f.instance]; cfg != nil && strings.TrimSpace(cfg.Extension) != "" {
+		return extensionCoreType
+	}
+	return f.providerID
 }
 
 // chatPayload is the Chat body of messages and kw.
@@ -566,7 +627,7 @@ func (f *ExtensionProviderFacade) ListModels() []ModelInfo {
 
 func (f *ExtensionProviderFacade) ListModelsWithError() ([]ModelInfo, *CredentialObservation, error) {
 	ctx, collector := collectCredentials(context.Background())
-	cred, err := f.runtime.coreCredential(ctx, f.providerID, f.caller, f.instance)
+	cred, err := f.runtime.coreCredential(ctx, f.credentialVertical(), f.caller, f.instance)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -574,7 +635,17 @@ func (f *ExtensionProviderFacade) ListModelsWithError() ([]ModelInfo, *Credentia
 	if err != nil {
 		return nil, collector.Observation(), err
 	}
-	models, err := client.ListModels(ctx, f.providerID, cred)
+	var models []core.ModelInfo
+	if f.credentialVertical() == extensionCoreType {
+		settings, _ := f.runtime.settings.Snapshot()
+		info, infoErr := f.runtime.extensionProviderInfo(ctx, settings, f.instance)
+		if infoErr != nil {
+			return nil, collector.Observation(), infoErr
+		}
+		models, err = extension.NewProvider(client, info).ListModels(ctx, cred)
+	} else {
+		models, err = client.ListModels(ctx, f.providerID, cred)
+	}
 	if err != nil {
 		return nil, collector.Observation(), err
 	}
@@ -593,7 +664,7 @@ func (f *ExtensionProviderFacade) DefaultVoice() string {
 // catalog is listed with.
 func (f *ExtensionProviderFacade) Synthesize(voice, text, rate string) ([]byte, string, error) {
 	ctx := context.Background()
-	cred, err := f.runtime.coreCredential(ctx, f.providerID, f.caller, f.instance)
+	cred, err := f.runtime.coreCredential(ctx, f.credentialVertical(), f.caller, f.instance)
 	if err != nil {
 		return nil, "", err
 	}
@@ -619,7 +690,7 @@ func (f *ExtensionProviderFacade) Synthesize(voice, text, rate string) ([]byte, 
 	if err != nil {
 		return nil, "", extensionFailure(ctx, f.instance, err)
 	}
-	return resp.Body, "audio/mpeg", nil
+	return resp.Body, resp.ContentType, nil
 }
 
 // rateSpeed is the OpenAI speech speed of a prosody rate, the inverse of the

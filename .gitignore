@@ -23,6 +23,7 @@ dist/
 !go/internal/web/console/dist/
 
 # tooling / agent scratch
+.coordinator/
 .playwright-cli/
 .playwright-mcp/
 .quality-run/

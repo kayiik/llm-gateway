@@ -23,7 +23,7 @@ func handleResponsesAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var payload map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := decodeInferenceBody(r.Body, &payload); err != nil {
 		writeBodyError(w, err, http.StatusUnprocessableEntity, "invalid request body")
 		return
 	}
@@ -71,6 +71,7 @@ func responsesDispatch(
 		writeError(w, 400, "background Responses jobs are not supported by this gateway.")
 		return
 	}
+	settings, generation := config.Snapshot()
 	resolution, err := resolveModel(r.Context(), request.Model, principal)
 	if err != nil {
 		if _, missing := err.(*router.ModelNotFoundError); missing {
@@ -111,74 +112,12 @@ func responsesDispatch(
 			return
 		}
 	}
-	targets, err = router.FilterCompatibleTargets(targets, callerOf(principal), router.CompatibilityRequest{
-		Surface: core.ModelSurfaceResponses, Tools: requestHasTools(request.Tools),
-		Vision: responsesRequestIsMultimodal(payload), Streaming: request.Stream,
+	r = r.WithContext(fallbackContext(r, request.FallbackTimeoutMS, request.AffinityKey))
+	dispatchPreparedInference(w, r, principal, preparedInput{
+		endpoint: "openai.responses", model: request.Model, surface: core.ModelSurfaceResponses,
+		settings: settings, generation: generation, resolution: resolution, targets: targets,
+		payload: payload, publicPayload: publicPayload, stream: request.Stream, started: started,
 	})
-	if err != nil {
-		recordFailureUsage("openai.responses", request.Model, principal, 400, "compatibility", started)
-		writeError(w, 400, err.Error())
-		return
-	}
-	if mode, _ := requestedTransportMode(r); mode == "transparent" {
-		target, transparentErr := exactNativeTransparentTarget(request.Model, "/v1/responses", resolution, callerOf(principal))
-		if transparentErr != nil {
-			recordFailureUsage("openai.responses", request.Model, principal, 400, "transparent_contract", started)
-			writeError(w, http.StatusBadRequest, transparentErr.Error())
-			return
-		}
-		if rejectTransparentStream(w, request.Stream) {
-			recordFailureUsage("openai.responses", request.Model, principal, 400, "transparent_stream", started)
-			return
-		}
-		provider, providerErr := providers.GetProviderForPrincipal(target.Provider, callerOf(principal))
-		if providerErr != nil {
-			writeUpstreamError(w, providerErr)
-			return
-		}
-		if !admitRequest(w, "openai.responses", request.Model, principal, "policy", started) {
-			return
-		}
-		ctx := fallbackContext(r, request.FallbackTimeoutMS, request.AffinityKey)
-		response, _, providerErr := providers.CompleteResponsesContext(ctx, provider, target.Model, payload)
-		if providerErr != nil {
-			writeUpstreamError(w, providerErr)
-			return
-		}
-		served := target
-		w.Header().Set(transportModeHeader, "transparent")
-		recordFromResponses(request.Model, &served, principal, response, time.Since(started).Milliseconds())
-		writeJSON(w, http.StatusOK, response)
-		return
-	}
-	if !admitRequest(w, "openai.responses", request.Model, principal, "policy", started) {
-		return
-	}
-	ctx := fallbackContext(r, request.FallbackTimeoutMS, request.AffinityKey)
-	if request.Stream {
-		streamResponsesSSE(
-			w, ctx, targets, payload, publicPayload, request.Model, principal, started, "openai.responses",
-		)
-		return
-	}
-	response, served, err := router.ExecuteResponsesContext(
-		governed(ctx, principal), targets, payload, request.Model, callerOf(principal),
-	)
-	if err != nil {
-		recordFailureUsage(
-			"openai.responses", request.Model, principal,
-			upstreamErrorStatus(err), "upstream", started,
-		)
-		writeUpstreamError(w, err)
-		return
-	}
-	sanitizeResponsesForCaller(response, publicPayload)
-	recordFromResponses(
-		request.Model, served, principal, response,
-		time.Since(started).Milliseconds(),
-	)
-	w.Header().Set(transportModeHeader, targetTransportMode(*served, callerOf(principal), "/v1/responses"))
-	writeJSON(w, http.StatusOK, response)
 }
 
 func cloneResponsesPayload(payload map[string]any) map[string]any {
@@ -275,50 +214,6 @@ func responsesPayloadContainsType(value any, types ...string) bool {
 		}
 	}
 	return false
-}
-
-// streamResponsesSSE streams a Responses request, recording its usage under
-// endpoint.
-func streamResponsesSSE(
-	w http.ResponseWriter,
-	ctx context.Context,
-	targets []router.Target,
-	payload, publicPayload map[string]any,
-	requested string,
-	principal *config.Principal,
-	started time.Time,
-	endpoint string,
-) {
-	execution, served, err := router.ExecuteResponsesStreamContext(
-		governed(ctx, principal), targets, payload, requested, callerOf(principal),
-	)
-	if err != nil {
-		if ctx.Err() != nil {
-			recordClientCancelled(endpoint, requested, principal, started)
-			return
-		}
-		recordFailureUsage(
-			endpoint, requested, principal,
-			upstreamErrorStatus(err), "upstream", started,
-		)
-		writeUpstreamError(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.WriteHeader(http.StatusOK)
-	defer execution.Iter.Close()
-	meter := newStreamUsage(endpoint, requested, principal, served, started, responsesPromptBytes(payload))
-	if execution.Native {
-		if err := streamNativeResponseEventsContext(w, ctx, execution.Iter, publicPayload, meter); err != nil {
-			meter.cancelled()
-		}
-		return
-	}
-	if err := streamChatAsResponseEventsContext(w, ctx, execution.Iter, publicPayload, meter); err != nil {
-		meter.cancelled()
-	}
 }
 
 // responsesPromptBytes is the size of what a Responses request sends as its

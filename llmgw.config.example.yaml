@@ -14,12 +14,10 @@ providers:
     base_url: https://api.anthropic.com
   ollama:
     type: ollama                    # uses LLMGW_OLLAMA_BASE_URL (default :11434)
-  # GitHub Copilot, OpenAI Codex and the other providers of the optional
-  # companion daemon serve requests once the daemon is added as an extension
-  # on the console's Providers page, where a person also signs in:
-  # copilot:
-  #   type: github_copilot
-  #   extension: <extension-id>     # only needed when there are several
+  # Add an extension in the console, then choose one of its discovered providers:
+  # connected-provider:
+  #   type: <advertised-provider-id>
+  #   extension: <extension-id>
 
 # Endpoints = named, ordered failover chains of real, pinned models. Request an
 # endpoint name and it cascades on 429/5xx/timeout. You can also address any real
@@ -36,6 +34,11 @@ endpoints:
     failover:
       - { provider: ollama, model: <local-model-id> }
       - { provider: openrouter, model: <small-model-id> }
+  combined:
+    # Reuse member lists; combined's own API policy and grants apply.
+    failover:
+      - { route: smart }
+      - { route: cheap }
 
 policies:
   defaults:

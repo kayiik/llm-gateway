@@ -41,7 +41,7 @@ func TestOllamaToolCallsFinishWithToolCalls(t *testing.T) {
 		"tools": []any{map[string]any{"type": "function", "function": map[string]any{"name": "add_fixture"}}},
 	}
 
-	w := apiSmokeRequest(handler, "/v1/chat/completions", request)
+	w := apiSmokeRequestWithCompatibility(handler, "/v1/chat/completions", request, "allow")
 	var completion struct {
 		Choices []struct {
 			FinishReason string `json:"finish_reason"`
@@ -53,7 +53,7 @@ func TestOllamaToolCallsFinishWithToolCalls(t *testing.T) {
 	}
 
 	request["stream"] = true
-	w = apiSmokeRequest(handler, "/v1/chat/completions", request)
+	w = apiSmokeRequestWithCompatibility(handler, "/v1/chat/completions", request, "allow")
 	records := strings.Split(strings.TrimSuffix(w.Body.String(), "\n\n"), "\n\n")
 	if w.Code != http.StatusOK || len(records) != 3 || records[2] != "data: [DONE]" {
 		t.Fatalf("stream status=%d body=%s", w.Code, w.Body.String())

@@ -68,7 +68,7 @@ func TestRateLimitPerMinuteRefusesWithRetryAfter(t *testing.T) {
 		!strings.Contains(w.Body.String(), `"type":"invalid_request_error"`) || !strings.Contains(w.Body.String(), "2 requests per minute") {
 		t.Fatalf("chat over the limit: status=%d retry-after=%q body=%s", w.Code, w.Header().Get("Retry-After"), w.Body.String())
 	}
-	w = apiSmokeRequest(handler, "/v1/messages", map[string]any{"model": "fixture/model", "max_tokens": 8, "messages": hello})
+	w = apiSmokeRequestWithCompatibility(handler, "/v1/messages", map[string]any{"model": "fixture/model", "max_tokens": 8, "messages": hello}, "allow")
 	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") != "30" || !strings.Contains(w.Body.String(), `"type":"rate_limit_error"`) {
 		t.Fatalf("messages over the limit: status=%d retry-after=%q body=%s", w.Code, w.Header().Get("Retry-After"), w.Body.String())
 	}

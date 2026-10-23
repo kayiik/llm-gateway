@@ -13,6 +13,8 @@ import (
 	"llmgw/internal/providers"
 	"llmgw/internal/router"
 
+	core "github.com/kayiik/llmgw-core"
+
 	"github.com/kayiik/llm-translate"
 )
 
@@ -92,9 +94,7 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	var req anthropicRequest
 	var raw map[string]any
-	decoder := json.NewDecoder(r.Body)
-	decoder.UseNumber()
-	if err := decoder.Decode(&raw); err != nil {
+	if err := decodeInferenceBody(r.Body, &raw); err != nil {
 		writeBodyError(w, err, 422, "invalid request body")
 		return
 	}
@@ -108,7 +108,8 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, modeErr.Error())
 		return
 	}
-	if pre := config.Get().GatewayPreamble; pre != "" && transportMode != "transparent" {
+	settings, generation := config.Snapshot()
+	if pre := settings.GatewayPreamble; pre != "" && transportMode != "transparent" {
 		raw["_llmgw_preamble"] = pre
 	}
 	ctx := providers.WithAnthropicClientHeaders(messagesFallbackContext(r, raw), r.Header)
@@ -131,178 +132,12 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, polStatus, polMsg)
 		return
 	}
-	if transportMode == "transparent" {
-		target, transparentErr := exactNativeTransparentTarget(req.Model, "/v1/messages", resolution, callerOf(principal))
-		if transparentErr != nil {
-			recordFailureUsage("anthropic.messages", req.Model, principal, 400, "transparent_contract", started)
-			writeError(w, http.StatusBadRequest, transparentErr.Error())
-			return
-		}
-		if rejectTransparentStream(w, req.Stream) {
-			recordFailureUsage("anthropic.messages", req.Model, principal, 400, "transparent_stream", started)
-			return
-		}
-		provider, providerErr := providers.GetProviderForPrincipal(target.Provider, callerOf(principal))
-		if providerErr != nil || !providers.SupportsAnthropicMessages(provider) {
-			writeError(w, http.StatusBadRequest, "provider does not implement its catalog-declared native Messages surface")
-			return
-		}
-		if !admitRequest(w, "anthropic.messages", req.Model, principal, "policy", started) {
-			return
-		}
-		response, providerErr := providers.CompleteAnthropicMessagesContext(ctx, provider, target.Model, raw)
-		if providerErr != nil {
-			writeUpstreamError(w, providerErr)
-			return
-		}
-		served := target
-		w.Header().Set(transportModeHeader, "transparent")
-		recordFromResponse("anthropic.messages", req.Model, &served, principal, response, time.Since(started).Milliseconds())
-		writeJSON(w, http.StatusOK, response)
-		return
-	}
-
-	if req.Stream {
-		native, msgs, kw, lossErr := messagesStreamPlan(targets, principal, raw, &req)
-		if lossErr != nil {
-			recordFailureUsage("anthropic.messages", req.Model, principal, 400, "compatibility", started)
-			writeError(w, 400, "Streaming cannot preserve Anthropic request: "+lossErr.Error())
-			return
-		}
-		if !admitRequest(w, "anthropic.messages", req.Model, principal, "policy", started) {
-			return
-		}
-		if native {
-			streamNativeMessagesSSE(w, ctx, targets, raw, req.Model, principal, started, "anthropic.messages")
-			return
-		}
-		streamMessagesSSE(w, ctx, targets, msgs, req.Model, principal, kw, started, "anthropic.messages")
-		return
-	}
-	if !admitRequest(w, "anthropic.messages", req.Model, principal, "policy", started) {
-		return
-	}
-
-	response, served, err := router.ExecuteAnthropicMessagesContext(governed(ctx, principal), targets, raw, req.Model, callerOf(principal))
-	if err != nil {
-		status := upstreamErrorStatus(err)
-		recordFailureUsage("anthropic.messages", req.Model, principal, status, "upstream", started)
-		writeUpstreamError(w, err)
-		return
-	}
-	recordFromResponse(
-		"anthropic.messages", req.Model, served, principal, response,
-		time.Since(started).Milliseconds(),
-	)
-	w.Header().Set(transportModeHeader, targetTransportMode(*served, callerOf(principal), "/v1/messages"))
-	writeJSON(w, 200, response)
-}
-
-// messagesStreamPlan says how a Messages request streams. A stream whose
-// every target serves Messages natively reaches its target as a request that
-// does not stream does. Otherwise it streams as Chat, translated: then msgs
-// and kw are what it sends, and translation refuses, with lossErr, a request
-// it cannot carry, such as one with cache_control or enabled thinking, and
-// would drop what the stream returns, such as signatures and cache usage.
-func messagesStreamPlan(targets []router.Target, principal *config.Principal, raw map[string]any, req *anthropicRequest) (native bool, msgs []providers.Message, kw providers.Kwargs, lossErr error) {
-	if router.ServesAnthropicMessagesNatively(targets, callerOf(principal)) {
-		return true, nil, nil, nil
-	}
-	conversion := translate.AnthropicRequestToOpenAIWithReport(raw)
-	if err := conversion.RejectMaterialLoss(); err != nil {
-		return false, nil, nil, err
-	}
-	converted, keywords := conversion.Value.Messages, conversion.Value.Keywords
-	if len(converted) < len(req.Messages) {
-		converted = translate.AnthropicMessagesToOpenAI(req.Messages, req.System)
-	}
-	msgs = make([]providers.Message, len(converted))
-	for i := range converted {
-		msgs[i] = providers.Message(converted[i])
-	}
-	return false, msgs, providers.Kwargs(keywords), nil
-}
-
-// streamMessagesSSE streams a Messages request translated to Chat, recording
-// its usage under endpoint.
-func streamMessagesSSE(w http.ResponseWriter, ctx context.Context, targets []router.Target, msgs []providers.Message, requested string, principal *config.Principal, kw providers.Kwargs, started time.Time, endpoint string) {
-	it, served, err := router.ExecuteAnthropicStreamContext(governed(ctx, principal), targets, msgs, requested, callerOf(principal), kw)
-	if err != nil {
-		if ctx.Err() != nil {
-			recordClientCancelled(endpoint, requested, principal, started)
-			return
-		}
-		recordFailureUsage(
-			endpoint, requested, principal, upstreamErrorStatus(err),
-			"upstream", started,
-		)
-		writeUpstreamError(w, err)
-		return
-	}
-	defer it.Close()
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.WriteHeader(http.StatusOK)
-
-	meter := newStreamUsage(endpoint, requested, principal, served, started, payloadBytes(msgs))
-	var writeErr error
-	write := func(event string) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		return writeAndFlush(w, []byte(event))
-	}
-	// ended is set once the source stream ended, as opposed to the client
-	// going away. The translator then closes the message however the source
-	// ended, so those closing events wait in closing until it is known.
-	ended := false
-	var closing []string
-	// pull func peeks usage as it forwards OpenAI chunks into the translator
-	pull := func() (string, bool) {
-		if writeErr != nil || ctx.Err() != nil {
-			return "", false
-		}
-		chunk, more := it.Next()
-		if !more {
-			ended = ctx.Err() == nil
-			return "", false
-		}
-		meter.chatChunk(chunk)
-		if ctx.Err() != nil {
-			return "", false
-		}
-		return chunk, true
-	}
-	translate.OpenAIStreamToAnthropicSSE(pull, served.Model, func(event string) {
-		switch {
-		case ended:
-			closing = append(closing, event)
-		case writeErr == nil:
-			writeErr = write(event)
-		}
+	r = r.WithContext(ctx)
+	dispatchPreparedInference(w, r, principal, preparedInput{
+		endpoint: "anthropic.messages", model: req.Model, surface: core.ModelSurfaceMessages,
+		settings: settings, generation: generation, resolution: resolution, targets: targets,
+		payload: raw, stream: req.Stream, started: started,
 	})
-	if writeErr != nil || !ended || ctx.Err() != nil {
-		meter.cancelled()
-		return
-	}
-	if err := it.Err(); err != nil {
-		// Anthropic ends a stream it cannot finish with an error event and
-		// no message_stop, so a client never reads it as complete.
-		if write(anthropicStreamErrorEvent(err)) != nil {
-			meter.cancelled()
-			return
-		}
-		meter.failed()
-		return
-	}
-	for _, event := range closing {
-		if write(event) != nil {
-			meter.cancelled()
-			return
-		}
-	}
-	meter.completed()
 }
 
 // anthropicStreamErrorEvent is the Messages error event for a stream its
@@ -313,91 +148,6 @@ func anthropicStreamErrorEvent(err error) string {
 			"type": anthropicErrorType(upstreamErrorStatus(err)), "message": "Upstream provider stream failed.",
 		},
 	}) + "\n\n"
-}
-
-// streamNativeMessagesSSE serves a stream whose targets all serve Messages
-// natively: payload reaches the target that serves it as a request that does
-// not stream reaches it, and each record that target sends reaches the
-// client as it was sent. The stream succeeds only with the upstream's
-// message_stop; one that ends otherwise ends with an error event, the
-// upstream's own or, when it sent none, the gateway's. Its usage is recorded
-// under endpoint.
-func streamNativeMessagesSSE(w http.ResponseWriter, ctx context.Context, targets []router.Target, payload map[string]any, requested string, principal *config.Principal, started time.Time, endpoint string) {
-	it, served, err := router.ExecuteAnthropicMessagesStreamContext(governed(ctx, principal), targets, payload, requested, callerOf(principal))
-	if err != nil {
-		if ctx.Err() != nil {
-			recordClientCancelled(endpoint, requested, principal, started)
-			return
-		}
-		recordFailureUsage(
-			endpoint, requested, principal, upstreamErrorStatus(err),
-			"upstream", started,
-		)
-		writeUpstreamError(w, err)
-		return
-	}
-	defer it.Close()
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.WriteHeader(http.StatusOK)
-
-	meter := newStreamUsage(endpoint, requested, principal, served, started, messagesPromptBytes(payload))
-	write := func(records string) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		return writeAndFlush(w, []byte(records))
-	}
-	// message_delta tells a client how the answer stopped, so from the first
-	// one on, records wait for message_stop: a stream that fails before it
-	// never carries a stop reason, as a translated one never does. Anthropic
-	// sends only further deltas and pings between the two; any other record
-	// goes out at once, with what waited.
-	var held strings.Builder
-	for {
-		record, more := it.Next()
-		if !more {
-			break
-		}
-		event := anthropicRecordEvent(record)
-		meter.anthropicEvent(event)
-		eventType, _ := event["type"].(string)
-		switch {
-		case eventType == "error":
-			// Anthropic ends a stream it cannot finish with an error event,
-			// which tells the client what failed, and sends nothing after it.
-			if write(record) != nil {
-				meter.cancelled()
-				return
-			}
-			meter.failed()
-			return
-		case eventType == "message_delta" || (eventType == "ping" && held.Len() > 0):
-			held.WriteString(record)
-			continue
-		}
-		if write(held.String()+record) != nil {
-			meter.cancelled()
-			return
-		}
-		held.Reset()
-		if eventType == "message_stop" {
-			meter.completed()
-			return
-		}
-	}
-	if ctx.Err() != nil {
-		meter.cancelled()
-		return
-	}
-	// The upstream ended the stream without message_stop or an error event,
-	// so the client learns of the failure from the gateway's.
-	if write(anthropicStreamErrorEvent(it.Err())) != nil {
-		meter.cancelled()
-		return
-	}
-	meter.failed()
 }
 
 // anthropicRecordEvent is the event a Messages stream record carries as its
@@ -415,12 +165,6 @@ func anthropicRecordEvent(record string) map[string]any {
 		return nil
 	}
 	return event
-}
-
-// messagesPromptBytes is the size of what a Messages request sends as its
-// prompt: its system prompt and its messages.
-func messagesPromptBytes(payload map[string]any) int {
-	return payloadBytes(payload["system"]) + payloadBytes(payload["messages"])
 }
 
 func handleCountTokens(w http.ResponseWriter, r *http.Request) {
@@ -471,6 +215,10 @@ func handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target := targets[0]
+	if err := validateRouteIngress(resolution.Category, "/v1/messages/count_tokens"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	provider, err := providers.GetProviderForPrincipal(target.Provider, callerOf(principal))
 	if err != nil {
 		writeUpstreamError(w, err)

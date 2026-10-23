@@ -47,6 +47,16 @@ func resolveAudioTarget(principal *config.Principal, model string, operation cor
 	if st != 0 {
 		return "", "", st, m
 	}
+	ingress := "/v1/embeddings"
+	switch operation {
+	case core.ModelOperationAudioIn:
+		ingress = "/v1/audio/transcriptions"
+	case core.ModelOperationAudioOut:
+		ingress = "/v1/audio/speech"
+	}
+	if err := validateRouteIngress(resolution.Category, ingress); err != nil {
+		return "", "", http.StatusBadRequest, err.Error()
+	}
 	if len(targets) == 0 {
 		return "", "", 404, "no routable target for '" + model + "'"
 	}
@@ -148,7 +158,8 @@ func writeAPIProxySuccess(w http.ResponseWriter, status int, contentType string,
 
 // transcriptionFields are the form fields forwarded upstream besides the
 // audio and the resolved model.
-var transcriptionFields = []string{"language", "prompt", "response_format", "temperature"}
+var transcriptionFields = []string{"language", "prompt", "response_format", "temperature", "stream", "chunking_strategy"}
+var transcriptionRepeatedFields = []string{"include[]", "timestamp_granularities[]", "known_speaker_names[]", "known_speaker_references[]"}
 
 // transcriptionForm is a transcription request read part by part. The audio
 // is copied straight into the form sent upstream, so the gateway holds it once
@@ -158,6 +169,7 @@ type transcriptionForm struct {
 	body     bytes.Buffer
 	hasFile  bool
 	fields   map[string]string
+	repeated map[string][]string
 	query    url.Values
 }
 
@@ -166,7 +178,7 @@ func readTranscriptionForm(r *http.Request) (*transcriptionForm, error) {
 	if err != nil {
 		return nil, err
 	}
-	form := &transcriptionForm{fields: map[string]string{}, query: r.URL.Query()}
+	form := &transcriptionForm{fields: map[string]string{}, repeated: map[string][]string{}, query: r.URL.Query()}
 	form.upstream = multipart.NewWriter(&form.body)
 	for {
 		part, err := reader.NextPart()
@@ -194,6 +206,12 @@ func readTranscriptionForm(r *http.Request) (*transcriptionForm, error) {
 				return nil, err
 			}
 			form.hasFile = true
+		case slices.Contains(transcriptionRepeatedFields, name):
+			value, err := io.ReadAll(part)
+			if err != nil {
+				return nil, err
+			}
+			form.repeated[name] = append(form.repeated[name], string(value))
 		case name == "model" || slices.Contains(transcriptionFields, name):
 			if _, seen := form.fields[name]; seen {
 				continue
@@ -226,6 +244,15 @@ func (f *transcriptionForm) finish(model string) (*bytes.Buffer, string) {
 			_ = f.upstream.WriteField(name, value)
 		}
 	}
+	for _, name := range transcriptionRepeatedFields {
+		values := f.repeated[name]
+		if query := f.query[name]; len(query) > 0 {
+			values = query
+		}
+		for _, value := range values {
+			_ = f.upstream.WriteField(name, value)
+		}
+	}
 	_ = f.upstream.Close()
 	return &f.body, f.upstream.FormDataContentType()
 }
@@ -245,6 +272,11 @@ func handleTranscriptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	model := form.value("model")
+	if stream := form.value("stream"); stream != "" && stream != "true" && stream != "false" {
+		recordFailureUsage("openai.transcriptions", model, principal, http.StatusBadRequest, "invalid_stream", started)
+		writeError(w, http.StatusBadRequest, "'stream' must be true or false")
+		return
+	}
 	provider, upstreamModel, status, msg := resolveAudioTarget(principal, model, core.ModelOperationAudioIn)
 	if status != 0 {
 		recordFailureUsage("openai.transcriptions", model, principal, status, "policy_or_route", started)
@@ -254,6 +286,11 @@ func handleTranscriptions(w http.ResponseWriter, r *http.Request) {
 	if !form.hasFile {
 		recordFailureUsage("openai.transcriptions", model, principal, 400, "missing_file", started)
 		writeError(w, 400, "missing 'file' (the audio to transcribe)")
+		return
+	}
+	if form.value("stream") == "true" && providers.CoreServesSurfaceForPrincipal(provider, upstreamModel, core.ModelSurfaceAudioTranscriptions, callerOf(principal)) {
+		recordFailureUsage("openai.transcriptions", model, principal, http.StatusBadRequest, "stream_unsupported", started)
+		writeError(w, http.StatusBadRequest, "the selected provider does not support streaming transcription on this path")
 		return
 	}
 	if !admitRequest(w, "openai.transcriptions", model, principal, "policy_or_route", started) {
@@ -304,19 +341,17 @@ func handleTranscriptions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 502, "audio transcription upstream error")
 		return
 	}
-	result := readAPIProxyResponse(resp, "audio transcription")
+	resultStatus, errorCode, abort := writeAudioProxyResponse(w, r, resp, "audio transcription")
 	recordUsage(router.UsageRecord{
 		RequestID: principal.RequestID, Endpoint: "openai.transcriptions", RequestedModel: provider + "/" + upstreamModel, RoutedModel: upstreamModel,
 		Provider: provider, Project: principal.Project, Key: principal.Key,
 		ProjectID: principal.ProjectID, PrincipalID: principal.PrincipalID, KeyID: principal.KeyID,
-		StatusCode: result.status, LatencyMS: time.Since(started).Milliseconds(),
-		ErrorCode: result.errorCode, IsStub: isStub(provider),
+		StatusCode: resultStatus, LatencyMS: time.Since(started).Milliseconds(),
+		ErrorCode: errorCode, IsStub: isStub(provider),
 	})
-	if result.err != nil {
-		writeUpstreamError(w, result.err)
-		return
+	if abort {
+		panic(http.ErrAbortHandler)
 	}
-	writeAPIProxySuccess(w, result.status, result.contentType, result.body)
 }
 
 // POST /v1/audio/speech — text -> audio (TTS). Reverse-proxied to the resolved
@@ -333,6 +368,11 @@ func handleSpeech(w http.ResponseWriter, r *http.Request) {
 		recordFailureUsage("openai.speech", "", principal, status, "invalid_body", started)
 		return
 	}
+	if format := body["stream_format"]; format != nil && format != "audio" && format != "sse" {
+		recordFailureUsage("openai.speech", "", principal, http.StatusBadRequest, "invalid_stream_format", started)
+		writeError(w, http.StatusBadRequest, "'stream_format' must be audio or sse")
+		return
+	}
 	reqModel, _ := body["model"].(string)
 	provider, upstreamModel, status, msg := resolveAudioTarget(principal, reqModel, core.ModelOperationAudioOut)
 	if status != 0 {
@@ -341,7 +381,17 @@ func handleSpeech(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if synthesizer, native := providers.SpeechSynthesizerForPrincipal(provider, callerOf(principal)); native {
+		if body["stream_format"] == "sse" {
+			recordFailureUsage("openai.speech", reqModel, principal, http.StatusBadRequest, "stream_unsupported", started)
+			writeError(w, http.StatusBadRequest, "the selected provider does not support speech SSE on this path")
+			return
+		}
 		serveNativeSpeech(r.Context(), w, body, synthesizer, provider, upstreamModel, principal, started, reqModel)
+		return
+	}
+	if body["stream_format"] == "sse" && providers.CoreServesSurfaceForPrincipal(provider, upstreamModel, core.ModelSurfaceAudioSpeech, callerOf(principal)) {
+		recordFailureUsage("openai.speech", reqModel, principal, http.StatusBadRequest, "stream_unsupported", started)
+		writeError(w, http.StatusBadRequest, "the selected provider does not support speech SSE on this path")
 		return
 	}
 	if !admitRequest(w, "openai.speech", reqModel, principal, "policy_or_route", started) {
@@ -390,19 +440,17 @@ func handleSpeech(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 502, "audio speech upstream error")
 		return
 	}
-	result := readAPIProxyResponse(resp, "audio speech")
+	resultStatus, errorCode, abort := writeAudioProxyResponse(w, r, resp, "audio speech")
 	recordUsage(router.UsageRecord{
 		RequestID: principal.RequestID, Endpoint: "openai.speech", RequestedModel: provider + "/" + upstreamModel, RoutedModel: upstreamModel,
 		Provider: provider, Project: principal.Project, Key: principal.Key,
 		ProjectID: principal.ProjectID, PrincipalID: principal.PrincipalID, KeyID: principal.KeyID,
-		StatusCode: result.status, LatencyMS: time.Since(started).Milliseconds(),
-		ErrorCode: result.errorCode, IsStub: isStub(provider),
+		StatusCode: resultStatus, LatencyMS: time.Since(started).Milliseconds(),
+		ErrorCode: errorCode, IsStub: isStub(provider),
 	})
-	if result.err != nil {
-		writeUpstreamError(w, result.err)
-		return
+	if abort {
+		panic(http.ErrAbortHandler)
 	}
-	writeAPIProxySuccess(w, result.status, result.contentType, result.body)
 }
 
 func audioErrorCode(status int) string {

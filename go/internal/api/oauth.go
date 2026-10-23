@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 
@@ -34,9 +35,20 @@ func safeOAuthPollResponse(status, detail string) map[string]any {
 }
 
 func oauthAdapterFor(providerRef string) (string, string, providers.ProviderAuthAdapter, error) {
-	reference := strings.ToLower(strings.TrimSpace(providerRef))
+	reference := strings.TrimSpace(providerRef)
 	if reference == "" {
 		return "", "", nil, fmt.Errorf("provider_id is required")
+	}
+	if cfg := config.Get().Providers[reference]; cfg != nil && strings.TrimSpace(cfg.Extension) != "" {
+		info, err := providers.Current().ExtensionProviderInfo(context.Background(), cfg.Extension, providers.CompanionDaemonType(cfg))
+		if err != nil {
+			return "", "", nil, err
+		}
+		adapter, err := providers.NewExtensionAuthAdapter(info)
+		if err != nil {
+			return "", "", nil, err
+		}
+		return reference, adapter.CredentialKind(), adapter, nil
 	}
 	providerID := reference
 	runtimeType := ""
@@ -159,6 +171,9 @@ func ensureOAuthProviderConfig(providerID, providerRef, extensionID string) erro
 func signInExtension(providerID, requested string) (string, error) {
 	requested = strings.TrimSpace(requested)
 	if requested == "" {
+		if cfg := config.Get().Providers[providerID]; cfg != nil {
+			return strings.TrimSpace(cfg.Extension), nil
+		}
 		return "", nil
 	}
 	settings := config.Get()
@@ -229,11 +244,16 @@ func oauthRegistryIDForRef(providerRef string) string {
 	return providers.CanonicalRegistryID(reference)
 }
 
+func namedExtensionProvider(providerID string) bool {
+	cfg := config.Get().Providers[strings.TrimSpace(providerID)]
+	return cfg != nil && strings.TrimSpace(cfg.Extension) != ""
+}
+
 // configureOAuthClientID saves the Codex OAuth client ID an administrator's
 // start names. A start that names none needs none: the companion daemon owns
 // a Codex client, and signs in with it unless the gateway configures another.
 func configureOAuthClientID(providerRef, clientID string, allowUpdate bool) error {
-	if oauthRegistryIDForRef(providerRef) != "openai_codex" {
+	if namedExtensionProvider(providerRef) || oauthRegistryIDForRef(providerRef) != "openai_codex" {
 		return nil
 	}
 	clientID = strings.TrimSpace(clientID)
@@ -259,7 +279,7 @@ func configureOAuthClientID(providerRef, clientID string, allowUpdate bool) erro
 // configured for Codex, which the companion daemon signs in with. Other
 // providers' params are returned as they are.
 func codexClientParams(providerRef string, params map[string]string) map[string]string {
-	if oauthRegistryIDForRef(providerRef) != "openai_codex" {
+	if namedExtensionProvider(providerRef) || oauthRegistryIDForRef(providerRef) != "openai_codex" {
 		return params
 	}
 	return providers.WithOAuthClientID(params, providers.EffectiveCodexClientID(config.Get()))
@@ -270,7 +290,7 @@ func (s *server) startOAuthFlow(
 	request *http.Request, connectionName, source, preferredFlow, extensionID string,
 ) (response map[string]any, err error) {
 	previousCodexClientID := config.Get().OpenAICodexClientID
-	rollbackCodexClientID := oauthRegistryIDForRef(providerRef) == "openai_codex" &&
+	rollbackCodexClientID := !namedExtensionProvider(providerRef) && oauthRegistryIDForRef(providerRef) == "openai_codex" &&
 		allowClientIDUpdate && strings.TrimSpace(clientID) != "" &&
 		strings.TrimSpace(clientID) != strings.TrimSpace(previousCodexClientID)
 	flowStarted := false
@@ -298,16 +318,41 @@ func (s *server) startOAuthFlow(
 	}
 	_, browserSupported := adapter.(providers.BrowserProviderAuthAdapter)
 	_, deviceSupported := adapter.(providers.DeviceProviderAuthAdapter)
-	useBrowser := preferredFlow == "browser" || (!deviceSupported && browserSupported)
-	if preferredFlow != "" && preferredFlow != "browser" && preferredFlow != "device_code" {
+	manualSupported := false
+	if declared, ok := adapter.(interface{ OAuthMethods() []oauthflow.Method }); ok {
+		methods := declared.OAuthMethods()
+		browserSupported = slices.Contains(methods, oauthflow.MethodBrowser)
+		deviceSupported = slices.Contains(methods, oauthflow.MethodDevice)
+		manualSupported = slices.Contains(methods, oauthflow.MethodManual)
+	}
+	useBrowser := preferredFlow == "browser" || (preferredFlow == "" && !deviceSupported && browserSupported)
+	if preferredFlow != "" && preferredFlow != "browser" && preferredFlow != "device_code" && preferredFlow != "manual" {
 		return nil, fmt.Errorf("Unsupported OAuth flow.")
+	}
+	if (preferredFlow == "browser" && !browserSupported) || (preferredFlow == "device_code" && !deviceSupported) || (preferredFlow == "manual" && !manualSupported) {
+		return nil, fmt.Errorf("provider %q does not advertise the requested OAuth method", providerRef)
 	}
 	// The provider is configured only once its sign-in has started. A start
 	// whose configuration then fails leaves its flow behind unreturned: its
 	// ID never reaches the client, and the cap evicts it first.
 	ctx, startedAt := context.Background(), s.now()
+	if preferredFlow == "manual" || (preferredFlow == "" && !browserSupported && !deviceSupported && manualSupported) {
+		params := providers.WithSignInExtension(oauthConnectionParams(connectionName, source, kind), extensionID)
+		view, err := s.oauth.Start(ctx, oauthCaller(principal), providerID, oauthflow.MethodManual, oauthflow.WithParams(params))
+		if err != nil {
+			return nil, err
+		}
+		flowStarted = true
+		return map[string]any{
+			"provider_id": providerID, "flow": "manual", "authorization_url": view.AuthorizationURL,
+			"flow_id": view.ID, "expires_in": oauthExpiresIn(view, startedAt), "expires_at": view.ExpiresAt.Unix(),
+		}, nil
+	}
 	if useBrowser && browserSupported {
 		callbackID := oauthRegistryIDForRef(providerRef)
+		if namedExtensionProvider(providerID) {
+			callbackID = providerID
+		}
 		redirectURI, err := oauthCallbackURL(request, callbackID)
 		if err != nil {
 			return nil, err
@@ -402,6 +447,7 @@ const codexBrowserLoopbackRedirectURI = "http://localhost:1455/auth/callback"
 // stores and the OAuth client the owner signs in with.
 func manualOAuthParams(connectionName, source, kind string, client providers.ProviderAuthManualConfig, persistProfile bool) map[string]string {
 	params := oauthConnectionParams(connectionName, source, kind)
+	params[oauthParamLegacyManual] = "true"
 	for key, value := range client.OAuthParams() {
 		params[key] = value
 	}
@@ -895,7 +941,7 @@ func (s *server) handleUserOAuthStart(w http.ResponseWriter, r *http.Request) {
 	var err error
 	// A user signs in to a provider an administrator configured, through
 	// the extension its settings name, so the user's start names none.
-	if input.Flow == "browser" && oauthRegistryIDForRef(r.PathValue("provider_id")) == "openai_codex" {
+	if input.Flow == "browser" && !namedExtensionProvider(r.PathValue("provider_id")) && oauthRegistryIDForRef(r.PathValue("provider_id")) == "openai_codex" {
 		response, err = s.startCodexBrowserFlow(principal, r.PathValue("provider_id"), "", false, input.ConnectionName, iam.ConnectionSourceUser, "")
 	} else if input.Profile == antigravityManualProfile {
 		response, err = s.startManualOAuthFlow(principal, r.PathValue("provider_id"), input.ConnectionName, iam.ConnectionSourceUser, providers.ProviderAuthManualConfig{}, false, "")
@@ -965,7 +1011,7 @@ func (s *server) handlePrincipalOAuthStart(w http.ResponseWriter, r *http.Reques
 	input := oauthStartInput(r)
 	previousCodexClientID := config.Get().OpenAICodexClientID
 	var response map[string]any
-	if input.Flow == "browser" && oauthRegistryIDForRef(r.PathValue("provider_id")) == "openai_codex" {
+	if input.Flow == "browser" && !namedExtensionProvider(r.PathValue("provider_id")) && oauthRegistryIDForRef(r.PathValue("provider_id")) == "openai_codex" {
 		response, err = s.startCodexBrowserFlow(principal, r.PathValue("provider_id"), input.ClientID, true, input.ConnectionName, iam.ConnectionSourceAdmin, input.Extension)
 	} else if input.Profile == antigravityManualProfile {
 		response, err = s.startManualOAuthFlow(principal, r.PathValue("provider_id"), input.ConnectionName, iam.ConnectionSourceAdmin, providers.ProviderAuthManualConfig{

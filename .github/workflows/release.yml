@@ -500,24 +500,12 @@ jobs:
           # what verification reads.
           create-storage-record: false
 
-  live-acceptance:
-    name: live release acceptance
+  # Live provider qualification is a separate workflow, not a tag-publication
+  # side effect. CI's deterministic acceptance and image validation remain gates.
+  image-promote:
+    name: promote validated image
     if: github.event_name == 'push' && github.ref_type == 'tag'
     needs: [validate, image-publish]
-    permissions:
-      contents: read
-      packages: read
-    uses: ./.github/workflows/live-acceptance.yml
-    with:
-      enforce: true
-      allow_inconclusive: ${{ vars.LLMGW_ALLOW_INCONCLUSIVE_RELEASE == 'true' }}
-      override_reason: ${{ vars.LLMGW_INCONCLUSIVE_RELEASE_REASON }}
-      candidate_image: ghcr.io/${{ github.repository }}@${{ needs.image-publish.outputs.digest }}
-
-  image-promote:
-    name: promote accepted image
-    if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: [validate, image-publish, live-acceptance]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -561,7 +549,7 @@ jobs:
   release-publish:
     name: publish GitHub release
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: [validate, image-publish, image-promote, release-stage, live-acceptance]
+    needs: [validate, image-publish, image-promote, release-stage]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:

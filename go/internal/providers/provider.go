@@ -259,6 +259,9 @@ func SupportsAnthropicMessagesStream(provider Provider) bool {
 // routing acts on is never repeated, a 429 included: the same request would
 // meet the same refusal.
 func InvocationRetryable(err error) bool {
+	if isTargetLimitError(err) {
+		return false
+	}
 	var invocationError *InvocationError
 	if !asError(err, &invocationError) {
 		return false
@@ -284,6 +287,10 @@ func InvocationRetryable(err error) bool {
 // the request's shape moves on too, whatever its status: another member's
 // account or model may take the request.
 func InvocationFailoverEligible(err error) bool {
+	var limit *targetLimitError
+	if errors.As(err, &limit) {
+		return limit.FailoverEligible
+	}
 	var invocationError *InvocationError
 	if !asError(err, &invocationError) {
 		return false
@@ -320,6 +327,9 @@ func refusalReason(e *InvocationError) core.ProviderErrorClass {
 // credential rejections reset the transient streak instead. A billing refusal
 // advances it and a refused request shape resets it; see refusalReason.
 func InvocationCircuitFailure(err error) bool {
+	if isTargetLimitError(err) {
+		return false
+	}
 	var invocationError *InvocationError
 	if !asError(err, &invocationError) {
 		return false

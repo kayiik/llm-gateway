@@ -540,6 +540,47 @@ func TestSetSurfacesEmitsBothKeysWithEqualValues(t *testing.T) {
 	}
 }
 
+func TestEndpointCatalogPreservesSurfacesWithoutLegacyCapabilities(t *testing.T) {
+	t.Setenv("LLMGW_STATE_DIR", t.TempDir())
+	iam.ResetForTests()
+	t.Cleanup(iam.ResetForTests)
+	config.Update(func(s *config.Settings) {
+		s.Providers = map[string]*config.ProviderConfig{"fixture": {Type: "echo"}}
+		s.Endpoints = map[string]*config.EndpointConfig{
+			"declared": {Failover: []config.EndpointMember{{Provider: "fixture", Model: "declared"}}},
+			"unknown":  {Failover: []config.EndpointMember{{Provider: "fixture", Model: "unknown"}}},
+		}
+	})
+	originalCatalog := catalogModelsForPrincipal
+	catalogModelsForPrincipal = func(string, *config.Principal) []providers.ModelInfo {
+		return []providers.ModelInfo{
+			{ID: "declared", SupportedSurfaces: []string{"/v1/chat/completions"}},
+			{ID: "unknown"},
+		}
+	}
+	t.Cleanup(func() { catalogModelsForPrincipal = originalCatalog })
+
+	response, err := buildConsoleModelList(nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := map[string]map[string]any{}
+	for _, raw := range response["data"].([]any) {
+		row := raw.(map[string]any)
+		if row["owned_by"] == "endpoint" {
+			rows[row["id"].(string)] = row
+		}
+	}
+	for _, key := range []string{"supported_surfaces", "supported_endpoints"} {
+		if !reflect.DeepEqual(rows["declared"][key], []string{"/v1/chat/completions"}) {
+			t.Fatalf("route lost declared %s without legacy capabilities: %+v", key, rows["declared"])
+		}
+		if _, exists := rows["unknown"][key]; exists {
+			t.Fatalf("route invented %s for unknown capabilities: %+v", key, rows["unknown"])
+		}
+	}
+}
+
 func TestModelListAddsTypedCapabilitiesWithoutChangingLegacyFields(t *testing.T) {
 	config.Update(func(s *config.Settings) {
 		s.AllowUnauthenticatedAPI = true

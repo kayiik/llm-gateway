@@ -79,6 +79,7 @@ type OAuthConnectionCreate struct {
 	OAuthRedirectURI  string
 	OAuthClientSecret string
 	Status            string
+	Metadata          map[string]string
 }
 
 // PutOAuthProviderConnection encrypts an official OAuth envelope in the
@@ -102,7 +103,7 @@ func PutOAuthProviderConnection(input OAuthConnectionCreate) (ProviderConnection
 		AccountLabel: strings.TrimSpace(input.AccountLabel), ProjectID: strings.TrimSpace(input.ProjectID),
 		OAuthProfile: strings.TrimSpace(input.OAuthProfile), OAuthClientID: strings.TrimSpace(input.OAuthClientID),
 		OAuthClientMode: strings.TrimSpace(input.OAuthClientMode), OAuthRedirectURI: strings.TrimSpace(input.OAuthRedirectURI),
-		OAuthClientSecret: input.OAuthClientSecret, Status: strings.TrimSpace(input.Status),
+		OAuthClientSecret: input.OAuthClientSecret, Status: strings.TrimSpace(input.Status), Metadata: input.Metadata,
 	})
 	if err != nil {
 		return ProviderConnection{}, fmt.Errorf("encode OAuth envelope: %w", err)
@@ -164,7 +165,7 @@ func ReplaceOAuthProviderConnectionIfCurrent(
 		AccountLabel: strings.TrimSpace(input.AccountLabel), ProjectID: strings.TrimSpace(input.ProjectID),
 		OAuthProfile: strings.TrimSpace(input.OAuthProfile), OAuthClientID: strings.TrimSpace(input.OAuthClientID),
 		OAuthClientMode: strings.TrimSpace(input.OAuthClientMode), OAuthRedirectURI: strings.TrimSpace(input.OAuthRedirectURI),
-		OAuthClientSecret: input.OAuthClientSecret, Status: strings.TrimSpace(input.Status),
+		OAuthClientSecret: input.OAuthClientSecret, Status: strings.TrimSpace(input.Status), Metadata: input.Metadata,
 	})
 	if err != nil {
 		return ProviderConnection{}, fmt.Errorf("encode OAuth envelope: %w", err)

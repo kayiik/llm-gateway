@@ -83,6 +83,22 @@ test("a person signing in for themselves is not asked whose account it is", () =
   assert.equal(continueButton(tree).props.disabled, false);
 });
 
+test("extension sign-in offers only declared methods without vendor-specific controls", async () => {
+  const sent = api();
+  globalThis.window = { open: () => null, location: { hash: "" } };
+  const entry = { id: "openai_codex", label: "Independent account", extension_provider: true, oauth_methods: ["manual", "device"], auth_methods: ["oauth_browser", "oauth_device"] };
+  const render = mount(() => OAuthConnectDialog({ entry, providerID: "independent", ownerID: "ada", data: { default_owner: ada }, mode: "admin", onClose() {}, onComplete: async () => {} }));
+  let tree = render();
+  const methods = find(tree, (node) => node.type === "select");
+  assert.deepEqual(findAll(methods, (node) => node.type === "option").map((node) => node.props.value), ["manual", "device"]);
+  assert.doesNotMatch(text(tree), /Codex CLI|OAuth profile|OAuth client ID/);
+  methods.props.onChange({ currentTarget: { value: "device" } });
+  tree = render();
+  continueButton(tree).props.onClick();
+  await settle();
+  assert.deepEqual(sent[0], ["admin", "/principals/ada/connections/independent/oauth/start", { connection_name: "personal", flow: "device_code" }]);
+});
+
 // An OAuth registry entry the companion daemon does not serve, so the hub
 // keeps it on its shelf.
 const example = { id: "example_oauth", label: "Example", protocol: "openai", availability: "available", auth_methods: ["oauth_device"] };

@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"llmgw/internal/config"
 	"llmgw/internal/iam"
@@ -33,6 +34,7 @@ type coreVertical struct {
 // Runtime serves, one line per type. The Runtime holds what it returns.
 func (rt *Runtime) coreVerticals() map[string]coreVertical {
 	verticals := map[string]coreVertical{
+		preparedEchoCoreType:     rt.echoPreparedVertical(),
 		anthropicCoreType:        rt.anthropicCoreVertical(),
 		azureCoreType:            rt.azureCoreVertical(),
 		googleCoreType:           rt.googleCoreVertical(),
@@ -52,6 +54,17 @@ func (rt *Runtime) coreVerticals() map[string]coreVertical {
 	} {
 		verticals[extType] = rt.extensionCoreVertical(extType)
 	}
+	// An explicit extension binding owns its transport even when its provider
+	// ID happens to match a built-in type. Unbound legacy configurations keep
+	// their existing dispatch.
+	for name, vertical := range verticals {
+		serves := vertical.serves
+		vertical.serves = func(settings *config.Settings, instance string, cfg *config.ProviderConfig) bool {
+			return cfg != nil && strings.TrimSpace(cfg.Extension) == "" && serves(settings, instance, cfg)
+		}
+		verticals[name] = vertical
+	}
+	verticals[extensionCoreType] = rt.extensionCoreVertical(extensionCoreType)
 	return verticals
 }
 
@@ -99,7 +112,11 @@ func (rt *Runtime) coreProvider(settings *config.Settings, instance string) (cor
 	if !ok {
 		return nil, errNotServedByCore(instance)
 	}
-	return vertical.provider(settings, instance)
+	provider, err := vertical.provider(settings, instance)
+	if err != nil {
+		return nil, err
+	}
+	return rt.preparationProvider(settings, instance, provider), nil
 }
 
 // coreRefresh is the Runtime's RefreshFactory: the refresh of the instance's

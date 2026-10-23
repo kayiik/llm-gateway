@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"llmgw/internal/config"
@@ -76,6 +77,17 @@ func OAuthManualConfig(params map[string]string) ProviderAuthManualConfig {
 // daemon runs each of them, through the extension a step finds when it runs
 // (see extensionSignIn).
 func (rt *Runtime) OAuthDriver(adapterID, providerID string, method oauthflow.Method) (oauthflow.Driver, error) {
+	settings, _ := rt.settings.Snapshot()
+	if cfg := settings.Providers[providerID]; cfg != nil && strings.TrimSpace(cfg.Extension) != "" {
+		info, err := rt.extensionProviderInfo(context.Background(), settings, providerID)
+		if err != nil {
+			return nil, err
+		}
+		if info.CredentialKind() != extension.CredentialOAuth || !info.HasOAuth || !slices.Contains(info.OAuthMethods, method) {
+			return nil, fmt.Errorf("provider %q does not advertise %s authorization", providerID, method)
+		}
+		return extensionSignIn{runtime: rt, provider: info.ID, instance: providerID}, nil
+	}
 	if isExtensionType(adapterID) {
 		return extensionSignIn{runtime: rt, provider: adapterID, instance: providerID}, nil
 	}

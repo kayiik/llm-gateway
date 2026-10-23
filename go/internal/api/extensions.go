@@ -1,7 +1,6 @@
 package api
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +22,7 @@ import (
 	"llmgw/internal/providers"
 
 	"github.com/kayiik/llmgw-core/extension"
+	"github.com/kayiik/llmgw-core/oauthflow"
 )
 
 // Extensions are the companion daemons the gateway reaches the providers
@@ -36,9 +35,6 @@ const (
 	// extensionCheckTimeout bounds a check of one extension, both of its
 	// requests, so a daemon that does not answer still lets the listing load.
 	extensionCheckTimeout = 5 * time.Second
-	// minimumExtensionVersion is the oldest daemon release whose protocol
-	// the gateway relies on; a check reports an older one as outdated.
-	minimumExtensionVersion = "0.0.4"
 	// maxExtensionCheckReason bounds the reason a failed check reports.
 	maxExtensionCheckReason = 300
 	// maxExtensionInfoBytes bounds the info answer a check reads, as the
@@ -77,6 +73,28 @@ type extensionProvider struct {
 	Disabled bool   `json:"disabled,omitempty"`
 }
 
+func extensionAuthMethods(info extension.ProviderInfo) []string {
+	switch info.CredentialKind() {
+	case extension.CredentialNone:
+		return []string{"none"}
+	case extension.CredentialToken:
+		return []string{"api_key"}
+	case extension.CredentialOAuth:
+		methods := []string{}
+		for _, method := range info.OAuthMethods {
+			name := "oauth_browser"
+			if method == oauthflow.MethodDevice {
+				name = "oauth_device"
+			}
+			if !slices.Contains(methods, name) {
+				methods = append(methods, name)
+			}
+		}
+		return methods
+	}
+	return []string{}
+}
+
 // extensionStatus is what a check of an extension found.
 type extensionStatus struct {
 	Probed    bool   `json:"probed"`
@@ -93,7 +111,8 @@ type extensionStatus struct {
 	// Unauthenticated reports a daemon that answers without the secret
 	// too, and so serves anyone who reaches it.
 	Unauthenticated bool `json:"unauthenticated"`
-	// Outdated reports a daemon older than minimumExtensionVersion.
+	// Outdated is retained for older clients. Implementation release numbers
+	// are not protocol versions, so discovery never infers incompatibility.
 	Outdated bool `json:"outdated"`
 }
 
@@ -255,7 +274,7 @@ func (s *server) handleListExtensions(w http.ResponseWriter, r *http.Request) {
 	}
 	checks.Wait()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"extensions": views, "minimum_version": minimumExtensionVersion,
+		"extensions": views, "minimum_version": "",
 		"legacy_environment": len(retiredExtensionVariablesSet()) > 0,
 	})
 }
@@ -497,7 +516,6 @@ func checkExtension(ctx context.Context, address, secret string) extensionStatus
 	if info.Providers != nil {
 		status.Served = info.Providers
 	}
-	status.Outdated = extensionOutdated(info.Version)
 	if _, code, _ := requestExtensionInfo(ctx, client, address, ""); code == "" {
 		status.Unauthenticated = true
 	}
@@ -570,97 +588,6 @@ func checkReason(reason, secret string) string {
 		reason = strings.ReplaceAll(reason, secret, diagnostics.Redacted)
 	}
 	return diagnostics.SanitizeTextLimit(reason, maxExtensionCheckReason)
-}
-
-// semver is a semantic version's release numbers and pre-release
-// identifiers.
-type semver struct {
-	release    [3]uint64
-	prerelease []string
-}
-
-// parseSemver reads MAJOR.MINOR.PATCH, numbers without leading zeros, with
-// an optional "v" before it, an optional pre-release after "-" and optional
-// build metadata after "+", which does not count.
-func parseSemver(raw string) (semver, bool) {
-	text := strings.TrimPrefix(strings.TrimSpace(raw), "v")
-	text, _, _ = strings.Cut(text, "+")
-	text, prerelease, hasPrerelease := strings.Cut(text, "-")
-	parts := strings.Split(text, ".")
-	if len(parts) != 3 {
-		return semver{}, false
-	}
-	var version semver
-	for index, part := range parts {
-		number, ok := semverNumber(part)
-		if !ok {
-			return semver{}, false
-		}
-		version.release[index] = number
-	}
-	if hasPrerelease {
-		version.prerelease = strings.Split(prerelease, ".")
-		for _, identifier := range version.prerelease {
-			if identifier == "" || strings.Trim(identifier, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-") != "" {
-				return semver{}, false
-			}
-		}
-	}
-	return version, true
-}
-
-// semverNumber reads a numeric identifier: digits without a leading zero.
-func semverNumber(part string) (uint64, bool) {
-	if part == "" || (len(part) > 1 && part[0] == '0') || strings.Trim(part, "0123456789") != "" {
-		return 0, false
-	}
-	number, err := strconv.ParseUint(part, 10, 64)
-	return number, err == nil
-}
-
-// compareSemver orders a and b by semantic version precedence: release
-// numbers first, then a pre-release before its release, then pre-releases
-// by their identifiers, numeric ones by value and before alphanumeric ones,
-// and the shorter list first when one is the other's start.
-func compareSemver(a, b semver) int {
-	for index := range a.release {
-		if order := cmp.Compare(a.release[index], b.release[index]); order != 0 {
-			return order
-		}
-	}
-	if len(a.prerelease) == 0 || len(b.prerelease) == 0 {
-		// A release has no identifiers, and comes after its pre-releases.
-		return cmp.Compare(len(b.prerelease), len(a.prerelease))
-	}
-	for index := 0; index < len(a.prerelease) && index < len(b.prerelease); index++ {
-		left, right := a.prerelease[index], b.prerelease[index]
-		leftNumber, leftNumeric := semverNumber(left)
-		rightNumber, rightNumeric := semverNumber(right)
-		var order int
-		switch {
-		case leftNumeric && rightNumeric:
-			order = cmp.Compare(leftNumber, rightNumber)
-		case leftNumeric:
-			order = -1
-		case rightNumeric:
-			order = 1
-		default:
-			order = strings.Compare(left, right)
-		}
-		if order != 0 {
-			return order
-		}
-	}
-	return cmp.Compare(len(a.prerelease), len(b.prerelease))
-}
-
-// extensionOutdated reports a version that is a semantic version below
-// minimumExtensionVersion. Anything else, such as "dev" for a daemon built
-// from source, is not outdated: the gateway cannot tell.
-func extensionOutdated(version string) bool {
-	current, ok := parseSemver(version)
-	minimum, _ := parseSemver(minimumExtensionVersion)
-	return ok && compareSemver(current, minimum) < 0
 }
 
 // retiredExtensionVariablesSet names the retired variables that are still

@@ -38,8 +38,8 @@ func TestProviderRegistryIsUniqueAndRunnable(t *testing.T) {
 			}
 		}
 	}
-	if len(seen) != 57 {
-		t.Fatalf("embedded registry has %d entries, want 57", len(seen))
+	if len(seen) != 53 {
+		t.Fatalf("public registry has %d entries, want 53", len(seen))
 	}
 }
 
@@ -184,9 +184,9 @@ func TestRegistryProviderResolvesAliasesAndReturnsCopies(t *testing.T) {
 	}
 }
 
-// TestEffectiveRegistryReproducesSnapshot pins the gateway's effective registry,
-// the core manifest plus the gateway overlay, to registry_snapshot.json, which
-// the website and documentation checks read. After an intended registry
+// TestEffectiveRegistryReproducesSnapshot pins the gateway's public registry
+// projection to registry_snapshot.json, which website and documentation checks
+// read. Legacy extension aliases remain internal lookups. After an intended registry
 // change, regenerate the snapshot:
 //
 //	LLMGW_UPDATE_GOLDEN=1 go test ./internal/providers -run TestEffectiveRegistryReproducesSnapshot

@@ -127,6 +127,9 @@ func ollamaFailure(ctx context.Context, err error) error {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return ctxErr
 	}
+	if refusal := inputLossRefusal(err); refusal != nil {
+		return refusal
+	}
 	var configErr *ConfigError
 	if errors.As(err, &configErr) {
 		return configErr

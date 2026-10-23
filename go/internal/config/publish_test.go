@@ -28,10 +28,11 @@ func populatedSettings() *Settings {
 	s.APIKeys = []string{"fixture-key-a", "fixture-key-b"}
 	s.OpenAICodexClientID = "fixture-codex-client"
 	s.Providers = map[string]*ProviderConfig{
-		"fixture": {Type: "openai_compatible", BaseURL: "https://provider.example.test/v1", Timeout: &timeout},
+		"fixture": {Type: "openai_compatible", BaseURL: "https://provider.example.test/v1", Timeout: &timeout,
+			UsageLimits: &ProviderUsageLimits{TargetUsageLimits: TargetUsageLimits{RPM: 5}, Models: map[string]TargetUsageLimits{"model-a": {DailyTokens: 100}}}},
 	}
 	s.Endpoints = map[string]*EndpointConfig{
-		"smart": {Failover: []EndpointMember{{Provider: "fixture", Model: "model-a"}}},
+		"smart": {Failover: []EndpointMember{{Provider: "fixture", Model: "model-a"}}, Ingress: []string{"/v1/chat/completions"}, AllowAdaptation: true},
 	}
 	s.Policies.Overrides = map[string]ProviderPolicy{"fixture": defaultPolicy()}
 	s.Policies.OverrideFields = map[string]map[string]any{
@@ -207,6 +208,7 @@ func TestWritersNeverChangePublishedSettings(t *testing.T) {
 	Update(func(s *Settings) {
 		s.APIKeys[0] = "changed-key"
 		s.Endpoints["smart"].Failover[0].Model = "changed-model"
+		s.Endpoints["smart"].Ingress[0] = "/v1/messages"
 		s.Policies.Overrides["fixture"] = ProviderPolicy{}
 		fields := s.Policies.OverrideFields["fixture"]
 		fields["retry_max_attempts"] = 9

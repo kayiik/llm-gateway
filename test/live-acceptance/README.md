@@ -17,6 +17,12 @@ a structured report.
   comparison before classification.
 - `policy`: evaluate an existing report with `node policy.mjs <report.json>`.
 
+Fixture catalogs are explicitly refreshed for the scoped acceptance owner before
+the Playground reads them; catalog reads do not initiate provider discovery.
+The test routes declare Chat and Messages ingress with adaptation enabled, and
+exact-model Messages calls explicitly allow compatibility. This preserves
+Messages-to-Chat translation coverage without relying on implicit adaptation.
+
 Each model call waits `LLMGW_ACCEPTANCE_MODEL_TIMEOUT_MS`, 180 seconds by
 default. The candidate gateway is started with a provider timeout of two thirds
 of that, so a slow upstream is recorded as the gateway's own outcome rather
@@ -36,13 +42,20 @@ node run.mjs
 Live mode uses the installed `claude` command by default. CI resolves the pinned
 platform binary from `@anthropic-ai/claude-code` with `claude-bin.mjs`.
 
-## Release policy
+## Separate live qualification
 
-The job must execute and produce a report. Candidate-only regressions and
-required deterministic failures block. Provider outages, rate limits, catalog
-drift, and provider-side invalid envelopes remain visible but do not become
-product passes. If every live provider is unavailable, the result is
-`inconclusive`; release promotion requires an explicit repository override.
+Tag publication runs deterministic acceptance and does not invoke live mode.
+The independent live-acceptance workflow retains its scheduled, manual and
+reusable entrypoints. For explicit qualification of an immutable image, supply
+`candidate_image` and enable `enforce`; the report is separate from publication.
+
+The qualification job must execute and produce a report. Candidate-only
+regressions and required deterministic failures block qualification. Provider
+outages, rate limits, catalog drift, and provider-side invalid envelopes remain
+visible but do not become product passes. If every live provider is unavailable,
+the result is `inconclusive`; accepting that result requires an explicit
+`allow_inconclusive` choice and reason. No live result is inferred from a
+successful release or a deterministic fixture run.
 
 Reports and local Claude state are ignored. The workflows upload reports as
 artifacts. No provider credential is required for the anonymous matrix.

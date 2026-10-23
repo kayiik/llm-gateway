@@ -1,3 +1,13 @@
+.provider-usage-limits { min-width: 0; }
+.provider-usage-limits summary { cursor: pointer; font-weight: 650; overflow-wrap: anywhere; }
+.provider-usage-limits form { display: grid; gap: 16px; margin-top: 16px; min-width: 0; }
+.provider-usage-limits h3 { margin: 6px 0 0; font-size: 0.9rem; }
+.provider-limit-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.provider-model-limit { display: grid; gap: 12px; min-width: 0; padding-block: 16px; border-top: 1px solid var(--border, #dce1e6); }
+.provider-usage-limits .button { justify-self: start; }
+.provider-allowance .provider-actions { margin-block: 16px; }
+.provider-allowance .table-wrap { max-width: 100%; overflow-x: auto; }
+@media (max-width: 640px) { .provider-limit-fields { grid-template-columns: minmax(0, 1fr); } }
 .provider-hub .provider-toolbar { align-items: stretch; flex-direction: column; gap: 12px; padding: 0; border: 0; box-shadow: none; background: transparent; }
 .provider-hub .search-field { max-width: 440px; }
 .provider-hub .filter-row { flex-wrap: wrap; overflow: visible; }
@@ -56,7 +66,7 @@
 .extension-row--selected .extension-row__name strong { color: #235591; }
 .extension-row__name .technical { display: block; margin-top: 3px; overflow: hidden; color: #65707c; font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; word-break: normal; }
 .extension-row__served { color: #596574; font-size: 0.76rem; }
-.extension-row__version { color: #65707c; font-size: 0.74rem; overflow-wrap: anywhere; }
+.extension-row__version { min-width: 0; overflow: hidden; color: #65707c; font-size: 0.74rem; text-overflow: ellipsis; white-space: nowrap; }
 .extension-row--add { grid-template-columns: 32px 1fr; min-height: 52px; color: #285fa6; font-size: 0.82rem; font-weight: 650; }
 .extension-row--add .provider-mark { border-style: dashed; background: transparent; color: #285fa6; }
 .extension-row--placeholder { grid-template-columns: 32px 1fr; color: #596574; font-size: 0.8rem; cursor: default; }
@@ -84,6 +94,8 @@
 .extension-empty { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 14px; padding: 18px 16px; }
 .extension-empty h3 { margin: 0 0 6px; font-size: 0.95rem; }
 .extension-empty p { margin: 0; max-width: 72ch; color: #65707c; font-size: 0.82rem; line-height: 1.5; }
+.extension-empty .provider-actions { display: flex; margin-top: 14px; }
+.extension-empty .provider-actions .button { width: auto; white-space: nowrap; }
 .unlock-list { display: grid; grid-template-columns: repeat(3, minmax(0, max-content)); gap: 8px 22px; margin: 14px 0 16px; padding: 0; list-style: none; }
 .unlock-list li { display: flex; align-items: center; gap: 8px; color: #2d3742; font-size: 0.8rem; font-weight: 600; }
 .extension-form { display: grid; gap: 16px; min-width: 0; }

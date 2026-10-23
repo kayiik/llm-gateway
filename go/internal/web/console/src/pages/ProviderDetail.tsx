@@ -15,6 +15,8 @@ import { principalSearch } from "../lib/directory";
 import { ConnectDialog, PrivateAPIKeyDialog } from "../components/providers/ProviderHub";
 import { RosterMetadata, configuredInstanceFor, rosterSetupEntry, rosterSetupUnavailableReason, useProviderRoster } from "../components/providers/ProviderRoster";
 import { RemovalBlockedNotice } from "../components/providers/RemovalBlockedNotice";
+import { ProviderUsageLimits } from "../components/providers/ProviderUsageLimits";
+import { ProviderAllowance } from "../components/providers/ProviderAllowance";
 import {
   ResultNotice,
   StatusBadge,
@@ -303,6 +305,8 @@ export function ProviderDetail({ entryID, data, mode, onChanged, onBack, onOpenP
           {stringValue(entry.last_check_detail) ? <div class="provider-check-facts__detail"><dt>Detail</dt><dd>{stringValue(entry.last_check_detail)}</dd></div> : null}
         </dl>
       </section> : null}
+      {configured && mode === "admin" ? asList(data.providers).map(asRecord).filter((provider) => providerIDs.includes(stringValue(provider.id))).map((provider) => <ProviderUsageLimits key={stringValue(provider.id)} provider={provider} onSaved={onChanged} />) : null}
+      {configured ? <ProviderAllowance key={providerIDs.join("/")} connections={connections} providerIDs={providerIDs} mode={mode} /> : null}
       {configured ? <section class="surface">
         <div class="section-heading"><div><p class="eyebrow">Catalog</p><h2>Models from this provider</h2></div><span>{matchedModels.length === models.length ? `${models.length} model${models.length === 1 ? "" : "s"}` : `${matchedModels.length} of ${models.length} models`}</span></div>
         {models.length > defaultPageSize ? <label class="search-field catalog-search"><Search size={17} /><span class="sr-only">Search this provider's models</span><input value={modelSearch} onInput={(event) => setModelSearch((event.currentTarget as HTMLInputElement).value)} placeholder="Filter by model id or name" /></label> : null}

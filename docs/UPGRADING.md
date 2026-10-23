@@ -28,6 +28,31 @@ after the move, the release predates this: update to the latest release.
 
 ## Before an upgrade
 
+### Native API policy migration
+
+The prepared-inference implementation changes implicit conversion to explicit
+permission. Before adopting a build containing this change, check the actual
+upstream API behind each selector and each client entrypoint:
+
+- Exact targets and bare aliases default native-only. For an intended direct
+  cross-API call, send `X-LLMGW-Compatibility: allow` on that request.
+- For clients sharing a named route, configure its canonical `ingress` list and
+  `allow_adaptation: true` only where conversion is intended. Include all needed
+  paths, such as Messages token counting. Existing routes without these fields
+  remain native-only; a client header cannot broaden them.
+- `force_api_support` no longer grants compatibility authorization. Transparent
+  mode remains stronger and cannot be combined with adaptation permission.
+- A native member is assessed independently of other route members. A mixed
+  chain does not force its native member through a lossy translation.
+
+Use the playground and hermetic client checks to validate the declared route.
+A conversion refusal requires a compatible request/target or a deliberate route
+policy change, rather than automatic field removal. See the
+[API contract](API.md#native-and-compatible-execution) and
+[endpoint configuration](CONFIGURATION.md#endpoints).
+
+### Upgrade preparation
+
 1. Schedule maintenance, drain traffic, and stop all gateway writers.
 2. Check the installed binary's `llmgw --help` and use its built-in backup if
    it lists one. Otherwise archive the entire stopped state volume, including
@@ -47,6 +72,11 @@ Database migrations are idempotent and recorded in `schema_migrations` and
 newer than it supports, and refuses to open a `gateway.db` that a newer release
 has migrated: run that release, or [roll back](#rollback) to the pre-upgrade
 snapshot.
+
+Source-usage evidence adds a nullable column to recorded requests. Existing rows
+remain without evidence rather than gaining synthetic measured zeros. The
+migration is additive, but an older binary may refuse the newer database schema;
+retain the pre-upgrade backup for rollback as described above.
 
 ## Standalone image installation
 
@@ -116,9 +146,7 @@ docker compose --env-file .env up -d --build
 ## Companion daemon extensions
 
 The gateway no longer reads `LLMGW_EXTENSION_URL` or `LLMGW_EXTENSION_SECRET`.
-The optional companion daemon, which serves GitHub Copilot, OpenAI Codex, Google
-Antigravity, Edge TTS, anonymous OpenCode Zen and Anthropic setup tokens, is
-added as an **extension** instead: an address and a shared secret that the
+An optional companion daemon is added as an **extension** instead: an address and a shared secret that the
 gateway stores encrypted. Until it is added, the providers it serves report that
 no extension serves them, and while either variable is still set the gateway
 logs a startup warning.
@@ -142,8 +170,9 @@ curl -fsS https://<gateway-host>/admin/api/extensions \
   -d '{"name": "Companion daemon", "url": "<the old LLMGW_EXTENSION_URL>", "secret": "<the old LLMGW_EXTENSION_SECRET>"}'
 ```
 
-4. Upgrade the daemon to the release that the gateway's release notes name. The
-   console marks an older daemon **Update needed**.
+4. Check the extension. Its `/extension/v1/info` declaration reports its actual
+   providers, native APIs and sign-in methods. Implementation release numbers
+   are informational and are not compared across independently built extensions.
 
 With one extension, every provider the daemon serves uses it. With several, each
 provider names the extension that serves it, and adding a second extension keeps

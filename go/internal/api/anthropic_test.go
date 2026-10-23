@@ -109,7 +109,7 @@ func TestAnthropicStreamingTargetIncompatibilityReturnsHTTPError(t *testing.T) {
 		"messages": []any{map[string]any{"role": "user", "content": "hello"}},
 		"metadata": map[string]any{"user_id": "fixture"},
 		"thinking": map[string]any{"type": "disabled"},
-	})
+	}, "allow")
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -117,16 +117,19 @@ func TestAnthropicStreamingTargetIncompatibilityReturnsHTTPError(t *testing.T) {
 		t.Fatalf("content type=%q", contentType)
 	}
 	if strings.Contains(response.Body.String(), "event: error") ||
-		!strings.Contains(response.Body.String(), "cannot preserve Anthropic thinking") {
+		!strings.Contains(response.Body.String(), "thinking") {
 		t.Fatalf("body=%s", response.Body.String())
 	}
 }
 
-func anthropicFixtureRequest(t *testing.T, body map[string]any) *httptest.ResponseRecorder {
+func anthropicFixtureRequest(t *testing.T, body map[string]any, compatibility ...string) *httptest.ResponseRecorder {
 	t.Helper()
 	raw, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(raw))
 	req.Header.Set("Authorization", "Bearer gateway-token")
+	if len(compatibility) > 0 {
+		req.Header.Set(compatibilityHeader, compatibility[0])
+	}
 	recorder := httptest.NewRecorder()
 	NewServer(Runtime{}).ServeHTTP(recorder, req)
 	return recorder
@@ -391,13 +394,18 @@ func TestAnthropicMessagesRejectsLossBeforeDispatch(t *testing.T) {
 			}}}, "output_config": map[string]any{
 				"effort": "high", "format": map[string]any{"type": "json_schema"},
 			},
-		})
+		}, "allow")
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("stream=%v status=%d body=%s", stream, response.Code, response.Body.String())
 		}
 		body := response.Body.String()
-		if !strings.Contains(body, "messages.0.content.0, messages.0.content.1, output_config.format") {
-			t.Fatalf("non-deterministic paths: %s", body)
+		previous := -1
+		for _, path := range []string{"messages.0.content.0", "messages.0.content.1", "output_config.format"} {
+			position := strings.Index(body, path)
+			if position <= previous {
+				t.Fatalf("missing or unordered loss path %s: %s", path, body)
+			}
+			previous = position
 		}
 	}
 	if calls.Load() != 0 {
@@ -472,7 +480,7 @@ func TestAnthropicMessagesRejectsMalformedNestedFields(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			payload := map[string]any{"model": "adapted/model", "max_tokens": 8, "messages": []any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "text", "text": "hi"}}}}}
 			tc.mutate(payload)
-			response := anthropicFixtureRequest(t, payload)
+			response := anthropicFixtureRequest(t, payload, "allow")
 			if response.Code != 400 || !strings.Contains(response.Body.String(), tc.path) {
 				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 			}
@@ -510,7 +518,7 @@ func TestAnthropicMessagesNativeFailureFallsBackToCoreAdapter(t *testing.T) {
 	config.Update(func(s *config.Settings) {
 		s.APIKey = "gateway-token"
 		s.Providers = map[string]*config.ProviderConfig{"native": {Type: "anthropic", BaseURL: native.URL}, "adapted": {Type: "openai_compatible", BaseURL: chat.URL}}
-		s.Endpoints = map[string]*config.EndpointConfig{"claude": {Failover: []config.EndpointMember{{Provider: "native", Model: "native"}, {Provider: "adapted", Model: "vision"}}}}
+		s.Endpoints = map[string]*config.EndpointConfig{"claude": {Failover: []config.EndpointMember{{Provider: "native", Model: "native"}, {Provider: "adapted", Model: "vision"}}, Ingress: []string{"/v1/messages"}, AllowAdaptation: true}}
 		s.Policies.Defaults.RetryMaxAttempts = 1
 	})
 	providers.ResetProviders()

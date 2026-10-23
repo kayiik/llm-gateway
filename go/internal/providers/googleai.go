@@ -30,6 +30,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -429,10 +430,80 @@ func (p GoogleAIProvider) PollVideoContext(ctx context.Context, operation string
 	}
 	uri, data, mime := googleVideoResult(decoded)
 	job.VideoURI, job.Data, job.MimeType = uri, data, mime
+	if p.surface == SurfaceAIStudio && len(job.Data) == 0 && job.VideoURI != "" {
+		if location, ok := p.videoFileURL(job.VideoURI); ok {
+			job.Data, job.MimeType, err = p.downloadVideoFile(ctx, location)
+			if err != nil {
+				return job, err
+			}
+		}
+	}
 	if job.VideoURI == "" && len(job.Data) == 0 {
 		return job, &InvocationError{Msg: p.label() + ": the operation finished without returning a video"}
 	}
 	return job, nil
+}
+
+// File credentials belong to the configured API origin. Other result locations
+// remain URI metadata rather than receiving this provider's credential.
+func (p GoogleAIProvider) videoFileURL(raw string) (*url.URL, bool) {
+	base, baseErr := url.Parse(p.baseURL)
+	location, err := url.Parse(raw)
+	if baseErr != nil || err != nil || location.User != nil || location.Fragment != "" ||
+		(location.Scheme != "http" && location.Scheme != "https") ||
+		!strings.EqualFold(location.Scheme, base.Scheme) || !strings.EqualFold(location.Host, base.Host) {
+		return nil, false
+	}
+	prefix := strings.TrimRight(base.Path, "/") + "/files/"
+	if !strings.HasPrefix(location.Path, prefix) || !strings.HasSuffix(location.Path, ":download") {
+		return nil, false
+	}
+	id := strings.TrimSuffix(strings.TrimPrefix(location.Path, prefix), ":download")
+	if id == "" || strings.ContainsAny(id, "/\\") {
+		return nil, false
+	}
+	return location, true
+}
+
+func (p GoogleAIProvider) downloadVideoFile(ctx context.Context, location *url.URL) ([]byte, string, error) {
+	const description = "ai_studio: completed video download"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, location.String(), nil)
+	if err != nil {
+		return nil, "", invocation(description + " could not be requested")
+	}
+	request.Header.Set("Accept", "video/mp4")
+	if p.apiKey != "" {
+		request.Header.Set("x-goog-api-key", p.apiKey)
+	}
+	client := &http.Client{Timeout: p.timeout, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	response, err := client.Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, "", ctx.Err()
+		}
+		return nil, "", retryableInvocation(description + " transport failed")
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		if response.StatusCode >= http.StatusBadRequest {
+			return nil, "", invocationStatusRetryAfter(description+" was refused by the provider", response.StatusCode, googleRetryAfter(response.Header, nil, time.Now()))
+		}
+		return nil, "", circuitFailureInvocation(description + " returned an unexpected status")
+	}
+	contentType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if err != nil || (contentType != "video/mp4" && contentType != "application/octet-stream") {
+		return nil, "", circuitFailureInvocation(description + " returned an unsupported content type")
+	}
+	data, err := readInvocationResponseBody(response, description)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(data) < 12 || string(data[4:8]) != "ftyp" {
+		return nil, "", circuitFailureInvocation(description + " returned invalid MP4 data")
+	}
+	return data, "video/mp4", nil
 }
 
 // vertexOperationModel pulls the model id out of a Vertex operation name of the
@@ -460,7 +531,9 @@ func (p GoogleAIProvider) operationURL(operation string) (string, error) {
 		if index < 0 {
 			return "", &ConfigError{Msg: p.label() + ": operation is missing its model binding"}
 		}
-		return p.baseURL + "/operations/" + strings.TrimPrefix(operation[index+len(marker):], "/"), nil
+		// The model prefix is part of the operation resource, not metadata
+		// to discard when polling the Gemini Developer API.
+		return p.baseURL + "/" + strings.TrimPrefix(operation, "/"), nil
 	}
 	base := p.baseURL
 	if base == "" {

@@ -20,7 +20,7 @@ func BedrockBaseURL(region string) string {
 	if region == "" {
 		region = DefaultBedrockRegion
 	}
-	return "https://bedrock-runtime." + region + ".amazonaws.com/v1"
+	return "https://bedrock-runtime." + region + ".amazonaws.com/openai/v1"
 }
 
 // LocalCandidate is a locally-reachable provider surfaced by discovery. It is

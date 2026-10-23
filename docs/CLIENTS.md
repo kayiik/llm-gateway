@@ -4,6 +4,13 @@ These profiles describe the gateway wire contract covered by automated fixtures.
 They do not certify every future installed client release. Use an exact model ID
 or endpoint returned by `GET /v1/models`.
 
+Direct selectors and aliases default to the target's actual native API. For
+intentional conversion, use a named route whose `ingress` accepts the client's
+API and whose `allow_adaptation` is true, or set
+`X-LLMGW-Compatibility: allow` on a direct request. Client identity and user-agent
+strings do not enable adaptation. A request header cannot broaden a route's
+contract. See [native and compatible execution](API.md#native-and-compatible-execution).
+
 Every profile authenticates with a gateway-issued project key, minted in the
 console under **API keys**. The administrator keys (`LLMGW_API_KEY` and
 `LLMGW_API_KEYS`) are for administration only: the data plane still accepts them,
@@ -60,13 +67,13 @@ receive the Messages payload directly, and Claude's streams from them arrive as
 the target sent them, thinking, signatures and cache usage included, so prompt
 caching and thinking work with Claude's defaults. Claude's `anthropic-version`
 and `anthropic-beta` headers reach native targets with each request, so beta
-features it asks for are served. A stream goes natively only
-when every target of the request is a native Anthropic target; on an endpoint
-with any adapted member it is translated. Adapted targets use a strict
+features it asks for are served where the upstream supports them. Each eligible
+member is prepared independently: a native member retains native execution even
+on a mixed endpoint. Explicitly permitted adapted targets use a strict
 compatibility profile and reject fields that cannot be preserved.
 
-For a Chat-only target, or an endpoint with any adapted member, disable thinking
-and prompt caching for a core-profile smoke:
+For an explicitly compatible Chat-only target, disable thinking and prompt
+caching for a core-profile smoke:
 
 ```json
 {
@@ -171,3 +178,64 @@ tools, token counting, errors, and safe metadata. Real-provider and installed
 client checks are described in [`../test/uat/README.md`](../test/uat/README.md).
 Cancellation follows the same HTTP request lifecycle for CLIs, SDKs, browsers,
 and backend clients.
+
+### Fixture contract
+
+| Client | Credential-free fixture coverage | Important boundary |
+| --- | --- | --- |
+| Claude Code | Messages, native record-preserving streams, model selection, aliases and token counting | Core-profile adapted requests do not silently enable thinking/cache/structured-output semantics. Use a native target when those fields cannot be carried faithfully. |
+| Codex | Responses envelopes, function-call output, terminal stream events, selected wire-model identity, aliases and missing-model errors | Built-in tools, non-empty `include`, reasoning summaries and stateful Responses require a native Responses target. |
+| Copilot CLI BYOK | Chat/Responses envelopes, tools, terminal events, selected wire-model identity, aliases and missing-model errors | A client picker entry and the provider wire-model selector are different values. Do not infer native Responses support from a Chat model. |
+
+Token counting uses the first policy-eligible target. Adapted counting returns a
+deterministic compact-JSON estimate marked by `X-LLMGW-Token-Count: estimate`,
+without an upstream inference call, quota debit or usage record. Request bodies
+are limited to 32 MiB. Native counting forwards only the resolved provider
+credential, a valid nonempty `anthropic-version` (otherwise the default), and
+caller `anthropic-beta`; it does not forward gateway authentication wholesale.
+
+When both credential headers are supplied, `x-api-key` takes precedence over
+`Authorization: Bearer`. An invalid `x-api-key` is not rescued by a valid bearer
+token. Discovery is sorted by public ID; case and dot/dash alias variants share
+one canonical key. Ambiguous aliases or collisions with a route/provider
+namespace are omitted. Exact selectors remain subject to the same access checks.
+
+Safe coding-client metadata/cache hints are fixture-covered. Conversion support
+is finite: requested semantics that cannot be carried fail closed rather than
+being stripped. Native transport and assessed adaptation are distinct; see
+[native and compatible execution](API.md#native-and-compatible-execution).
+
+### Catalog and completion diagnostics
+
+`GET /admin/api/providers/{id}/catalog` and
+`POST /admin/api/providers/{id}/models` retain `models` and HTTP 200 on discovery
+failure, with additive `catalog` and `readiness` diagnostics. Inspect status
+(`synced`, `empty`, `error`), `failure_code`, optional `upstream_status`, `stale`,
+`from_cache` and `source_scope`. Cached rows may accompany an error. Discovery
+does not invoke inference; a cached catalog or another owner's successful check
+does not establish readiness for this caller/model. `/v1/models` is best-effort
+discovery, not a readiness probe.
+
+Chat `finish_reason: "stop"` becomes `"tool_calls"` only when every returned
+function call has a nonempty unique ID/name and complete JSON-object arguments.
+Streaming validates accumulated calls per choice within bounded tracking limits.
+Incomplete calls, `length` and `content_filter` are not promoted to successful
+tool completion.
+
+Disabled providers are omitted from public discovery and skipped in route chains
+without reordering enabled members. Exact disabled targets and all-disabled
+routes return JSON 404 before upstream calls or SSE start. Administrative
+configuration remains visible; auth/policy/upstream failures are not relabelled
+as disabled-target errors.
+
+### Cancellation
+
+Closing/resetting the HTTP request or aborting an SDK call cancels the request
+context: stop retry/failover, stop translation and close upstream I/O. Merely
+stopping reads while leaving the connection open is not cancellation. This
+ordinary HTTP lifecycle is separate from realtime per-turn interruption.
+
+An asynchronous job may outlive its initiating request after returning an
+operation ID. Disconnecting cannot guarantee provider-side video/background job
+cancellation. See [testing](TESTING.md#integration-and-release-validation) for
+the separate fixture, installed-client and release validation entrypoints.

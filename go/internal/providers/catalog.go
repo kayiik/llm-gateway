@@ -12,6 +12,7 @@ import (
 
 	core "github.com/kayiik/llmgw-core"
 	"github.com/kayiik/llmgw-core/catalog"
+	"github.com/kayiik/llmgw-core/extension"
 	coreproviders "github.com/kayiik/llmgw-core/providers"
 )
 
@@ -69,6 +70,10 @@ func CatalogRequiresPrincipal(providerID string) bool {
 	if !ok || cfg == nil {
 		return false
 	}
+	if strings.TrimSpace(cfg.Extension) != "" {
+		info, err := Current().ExtensionProviderInfo(context.Background(), cfg.Extension, CompanionDaemonType(cfg))
+		return err != nil || info.CredentialKind() == extension.CredentialOAuth
+	}
 	switch EffectiveRegistryID(providerID, cfg.RegistryID, cfg.Type) {
 	case "openai_codex", "google_antigravity":
 		return true
@@ -85,7 +90,7 @@ func ProviderConfigurationIssue(providerID string) string {
 	if !ok {
 		return ""
 	}
-	if strings.EqualFold(strings.TrimSpace(cfg.Type), retiredExtensionType) {
+	if strings.EqualFold(strings.TrimSpace(cfg.Type), retiredExtensionType) && strings.TrimSpace(cfg.Extension) == "" {
 		return retiredExtensionTypeError(providerID).Error()
 	}
 	// A provider the companion daemon serves reaches it only through an
@@ -93,6 +98,9 @@ func ProviderConfigurationIssue(providerID string) string {
 	if CompanionDaemonType(cfg) != "" {
 		if _, err := ExtensionFor(settings, providerID); err != nil {
 			return err.Error()
+		}
+		if strings.TrimSpace(cfg.Extension) != "" {
+			return ""
 		}
 	}
 	registryID := EffectiveRegistryID(providerID, cfg.RegistryID, cfg.Type)

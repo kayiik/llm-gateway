@@ -7,8 +7,7 @@ import { sentenceCase } from "../lib/text";
 import { EmptyState, ErrorState, PageHeading } from "../components/PageState";
 import { RemoteSearchSelect, SearchSelect } from "../components/DataTable";
 import { principalSearch } from "../lib/directory";
-
-type RouteMember = { provider: string; model: string };
+import { routeMembers, routeMemberLabel } from "../lib/routes";
 
 export function RouteDetail({ routeName, data, mode, onChanged, onBack }: {
   routeName: string;
@@ -19,8 +18,8 @@ export function RouteDetail({ routeName, data, mode, onChanged, onBack }: {
 }) {
   const endpoints = endpointsOf(data);
   const routeValue = endpoints[routeName];
-  const members: RouteMember[] = asList(asRecord(routeValue).failover).map(asRecord)
-    .map((member) => ({ provider: stringValue(member.provider), model: stringValue(member.model) }));
+  const members = routeMembers(routeValue);
+  const expanded = routeMembers({ failover: asRecord(routeValue).expanded_failover });
 
   const activeHumans = numberValue(asRecord(data.counts).active_humans);
   const projects = asList(data.projects).map(asRecord).filter((project) => stringValue(project.status, "active") === "active");
@@ -82,10 +81,11 @@ export function RouteDetail({ routeName, data, mode, onChanged, onBack }: {
   return (
     <div class="page-stack">
       <nav class="detail-breadcrumb"><button class="button button--secondary" type="button" onClick={onBack}><ArrowLeft size={16} /> Routes</button></nav>
-      <PageHeading eyebrow="Endpoint route" title={routeName} detail="The ordered failover chain below is exactly what the gateway walks for this route name: the first healthy member serves the request." actions={<button class="button button--danger" type="button" disabled={deleteBusy} onClick={() => void removeRoute()}><Trash2 size={16} /> Delete route</button>} />
+      <PageHeading eyebrow="Endpoint route" title={routeName} detail="Route references expand in place. This route's API policy and grants govern the resulting ordered model list." actions={<button class="button button--danger" type="button" disabled={deleteBusy} onClick={() => void removeRoute()}><Trash2 size={16} /> Delete route</button>} />
       <section class="surface">
         <div class="section-heading"><div><p class="eyebrow">Failover chain</p><h2>Members in order</h2></div><span>{members.length} member{members.length === 1 ? "" : "s"}</span></div>
-        <ol class="route-chain">{members.map((member, index) => <li key={`${index}-${member.provider}-${member.model}`}><span class="route-order">{index + 1}</span><span class="technical">{member.provider}/{member.model}</span>{index < members.length - 1 ? <ArrowDown size={16} aria-label="then" /> : <span class="route-terminal">served</span>}</li>)}</ol>
+        <ol class="route-chain">{members.map((member, index) => <li key={`${index}-${routeMemberLabel(member)}`}><span class="route-order">{index + 1}</span><span class="technical">{routeMemberLabel(member)}</span>{index < members.length - 1 ? <ArrowDown size={16} aria-label="then" /> : <span class="route-terminal">served</span>}</li>)}</ol>
+        {members.some((member) => member.route !== undefined) ? <div><h3>Expanded targets</h3><ol class="route-chain">{expanded.map((member, index) => <li key={`${index}-${routeMemberLabel(member)}`}><span class="route-order">{index + 1}</span><span class="technical">{routeMemberLabel(member)}</span></li>)}</ol></div> : null}
         <p class="form-help">Edit membership and ordering from the Routes list. Deleting a member's provider breaks the chain at that hop.</p>
       </section>
       <section class="surface">

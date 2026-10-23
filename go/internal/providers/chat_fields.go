@@ -100,6 +100,9 @@ func unsentChatFieldError(field string) error {
 // the factory's choice of facade, and each facade's own reading of the
 // kwargs, which is where a field it does not name is dropped.
 func (rt *Runtime) chatFieldsSent(providerID, model string, caller core.Caller, cfg *config.ProviderConfig, kw Kwargs) func(string) bool {
+	if strings.TrimSpace(cfg.Extension) != "" {
+		return nil
+	}
 	ptype := strings.ToLower(strings.TrimSpace(cfg.Type))
 	if strings.EqualFold(strings.TrimSpace(cfg.RegistryID), ExtensionTypeCodex) {
 		ptype = ExtensionTypeCodex

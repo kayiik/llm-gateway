@@ -12,50 +12,11 @@ import { badgeTone, boolValue, statusLabel, tileStatus } from "./shared";
 export type Tone = "ready" | "attention" | "muted";
 export type Pill = { label: string; tone: Tone };
 
-// A DaemonType is a provider type the companion daemon serves: how the
-// console names it, the registry entry it is added from, if any, and what
-// the gateway itself knows of it, which stands in while the daemon does not
-// answer.
-export type DaemonType = {
-  type: string;
-  label: string;
-  markID: string;
-  registryID?: string;
-  providerID?: string;
-  credential: "oauth" | "token" | "none";
-  oauthMethods: string[];
-  surfaces: string[];
-  authMethods: string[];
-  categories: string[];
-};
-
-// daemonTypes are the types the gateway sends to a companion daemon, in the
-// order the shelf lists what an extension brings. Their surfaces are those
-// the gateway sends the daemon for each.
-export const daemonTypes: DaemonType[] = [
-  { type: "github_copilot", label: "GitHub Copilot", markID: "github_copilot", registryID: "github_copilot", credential: "oauth", oauthMethods: ["device"], surfaces: ["chat_completions"], authMethods: ["oauth_device"], categories: [] },
-  { type: "openai_codex", label: "OpenAI Codex", markID: "openai_codex", registryID: "openai_codex", credential: "oauth", oauthMethods: ["browser", "device"], surfaces: ["chat_completions", "responses"], authMethods: ["oauth_browser", "oauth_device"], categories: [] },
-  { type: "google_antigravity", label: "Google Antigravity", markID: "google_antigravity", registryID: "google_antigravity", credential: "oauth", oauthMethods: ["browser"], surfaces: ["chat_completions"], authMethods: ["oauth_browser"], categories: [] },
-  { type: "edge_tts", label: "Edge TTS", markID: "edge_tts", registryID: "edge_tts", credential: "none", oauthMethods: [], surfaces: ["audio_speech"], authMethods: ["none"], categories: [] },
-  { type: "opencode_zen_anonymous", label: "OpenCode Zen, anonymous", markID: "opencode_zen", providerID: "opencode-zen-anonymous", credential: "none", oauthMethods: [], surfaces: ["chat_completions"], authMethods: ["none"], categories: ["no-auth"] },
-  { type: "anthropic_setup_token", label: "Anthropic, setup token", markID: "anthropic", providerID: "anthropic-setup-token", credential: "token", oauthMethods: [], surfaces: ["messages"], authMethods: ["setup_token"], categories: [] },
-];
-
-export function daemonType(type: string): DaemonType | undefined {
-  return daemonTypes.find((known) => known.type === type);
-}
-
-// daemonRegistryIDs are the registry entries a companion daemon serves. An
-// administrator finds them under the extension that serves them, not on the
-// shelves of the providers the gateway reaches itself.
-export const daemonRegistryIDs = new Set(daemonTypes.flatMap((known) => known.registryID ? [known.registryID] : []));
-
 // extensionPill says at a glance whether an extension answers: how fast,
 // or what went wrong, or that nothing has checked it yet.
 export function extensionPill(status: unknown): Pill {
   const checked = asRecord(status);
   if (boolValue(checked.reachable)) {
-    if (boolValue(checked.outdated)) return { label: "Update needed", tone: "attention" };
     return { label: `Reachable · ${numberValue(checked.latency_ms)} ms`, tone: "ready" };
   }
   const code = stringValue(checked.error_code);
@@ -138,7 +99,8 @@ export function servedState(credential: string, instances: JSONRecord[], unserve
     const state = stringValue(instance.status, "configured");
     counts[state] = (counts[state] ?? 0) + 1;
   }
-  const status = tileStatus({ instance_status_counts: counts, status: "configured" });
+  const reportedStatus = tileStatus({ instance_status_counts: counts, status: "configured" });
+  const status = credential === "none" && reportedStatus === "needs_credentials" ? "configured" : reportedStatus;
   const tone = badgeTone(status);
   if (status === "disabled") return { label: "Disabled", tone, added: true, needs: "" };
   if (credential === "token" && status === "needs_credentials") return { label: "Added · needs a token", tone: "attention", added: true, needs: "token" };
@@ -164,7 +126,7 @@ export type ServedRow = {
   instances: JSONRecord[];
   // Configured to use this extension, of a type its daemon does not serve.
   unserved: boolean;
-  // Known to this console, so it can be added from here.
+  // The extension reported enough information to configure it.
   addable: boolean;
   state: ServedState;
   // The registry entry, or a stand-in for a type without one, which the
@@ -181,19 +143,16 @@ export function servedRows(extension: JSONRecord, data: JSONRecord): ServedRow[]
   const reported = boolValue(status.reachable) ? asList(status.served).map(asRecord) : [];
   const configured = asList(extension.providers).map(asRecord);
   const snapshots = instanceSnapshots(data);
-  const registry = new Map(asList(data.provider_registry).map(asRecord).map((entry) => [stringValue(entry.id), entry]));
   const configuredTypes = configured.map((provider) => stringValue(provider.type)).filter(Boolean);
-  const order = (type: string) => { const index = daemonTypes.findIndex((known) => known.type === type); return index < 0 ? daemonTypes.length : index; };
   const types = [...new Set([
     ...reported.map((info) => stringValue(info.id)).filter(Boolean),
-    ...(reported.length ? configuredTypes : [...configuredTypes].sort((a, b) => order(a) - order(b))),
+    ...configuredTypes,
   ])];
   return types.map((type) => {
     const info = reported.find((candidate) => stringValue(candidate.id) === type);
-    const known = daemonType(type);
-    const label = known?.label ?? (stringValue(info?.name) || type);
-    const credential = info ? stringValue(info.credential) || (boolValue(info.has_oauth) ? "oauth" : known?.credential ?? "") : known?.credential ?? "";
-    const methods = info && asList(info.oauth_methods).length ? asList(info.oauth_methods).map(String) : known?.oauthMethods ?? [];
+    const label = stringValue(info?.name) || type;
+    const credential = info ? stringValue(info.credential) || (boolValue(info.has_oauth) ? "oauth" : "") : "";
+    const methods = asList(info?.oauth_methods).map(String).filter((method) => ["browser", "device", "manual"].includes(method));
     const instances = configured
       .filter((provider) => stringValue(provider.type) === type)
       .map((provider) => {
@@ -201,15 +160,15 @@ export function servedRows(extension: JSONRecord, data: JSONRecord): ServedRow[]
         const snapshot = snapshots.get(id) ?? {};
         return { ...snapshot, id, disabled: boolValue(provider.disabled) || boolValue(snapshot.disabled) };
       });
-    const unserved = reported.length > 0 && !info;
-    const registryID = known?.registryID ?? "";
-    const registryEntry = registryID ? registry.get(registryID) : undefined;
+    const unserved = boolValue(status.reachable) && !info;
+    const authMethods = credential === "none" ? ["none"] : credential === "token" ? ["api_key"] : methods.map((method) => method === "device" ? "oauth_device" : "oauth_browser");
     return {
-      type, label, markID: known?.markID ?? type, registryID,
-      surfaces: info ? asList(info.surfaces).map(String) : known?.surfaces ?? [],
-      credential, signIn: signInLabel(credential, methods), instances, unserved, addable: Boolean(known),
+      type, label, markID: type, registryID: "",
+      surfaces: asList(info?.surfaces).map(String),
+      credential, signIn: signInLabel(credential, methods), instances, unserved,
+      addable: Boolean(info) && (["none", "token"].includes(credential) || (credential === "oauth" && boolValue(info?.has_oauth) && methods.length > 0)),
       state: servedState(credential, instances, unserved),
-      entry: { ...(registryEntry ?? { id: type, label, auth_methods: known?.authMethods ?? [], categories: known?.categories ?? [] }), configured: instances.length > 0 },
+      entry: { id: type, label, extension_provider: true, auth_methods: authMethods, oauth_methods: methods, categories: credential === "none" ? ["no-auth"] : [], configured: instances.length > 0 },
     };
   });
 }
@@ -243,18 +202,11 @@ export function shelfItems(extensions: JSONRecord[], data: JSONRecord, search: s
   });
 }
 
-// knownTypeMatches says whether a search names a provider type an extension
-// would bring, so a gateway without one shows what it would take.
-export function knownTypeMatches(search: string): boolean {
-  const needle = search.trim().toLowerCase();
-  return Boolean(needle) && daemonTypes.some((known) => `${known.label} ${known.type} ${known.registryID ?? ""}`.toLowerCase().includes(needle));
-}
-
 // shelfShows says whether the Extensions shelf has anything to show under
 // the hub's search and filter. Until the listing loads, it shows that.
 export function shelfShows(state: { listing: JSONRecord | null; extensions: JSONRecord[] }, data: JSONRecord, search: string, filter: string): boolean {
   if (!state.listing) return true;
-  if (!state.extensions.length) return filter === "all" && (!search.trim() || knownTypeMatches(search));
+  if (!state.extensions.length) return filter === "all" && (!search.trim() || "extensions".includes(search.trim().toLowerCase()));
   return shelfItems(state.extensions, data, search, filter).length > 0;
 }
 
@@ -272,16 +224,13 @@ export function freeProviderID(base: string, taken: Iterable<string>): string {
 // addProviderBody is the provider an Add creates for a served row: from its
 // registry entry, or of its type, served by the extension.
 export function addProviderBody(row: ServedRow, extensionID: string, providerID: string): JSONRecord {
-  return row.registryID
-    ? { registry_id: row.registryID, id: providerID, extension: extensionID }
-    : { id: providerID, type: row.type, extension: extensionID };
+  return { id: providerID, type: row.type, extension: extensionID };
 }
 
 // providerBaseID is the ID a served row's provider is added under, unless a
 // configured provider has it: its registry entry's default, or its own.
-export function providerBaseID(row: ServedRow, data: JSONRecord): string {
-  const entry = asList(data.provider_registry).map(asRecord).find((candidate) => stringValue(candidate.id) === row.registryID);
-  return stringValue(entry?.default_provider_id) || daemonType(row.type)?.providerID || row.type;
+export function providerBaseID(row: ServedRow): string {
+  return row.type;
 }
 
 // A Message is a notice's title and detail; reported is what the gateway
@@ -305,7 +254,7 @@ export function checkFailure(status: unknown, address: string): Message {
   const reported = stringValue(checked.error);
   switch (stringValue(checked.error_code)) {
     case "secret_refused":
-      return { tone: "error", title: "The daemon refused this secret", detail: "Enter the secret it was started with, its LLMGW_EXTENSION_SECRET." };
+      return { tone: "error", title: "The daemon refused this secret", detail: "Enter the shared secret configured on this extension." };
     case "no_answer":
       return {
         tone: "error", title: `Nothing answered at ${address}`, reported,
@@ -321,16 +270,8 @@ export function checkFailure(status: unknown, address: string): Message {
 // secret, and so serves anyone who reaches it.
 export const unauthenticatedWarning: Message = {
   tone: "warning", title: "This daemon answers without its secret",
-  detail: "Anyone who can reach it can use it. Start it with LLMGW_EXTENSION_SECRET.",
+  detail: "Anyone who can reach it can use it. Configure the extension to require its shared secret.",
 };
-
-// outdatedWarning is for a daemon older than the gateway expects.
-export function outdatedWarning(version: string, minimum: string): Message {
-  return {
-    tone: "warning", title: `Upgrade this daemon to ${minimum} or later`,
-    detail: `It runs llmgw-extension ${version}. An older daemon can quietly drop something a request asked for.`,
-  };
-}
 
 // The way out of each failure, when providers depend on the extension.
 const unreachableRemedies: Record<string, string> = {
