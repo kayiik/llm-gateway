@@ -31,8 +31,23 @@
 .key-list-table .key-value .technical { white-space: nowrap; overflow-wrap: normal; word-break: normal; }
 .key-list-table td.technical { overflow-wrap: normal; word-break: normal; }
 .key-list-table .table-actions { flex-wrap: nowrap; width: max-content; }
+.key-owner-kind { display: inline-block; margin-inline-start: 5px; padding: 2px 6px; border: 1px solid #cfd7e0; border-radius: 4px; color: #46596b; font-size: 0.72rem; }
+.key-access > header { display: flex; align-items: start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.key-access > header h2 { margin: 0; overflow-wrap: anywhere; }
+.key-access__actions { display: flex; align-items: center; gap: 10px; }
+.key-access__status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-block: 18px; }
+.key-access__search { display: grid; gap: 6px; max-width: 360px; margin-block: 16px; }
+.key-access__search input { width: 100%; }
+.key-access__groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.key-access__groups > div { min-width: 0; }
+.key-access__groups h3 { margin-bottom: 4px; }
+.key-access__groups ul { list-style: none; padding: 0; max-height: 340px; overflow: auto; }
+.key-access__groups li { padding: 9px 0; border-bottom: 1px solid #dce1e6; overflow-wrap: anywhere; }
+.key-access__groups li span { display: block; margin-top: 3px; font-size: 0.82rem; }
 :root[data-theme="dark"] .key-list-filters input, :root[data-theme="dark"] .key-list-filters select { border-color: #394350; background: #20262f; color: #e0e4e9; }
 :root[data-theme="dark"] .key-scope fieldset, :root[data-theme="dark"] .key-scope__preview { border-color: #394350; }
 :root[data-theme="dark"] .key-scope__preview { background: #20262f; }
 :root[data-theme="dark"] .key-scope__check small, :root[data-theme="dark"] .key-policy-summary small { color: #b3bdc9; }
-@media (max-width: 768px) { .key-list-filters label { width: 100%; min-width: 0; } .key-list-filters input, .key-list-filters select, .key-editor .key-scope__check, .key-scope summary { min-height: 44px; } }
+:root[data-theme="dark"] .key-owner-kind, :root[data-theme="dark"] .key-access__groups li { border-color: #394350; }
+:root[data-theme="dark"] .key-owner-kind { color: #ccd4df; }
+@media (max-width: 768px) { .key-list-filters label { width: 100%; min-width: 0; } .key-list-filters input, .key-list-filters select, .key-editor .key-scope__check, .key-scope summary { min-height: 44px; } .key-access__groups { grid-template-columns: minmax(0, 1fr); } }

@@ -374,7 +374,8 @@ func authorizePlaygroundPolicy(principal *config.Principal, requestedModel, reso
 	if err != nil {
 		return nil, 500, "Project policy store unavailable."
 	}
-	if !modelPolicyAllows(policy.AllowedModels, requestedModel, resolvedCategory, targets) {
+	targets = modelPolicyTargets(policy.AllowedModels, requestedModel, resolvedCategory, targets)
+	if len(targets) == 0 {
 		return nil, 403, "This project is not allowed to use the requested model or route."
 	}
 	if len(policy.AllowedProviders) > 0 {

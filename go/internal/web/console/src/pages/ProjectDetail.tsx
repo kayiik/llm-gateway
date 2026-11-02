@@ -98,6 +98,7 @@ export function ProjectPolicyEditor({ projectID, onSaved }: { projectID: string;
       {error ? <p class="form-error" role="alert">{error}</p> : null}
       {policy === null && !error ? <p class="muted-copy"><LoaderCircle class="spin" size={15} /> Loading policy…</p> : policy !== null ? <>
         <label>Allowed models (comma-separated, empty = all)<input value={allowedModels} onInput={(event) => setAllowedModels((event.currentTarget as HTMLInputElement).value)} placeholder="cat-coding, copilot/gpt-4o-mini" /></label>
+        <p class="form-help">A route name grants its members; a provider/model selector narrows the route to matching members. Key rules can narrow access further.</p>
         <label>Allowed providers (comma-separated, empty = all)<input value={allowedProviders} onInput={(event) => setAllowedProviders((event.currentTarget as HTMLInputElement).value)} placeholder="copilot, openai" /></label>
         <div class="policy-editor__grid">
           {policyFields.map((field) => <label key={field.key}>{field.label}<input inputMode="numeric" value={numbers[field.key] ?? ""} onInput={(event) => setNumbers((current) => ({ ...current, [field.key]: (event.currentTarget as HTMLInputElement).value }))} placeholder="No limit" /><small>{field.help}</small></label>)}
@@ -183,7 +184,7 @@ export function ProjectDetail({ projectID, data, onChanged, onNavigate, onBack }
   const keyColumns: TableColumn<JSONRecord>[] = [
     { id: "name", header: "Name", sortable: true, cell: (key) => stringValue(key.name, "Gateway key") },
     { id: "prefix", header: "Prefix", class: "technical", cell: (key) => stringValue(key.prefix, "—") },
-    { id: "owner", header: "Owner", sortable: true, cell: (key) => stringValue(key.principal, stringValue(key.principal_id)) },
+    { id: "owner", header: "Owner", sortable: true, cell: (key) => <>{stringValue(key.principal, stringValue(key.principal_id))} <small class="key-owner-kind">{sentenceCase(stringValue(key.principal_kind, "unknown"))}</small></> },
     {
       id: "status", header: "Status", sortable: true, cell: (key) => {
         const state = keyState(key);

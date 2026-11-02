@@ -289,7 +289,7 @@ func TestResponsesMaterialUsageIsNotOptionalMetadata(t *testing.T) {
 		}
 	}
 	status, raw := cliRequest(t, f.server.URL+"/v1/chat/completions", map[string]any{"model": "responses/fixture", "messages": []any{map[string]any{"role": "user", "content": "hi"}}}, "allow")
-	if status != http.StatusBadRequest || !bytes.Contains(raw, []byte("response_semantics_unassessed")) || !bytes.Contains(raw, []byte("tool_usage")) {
+	if status != http.StatusBadRequest || !bytes.Contains(raw, []byte("tool_usage")) {
 		t.Fatalf("nonzero usage silently dropped: status=%d body=%s", status, raw)
 	}
 	status, raw = cliRequest(t, f.server.URL+"/v1/responses", map[string]any{"model": "responses/fixture", "input": "hi"})

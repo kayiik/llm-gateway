@@ -78,7 +78,6 @@ export async function runEmbeddingsMatrix({ admin, publicCall, metrics, save }) 
   await route(firstRoute, ['primary', 'secondary']);
   await route(filteredRoute, ['secondary', 'primary']);
   await route('embedding-no-failover', ['unavailable', 'secondary']);
-  await route('embedding-wrong-ingress', ['primary'], ['/v1/chat/completions']);
   const mainProject = await admin('projects', { slug: 'embedding-matrix', name: 'Embedding matrix' });
   await admin(`projects/${mainProject.id}/policy`, { allowed_providers: ids });
   const caller = await key('standard', { allowed_providers: ids });
@@ -122,7 +121,16 @@ export async function runEmbeddingsMatrix({ admin, publicCall, metrics, save }) 
   const routed = await key('routes only', { allowed_routes: [firstRoute], routes_only: true, allowed_providers: ids });
   await test('routes-only-hides-direct-selector', async row => { Object.assign(row, await refused('routes-only-direct', embeddingRequest('single', direct), routed.token, 404)); });
   await test('route-scope-hides-other-route', async row => { Object.assign(row, await refused('route-scope', embeddingRequest('single', filteredRoute), routed.token, 404)); });
-  await test('route-ingress-refusal', async row => { Object.assign(row, await refused('route-ingress', embeddingRequest('single', 'embedding-wrong-ingress'), caller.token, 400)); });
+  await test('route-ingress-refusal-at-save-time', async row => {
+    const response = await publicCall('embedding-route-ingress', '/admin/api/endpoints', {
+      name: 'embedding-wrong-ingress', ingress: ['/v1/chat/completions'],
+      failover: [{ provider: providerId('primary'), model: 'fixture-embedding' }],
+    });
+    assert.equal(response.status, 400, response.text);
+    assert.match(response.text, /route ingress/);
+    assert.equal((await admin('state')).endpoints['embedding-wrong-ingress'], undefined, 'the invalid route must not be saved');
+    Object.assign(row, { status: response.status, upstreamCalls: 0 });
+  });
 
   for (const sample of Object.keys(samples)) await test('native-' + sample, async row => { Object.assign(row, await complete('native-' + sample, sample, direct, caller)); });
   await test('siliconflow-compatible-single-vector', async row => { Object.assign(row, await complete('siliconflow-single', 'single', providerId('siliconflow') + '/fixture-embedding', caller, 'siliconflow')); });

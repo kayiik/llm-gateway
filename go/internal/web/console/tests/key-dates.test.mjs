@@ -58,7 +58,7 @@ function keysPage() {
     getJSON: async (mode, path) => listing.answer(path),
     sendJSON: async (mode, path, method, body) => { sent.push({ path, method, body }); return { token: "fixture-token" }; },
   };
-  const render = mount(() => ApiKeys({ data, mode: "admin", onChanged: async () => {}, initialContext: { projectID: "project-1" } }));
+  const render = mount(() => ApiKeys({ data, mode: "admin", onChanged: async () => {}, initialContext: { projectID: "project-1", ownerID: "user-1" } }));
   return { sent, render };
 }
 const submit = (tree) => find(tree, (node) => node.type === "form").props.onSubmit({ preventDefault() {} });

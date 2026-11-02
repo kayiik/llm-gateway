@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -11,6 +12,41 @@ import (
 	"llmgw/internal/config"
 	"llmgw/internal/providers"
 )
+
+// A declared conversational ingress must have at least one member with a known
+// native or permitted adapted path. Other APIs have separate gateway handlers;
+// their catalog surfaces are not classified by the conversation planner.
+// Unknown evidence stays unknown instead of being invented or rejected.
+func endpointServingIngressIssue(contract config.EndpointConfig, members []config.EndpointMember, principal *config.Principal) error {
+	if len(contract.Ingress) == 0 {
+		return nil
+	}
+	for _, ingress := range contract.Ingress {
+		if ingress != "/v1/chat/completions" && ingress != "/v1/responses" && ingress != "/v1/messages" {
+			continue
+		}
+		native, unknown := false, false
+		for _, member := range members {
+			row, found := catalogLookupForPrincipal(member.Provider, member.Model, principal)
+			if !found || len(row.SupportedSurfaces) == 0 {
+				unknown = true
+				continue
+			}
+			capabilities, surfaces := modelPresentationMetadata(member.Provider, row)
+			listed, adapted, unresolved := modelTransportSurfaces(
+				member.Provider, callerOf(principal), row,
+				providers.CatalogRefreshedAtForPrincipal(member.Provider, callerOf(principal)),
+				capabilities, surfaces, time.Now(),
+			)
+			native = native || slices.Contains(listed, ingress) || (contract.AllowAdaptation && slices.Contains(adapted, ingress))
+			unknown = unknown || slices.Contains(unresolved, ingress)
+		}
+		if !native && !unknown {
+			return fmt.Errorf("route ingress %q has no serving member under its adaptation policy; choose a supported ingress or member", ingress)
+		}
+	}
+	return nil
+}
 
 // A route advertises its first target; later targets may have fewer optional
 // features. Authoring advice must not turn unknown catalog data into support.

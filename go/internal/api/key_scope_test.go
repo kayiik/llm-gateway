@@ -149,6 +149,135 @@ func TestKeyScopeRoutingAndCatalog(t *testing.T) {
 	}
 }
 
+func TestRouteModelAllowlistFiltersMembersWithoutRepeatingRouteName(t *testing.T) {
+	owner, project := setupKeyScope(t)
+	for _, test := range []struct {
+		name          string
+		keyModels     []string
+		projectModels []string
+		wantProviders []string
+	}{
+		{"key model selector", []string{"two/echo-default"}, nil, []string{"two"}},
+		{"route name grants members", []string{"echo-default"}, nil, []string{"one", "two", "three"}},
+		{"project narrows route grant", []string{"echo-default"}, []string{"two/echo-default"}, []string{"two"}},
+		{"separate model scopes have no intersection", []string{"one/echo-default"}, []string{"two/echo-default"}, nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := iam.SetProjectPolicy(project.ID, iam.KeyPolicy{AllowedModels: test.projectModels}); err != nil {
+				t.Fatal(err)
+			}
+			p := &config.Principal{Token: "fixture-key", PrincipalID: owner.ID, PrincipalKind: "human", ProjectID: project.ID,
+				AllowedRoutes: []string{"echo-default"}, AllowedModels: test.keyModels}
+			resolved, err := resolveAs("echo-default", p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			targets, status, message := authorizeKeyPolicy(p, "echo-default", resolved.Category, resolved.Targets)
+			if len(test.wantProviders) == 0 {
+				if status != http.StatusForbidden {
+					t.Fatalf("disjoint selectors admitted targets=%v status=%d error=%s", targets, status, message)
+				}
+			} else {
+				if status != 0 || len(targets) != len(test.wantProviders) {
+					t.Fatalf("route targets=%v status=%d error=%s, want %v", targets, status, message, test.wantProviders)
+				}
+				for i, target := range targets {
+					if target.Provider != test.wantProviders[i] {
+						t.Fatalf("target %d = %s, want %s", i, target.Provider, test.wantProviders[i])
+					}
+				}
+			}
+			list, err := buildModelList(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, raw := range list["data"].([]any) {
+				row := raw.(map[string]any)
+				if row["id"] != "echo-default" {
+					continue
+				}
+				members := row["failover"].([]any)
+				if len(members) != len(test.wantProviders) {
+					t.Fatalf("listed route members=%v, want %v", members, test.wantProviders)
+				}
+				return
+			}
+			if len(test.wantProviders) != 0 {
+				t.Fatalf("eligible route missing from catalog: %v", list["data"])
+			}
+		})
+	}
+}
+
+func TestKeyAccessInspectorUsesCallerPolicyWithoutRevealingToken(t *testing.T) {
+	owner, project := setupKeyScope(t)
+	if _, err := iam.SetProjectPolicy(project.ID, iam.KeyPolicy{AllowedProviders: []string{"two", "three"}}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := iam.IssueKey(iam.KeyCreate{ProjectID: project.ID, PrincipalID: owner.ID, Name: "inspection", Policy: iam.KeyPolicy{
+		AllowedRoutes: []string{"echo-default"}, RoutesOnly: true, AllowedModels: []string{"two/echo-default"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewServer(Runtime{}))
+	defer server.Close()
+	path := "/keys/" + key.ID + "/access"
+	portalAccess := func(subject string) (int, map[string]any) {
+		t.Helper()
+		request, err := http.NewRequest(http.MethodGet, server.URL+"/user/api"+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set(ssoSecretHeader, "scope-proxy")
+		request.Header.Set(ssoSubjectHeader, subject)
+		request.Header.Set("Origin", server.URL)
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		body := map[string]any{}
+		_ = json.NewDecoder(response.Body).Decode(&body)
+		return response.StatusCode, body
+	}
+	for _, mode := range []string{"admin", "portal"} {
+		var status int
+		var body map[string]any
+		if mode == "admin" {
+			status, body = jsonRequest(t, server.URL+"/admin/api"+path, http.MethodGet, "scope-admin", nil)
+		} else {
+			status, body = portalAccess("scope-owner")
+		}
+		if status != http.StatusOK || body["status"] != "active" || body["principal_kind"] != "human" {
+			t.Fatalf("%s access: status=%d body=%v", mode, status, body)
+		}
+		if bytes.Contains(mustJSON(t, body), []byte(key.Token)) {
+			t.Fatal("access inspector revealed the key token")
+		}
+		rows := body["data"].([]any)
+		if len(rows) != 1 {
+			t.Fatalf("%s access rows=%v, want one route and no direct models", mode, rows)
+		}
+		route := rows[0].(map[string]any)
+		if route["id"] != "echo-default" || len(route["failover"].([]any)) != 1 || route["failover"].([]any)[0].(map[string]any)["provider"] != "two" {
+			t.Fatalf("%s route access=%v", mode, route)
+		}
+	}
+	status, _ := portalAccess("someone-else")
+	if status != http.StatusNotFound {
+		t.Fatalf("a different portal owner saw key access: %d", status)
+	}
+	disabled := "disabled"
+	if err := iam.UpdateAPIKey(key.ID, iam.KeyUpdate{Status: &disabled, Admin: true}); err != nil {
+		t.Fatal(err)
+	}
+	status, body := jsonRequest(t, server.URL+"/admin/api"+path, http.MethodGet, "scope-admin", nil)
+	if status != http.StatusOK || body["status"] != "disabled" || len(body["data"].([]any)) != 0 {
+		t.Fatalf("disabled key had effective access: status=%d body=%v", status, body)
+	}
+}
+
 func TestKeyScopeRoutesAndDirectModelsAreIndependent(t *testing.T) {
 	_, _ = setupKeyScope(t)
 	p := &config.Principal{Token: "scope-test", AllowedRoutes: []string{"echo-default"}}

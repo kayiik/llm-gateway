@@ -20,6 +20,7 @@ export function RouteDetail({ routeName, data, mode, onChanged, onBack }: {
   const routeValue = endpoints[routeName];
   const members = routeMembers(routeValue);
   const expanded = routeMembers({ failover: asRecord(routeValue).expanded_failover });
+  const ingress = asList(asRecord(routeValue).ingress).map(String);
 
   const activeHumans = numberValue(asRecord(data.counts).active_humans);
   const projects = asList(data.projects).map(asRecord).filter((project) => stringValue(project.status, "active") === "active");
@@ -86,6 +87,7 @@ export function RouteDetail({ routeName, data, mode, onChanged, onBack }: {
         <div class="section-heading"><div><p class="eyebrow">Failover chain</p><h2>Members in order</h2></div><span>{members.length} member{members.length === 1 ? "" : "s"}</span></div>
         <ol class="route-chain">{members.map((member, index) => <li key={`${index}-${routeMemberLabel(member)}`}><span class="route-order">{index + 1}</span><span class="technical">{routeMemberLabel(member)}</span>{index < members.length - 1 ? <ArrowDown size={16} aria-label="then" /> : <span class="route-terminal">served</span>}</li>)}</ol>
         {members.some((member) => member.route !== undefined) ? <div><h3>Expanded targets</h3><ol class="route-chain">{expanded.map((member, index) => <li key={`${index}-${routeMemberLabel(member)}`}><span class="route-order">{index + 1}</span><span class="technical">{routeMemberLabel(member)}</span></li>)}</ol></div> : null}
+        <p class="form-help">Declared ingress: {ingress.length ? ingress.join(", ") : "legacy unrestricted"}. {asRecord(routeValue).allow_adaptation === true ? "Adaptation is allowed for declared ingress." : "Declared ingress requires a native member."}</p>
         <p class="form-help">Edit membership and ordering from the Routes list. Deleting a member's provider breaks the chain at that hop.</p>
       </section>
       <section class="surface">

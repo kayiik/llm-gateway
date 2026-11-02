@@ -25,28 +25,34 @@ func containsStr(list []string, v string) bool {
 	return false
 }
 
-func modelPolicyAllows(allowed []string, requestedModel, resolvedCategory string, targets []router.Target) bool {
+// A route name explicitly grants its members; otherwise each model selector
+// narrows the route's targets rather than forcing the route name into the same
+// list. A direct bare alias remains an intentional grant to its resolved name.
+func modelPolicyTargets(allowed []string, requestedModel, resolvedCategory string, targets []router.Target) []router.Target {
 	if len(allowed) == 0 {
-		return true
+		return targets
 	}
-	if resolvedCategory != "" {
-		return containsStr(allowed, resolvedCategory)
+	if resolvedCategory != "" && containsStr(allowed, resolvedCategory) {
+		return targets
 	}
 	requestedModel = strings.TrimSpace(requestedModel)
-	candidates := []string{requestedModel}
+	if resolvedCategory == "" && containsStr(allowed, requestedModel) {
+		return targets
+	}
+	filtered := make([]router.Target, 0, len(targets))
 	settings := config.Get()
 	for _, target := range targets {
-		candidates = append(candidates, target.Provider+"/"+target.Model, target.Model)
+		if containsStr(allowed, target.Provider+"/"+target.Model) || containsStr(allowed, target.Model) {
+			filtered = append(filtered, target)
+			continue
+		}
 		if alias, _ := discoveryAliasID(settings, target.Model); alias != "" {
-			candidates = append(candidates, alias)
+			if containsStr(allowed, alias) {
+				filtered = append(filtered, target)
+			}
 		}
 	}
-	for _, candidate := range candidates {
-		if candidate != "" && containsStr(allowed, candidate) {
-			return true
-		}
-	}
-	return false
+	return filtered
 }
 
 // admitKeyPolicy consumes one request from the principal's key and project
@@ -112,10 +118,12 @@ func authorizeKeyPolicy(p *config.Principal, requestedModel, resolvedCategory st
 			!containsStr(p.AllowedRoutes, resolvedCategory)) {
 		return nil, 403, "This key is not allowed to use the requested route or direct model."
 	}
-	if !modelPolicyAllows(projectPolicy.AllowedModels, requestedModel, resolvedCategory, targets) {
+	targets = modelPolicyTargets(projectPolicy.AllowedModels, requestedModel, resolvedCategory, targets)
+	if len(targets) == 0 {
 		return nil, 403, "This project is not allowed to use model '" + requestedModel + "'."
 	}
-	if !modelPolicyAllows(p.AllowedModels, requestedModel, resolvedCategory, targets) {
+	targets = modelPolicyTargets(p.AllowedModels, requestedModel, resolvedCategory, targets)
+	if len(targets) == 0 {
 		return nil, 403, "This key is not allowed to use model '" + requestedModel + "'."
 	}
 	allowedProviders := p.AllowedProviders

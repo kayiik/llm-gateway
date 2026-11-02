@@ -309,6 +309,19 @@ export async function runInstalledBrowser({ origin, adminKey, artifacts, phase }
         else assert.notEqual(created.key.principal_id, seed.human.id);
         await page.getByRole('dialog', { name: 'API key', exact: true }).getByRole('button', { name: 'Close', exact: true }).click();
         await keyEditor.waitFor({ state: 'hidden' });
+        const name = 'Browser policy ' + kind + ' ' + phase;
+        const keyRow = main.getByRole('table', { name: 'API keys' }).getByRole('row').filter({ hasText: name });
+        await keyRow.getByText(kind === 'human' ? 'Human' : 'Service', { exact: true }).waitFor();
+        const inspected = page.waitForResponse(reply => reply.request().method() === 'GET' && new URL(reply.url()).pathname.endsWith('/keys/' + created.key.id + '/access'));
+        await keyRow.getByRole('button', { name: 'Inspect access for ' + name }).click();
+        const access = await inspected; assert.equal(access.status(), 200);
+        const snapshot = await access.json();
+        assert.equal(snapshot.status, 'active'); assert.equal(snapshot.principal_kind, kind);
+        assert.ok(!JSON.stringify(snapshot).includes(created.token), 'the access snapshot must never reveal the key');
+        const inspector = main.getByRole('region', { name: 'Effective access for ' + name });
+        await inspector.getByRole('heading', { name: 'Current access · ' + name }).waitFor();
+        await inspector.getByText('No provider request is sent.', { exact: false }).waitFor();
+        await inspector.getByRole('button', { name: 'Close access inspector' }).click();
       }
     });
     await browserCase('installed-alert-editor-validates-and-persists-disabled-rule-without-delivery', async () => {

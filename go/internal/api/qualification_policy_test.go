@@ -48,7 +48,7 @@ func TestResponsesFinalPhaseThroughPublicHTTP(t *testing.T) {
 				if calls.Load() != 1 {
 					t.Fatalf("upstream attempts=%d want one", calls.Load())
 				}
-				if phase != "" && surface != "/v1/responses" {
+				if phase != "" && phase != "final_answer" && surface != "/v1/responses" {
 					if status != http.StatusBadRequest || !strings.Contains(string(raw), "translation would lose output.0.phase") {
 						t.Fatalf("phase loss was not refused: status=%d body=%s", status, raw)
 					}

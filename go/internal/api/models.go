@@ -305,9 +305,6 @@ func listModels(principal *config.Principal, options modelListOptions) (map[stri
 		} else if principal != nil && principal.RoutesOnly && len(principal.AllowedRoutes) == 0 {
 			continue
 		}
-		if !modelAllowed(principal, projectPolicy, name) {
-			continue
-		}
 		if seen[name] {
 			// Endpoint lookup has precedence over provider/model parsing, so its
 			// authoritative row must also win an exact public-ID collision.

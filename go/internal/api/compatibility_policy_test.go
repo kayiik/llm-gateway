@@ -116,3 +116,54 @@ func TestAdminRouteContractRejectsImplicitOrInvalidAdaptation(t *testing.T) {
 		})
 	}
 }
+
+func TestAdminRouteRejectsKnownUnservableNativeIngressAtSaveTime(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		ingress  string
+		adapt    bool
+		withChat bool
+		want     int
+	}{
+		{"Chat against Responses alone", "/v1/chat/completions", false, false, http.StatusBadRequest},
+		{"Messages against Responses alone", "/v1/messages", false, false, http.StatusBadRequest},
+		{"native Responses", "/v1/responses", false, false, http.StatusOK},
+		{"explicit Chat adaptation", "/v1/chat/completions", true, false, http.StatusOK},
+		{"native Chat fallback", "/v1/chat/completions", false, true, http.StatusOK},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newNativePolicyFixture(t)
+			fixture.catalogSurfaces = []string{"/responses"}
+			config.Update(func(s *config.Settings) { s.Providers["responses"].ForceApiSupport = true })
+			if rows := providers.RefreshCatalog("responses"); len(rows) != 1 {
+				t.Fatalf("Responses catalog: %+v", rows)
+			}
+			members := []map[string]any{{"provider": "responses", "model": "fixture"}}
+			if test.withChat {
+				fixture.catalogSurfaces = []string{"/chat/completions"}
+				config.Update(func(s *config.Settings) { s.Providers["chat"].RegistryID = "openrouter" })
+				if rows := providers.RefreshCatalog("chat"); len(rows) != 1 {
+					t.Fatalf("Chat catalog: %+v", rows)
+				}
+				members = append(members, map[string]any{"provider": "chat", "model": "fixture"})
+			}
+			status, body := jsonRequest(t, fixture.server.URL+"/admin/api/endpoints", http.MethodPost, "gateway-fixture", map[string]any{
+				"name": "native-contract", "ingress": []string{test.ingress}, "allow_adaptation": test.adapt, "failover": members,
+			})
+			if status != test.want {
+				t.Fatalf("route save status=%d body=%v, want %d", status, body, test.want)
+			}
+			if status == http.StatusBadRequest && config.Get().Endpoints["native-contract"] != nil {
+				t.Fatal("unservable native contract was persisted")
+			}
+			if test.name == "native Responses" {
+				status, _ = jsonRequest(t, fixture.server.URL+"/admin/api/endpoints", http.MethodPost, "gateway-fixture", map[string]any{
+					"name": "native-contract", "ingress": []string{"/v1/chat/completions"}, "failover": members,
+				})
+				if status != http.StatusBadRequest || !reflect.DeepEqual(config.Get().Endpoints["native-contract"].Ingress, []string{"/v1/responses"}) {
+					t.Fatalf("invalid update published: status=%d route=%+v", status, config.Get().Endpoints["native-contract"])
+				}
+			}
+		})
+	}
+}

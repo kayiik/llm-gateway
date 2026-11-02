@@ -585,7 +585,7 @@ test("key creation exposes the acting principal so OAuth-backed keys work", () =
   const keys = readFileSync(resolve(root, "src/pages/ApiKeys.tsx"), "utf8");
   assert.match(keys, /Acts as/);
   assert.match(keys, /payload.principal_id = principalID/);
-  assert.match(keys, /Create or reuse a service identity/);
+  assert.match(keys, /Service identity · create or reuse/);
   assert.match(keys, /owner's eligible private connections/);
   assert.match(keys, /Copilot service access requires an active project binding; Codex OAuth is human-private/);
 });

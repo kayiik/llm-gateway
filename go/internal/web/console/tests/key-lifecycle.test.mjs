@@ -7,8 +7,11 @@ import { fakeKeyListing } from "./key-listing.mjs";
 const { ApiKeys } = await bundle(fileURLToPath(new URL("../src/pages/ApiKeys.tsx", import.meta.url)), [
   { filter: /\/lib\/api$/, contents: "export const sendJSON = (...args) => globalThis.__api.sendJSON(...args);\nexport const getJSON = (...args) => globalThis.__api.getJSON(...args);" },
 ]);
+const { KeyAccessInspector } = await bundle(fileURLToPath(new URL("../src/components/KeyAccessInspector.tsx", import.meta.url)), [
+  { filter: /\/lib\/api$/, contents: "export const getJSON = (...args) => globalThis.__api.getJSON(...args);" },
+]);
 
-const key = (id, status, expiresAt = 0) => ({ id, name: id, status, project_id: "project-1", principal_id: "user-1", principal: "Ada", created: 1798700000, expires_at: expiresAt });
+const key = (id, status, expiresAt = 0) => ({ id, name: id, status, project_id: "project-1", principal_id: "user-1", principal: "Ada", principal_kind: "human", created: 1798700000, expires_at: expiresAt });
 const keys = [key("live", "active"), key("paused", "disabled"), key("gone", "revoked"), key("lapsed", "active", 1000000000), key("old", "revoked")];
 // The administrator state counts keys, and memberships name their principal.
 const data = {
@@ -138,4 +141,61 @@ test("an administrator's key acts as an active person or service member of its p
   const actsAs = find(tree, (node) => typeof node.type === "function" && node.props?.label === "Acts as");
   assert.deepEqual(actsAs.props.options.slice(2).map((option) => [option.value, option.label]), [["user-1", "Ada (human)"], ["bot-1", "Batch (service)"]],
     "a disabled member and another project's member cannot be chosen");
+});
+
+test("service identity requires an explicit choice before issuing a key", async () => {
+  const sent = [];
+  const listing = fakeKeyListing([]);
+  globalThis.__api = {
+    getJSON: async (mode, path) => listing.answer(path),
+    sendJSON: async (mode, path, method, body) => { sent.push(body); return { token: "fixture-token" }; },
+  };
+  const render = mount(() => ApiKeys({ data, mode: "admin", onChanged: async () => {}, initialContext: { projectID: "project-1" } }));
+  let tree = render();
+  const actsAs = find(tree, (node) => typeof node.type === "function" && node.props?.label === "Acts as");
+  assert.equal(actsAs.props.value, "__select_owner__");
+  find(tree, (node) => node.type === "form").props.onSubmit({ preventDefault() {} });
+  tree = render();
+  assert.equal(sent.length, 0, "an omitted owner cannot silently mint a service key");
+  assert.match(text(tree), /explicitly select the service identity option/);
+  actsAs.props.onChange("");
+  tree = render();
+  assert.match(text(tree), /Service identity selected/);
+  find(tree, (node) => node.type === "form").props.onSubmit({ preventDefault() {} });
+  await settle();
+  assert.equal(sent.length, 1);
+  assert.equal("principal_id" in sent[0], false, "the server creates or reuses the selected service identity");
+});
+
+test("access inspector shows backend-filtered routes and direct models for a saved key", async () => {
+  const listing = fakeKeyListing([key("live", "active")]);
+  const requests = [];
+  globalThis.__api = {
+    getJSON: async (mode, path) => {
+      requests.push(`${mode} ${path}`);
+      if (path === "/keys/live/access") return { status: "active", principal_kind: "human", data: [
+        { id: "coding", owned_by: "endpoint", failover: [{ provider: "eligible", model: "fixture" }] },
+        { id: "eligible/direct", owned_by: "eligible" },
+      ] };
+      return listing.answer(path);
+    },
+    sendJSON: async () => ({}),
+  };
+  const render = mount(() => ApiKeys({ data, mode: "admin", onChanged: async () => {} }));
+  render();
+  await settle();
+  let tree = render();
+  button(tree, "Inspect access for live").props.onClick({ currentTarget: { focus() {} } });
+  tree = render();
+  const access = find(tree, (node) => typeof node.type === "function" && node.props?.keyID === "live");
+  assert.ok(access, "the key action opens the inspector for that key");
+  const inspect = mount(() => KeyAccessInspector(access.props));
+  inspect();
+  await settle();
+  tree = inspect();
+  assert.ok(requests.includes("admin /keys/live/access"));
+  const inspector = find(tree, (node) => node.props?.["aria-label"] === "Effective access for live");
+  assert.match(text(inspector), /codingeligible\/fixture/);
+  assert.match(text(inspector), /eligible\/direct/);
+  assert.match(text(inspector), /No provider request is sent/);
 });

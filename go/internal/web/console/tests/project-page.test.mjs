@@ -24,9 +24,9 @@ const data = {
 };
 // The key listing serves the project's keys, each naming its owner.
 const keys = [
-  { id: "key-1", name: "notebook", prefix: "llmgw_ab", project_id: "prj 1", principal_id: "prn-ada", principal: "Ada", status: "active", last_used_at: 1798783140 },
-  { id: "key-2", name: "retired", prefix: "llmgw_cd", project_id: "prj 1", principal_id: "prn-ada", principal: "Ada", status: "revoked" },
-  { id: "key-3", name: "elsewhere", prefix: "llmgw_ef", project_id: "prj-2", principal_id: "prn-bot", principal: "Batch", status: "active" },
+  { id: "key-1", name: "notebook", prefix: "llmgw_ab", project_id: "prj 1", principal_id: "prn-ada", principal: "Ada", principal_kind: "human", status: "active", last_used_at: 1798783140 },
+  { id: "key-2", name: "retired", prefix: "llmgw_cd", project_id: "prj 1", principal_id: "prn-ada", principal: "Ada", principal_kind: "human", status: "revoked" },
+  { id: "key-3", name: "elsewhere", prefix: "llmgw_ef", project_id: "prj-2", principal_id: "prn-bot", principal: "Batch", principal_kind: "service", status: "active" },
 ];
 const limits = [{ scope: "project", field: "daily_requests", metric: "requests", period: "day", limit: 100, used: 40, resets_at: 1798761600, closest: true }];
 const usage = {
@@ -66,8 +66,8 @@ test("a project's page shows its limits, keys, members and usage", async () => {
   assert.ok(policy, "the project's budgets and allowlists are edited on its page");
 
   const rows = findAll(tree, (node) => node.type === "tr").map(text);
-  assert.ok(rows.some((row) => row.startsWith("notebookllmgw_abAdaActive")), "an active key of the project is listed");
-  assert.ok(rows.some((row) => row.startsWith("retiredllmgw_cdAdaRevoked")), "so is a revoked one");
+  assert.ok(rows.some((row) => /^notebookllmgw_abAda\s*HumanActive/.test(row)), "an active key of the project is listed with its principal kind");
+  assert.ok(rows.some((row) => /^retiredllmgw_cdAda\s*HumanRevoked/.test(row)), "so is a revoked one");
   assert.ok(!rows.some((row) => row.includes("elsewhere")), "another project's key is not");
   assert.ok(rows.some((row) => row.startsWith("Adahumanowner")), "the project's member is listed");
   assert.ok(!rows.some((row) => row.startsWith("Batch")), "another project's member is not");

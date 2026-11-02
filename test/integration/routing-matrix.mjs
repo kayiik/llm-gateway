@@ -122,12 +122,12 @@ export async function runRoutingMatrix({ admin, publicCall, request, metrics, sa
   });
   await test('only-outer-route-policy-and-grants-govern-references', async row => {
     await route('routing-policy-child', [leaf('healthy')], { allow_adaptation: true });
-    await route('routing-policy-denied', [{ route: 'routing-policy-child' }], { ingress: ['/v1/messages'], allow_adaptation: false });
+    await route('routing-policy-denied', [{ route: 'routing-policy-child' }], { ingress: ['/v1/chat/completions'], allow_adaptation: false });
     const denied = await admin('keys', { project_id: project.id, name: 'Routing denied outer policy', allowed_routes: ['routing-policy-denied'], routes_only: true, allowed_providers: ['routing-healthy'] });
     const body = { model: 'routing-policy-denied', messages: [{ role: 'user', content: 'routing:fail' }], max_tokens: 17, temperature: 0.125 };
     const before = (await calls()).length;
     const refused = await publicCall('routing-outer-policy-denied', '/v1/messages', body, denied.token, 'allow');
-    assert.equal(refused.status, 400, refused.text); assert.match(refused.text, /adaptation_required/);
+    assert.equal(refused.status, 400, refused.text); assert.match(refused.text, /not declared/);
     assert.equal((await calls()).length, before, 'child permission or request headers cannot broaden the outer route');
     await route('routing-policy-child', [leaf('healthy')], { allow_adaptation: false });
     await route('routing-policy-allowed', [{ route: 'routing-policy-child' }], { ingress: ['/v1/messages'], allow_adaptation: true });

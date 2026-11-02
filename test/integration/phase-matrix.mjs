@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 export async function runPhaseMatrix({ admin, request, publicCall, metrics, save }) {
-  const result = { boundary: 'Native Responses retains output phase; adapted Chat/Messages cannot drop even advisory final_answer or unknown phases', pass: false, cases: [] };
+  const result = { boundary: 'Native Responses retains output phase; adapted Chat/Messages may display a sole completed final_answer but refuse intermediate or unknown phases', pass: false, cases: [] };
   const test = async (name, run) => { const row = { name, pass: false }; result.cases.push(row); try { await run(row); row.pass = true; } catch (error) { row.error = error.message; } finally { save('phase-matrix.json', result); } };
   await admin('providers', { id: 'phase-responses', registry_id: 'openai', base_url: 'http://upstream:18889/clients/openai/v1', api_key: 'fixture-client-upstream-key', force_api_support: true });
   await admin('providers/phase-responses/refresh', {});
@@ -12,7 +12,7 @@ export async function runPhaseMatrix({ admin, request, publicCall, metrics, save
     const body = surface === 'responses' ? { model, input: message } : { model, messages: [{ role: 'user', content: message }], max_tokens: 8, ...(surface === 'chat' ? { temperature: 0 } : {}) };
     const before = (await metrics()).clients?.calls?.length ?? 0;
     const response = await publicCall(`phase-${phase || 'absent'}-${surface}`, path, body, undefined, 'allow');
-    if (phase && surface !== 'responses') { assert.equal(response.status, 400, response.text); assert.match(response.text, /translation would lose output\.0\.phase/); }
+    if (phase && phase !== 'final_answer' && surface !== 'responses') { assert.equal(response.status, 400, response.text); assert.match(response.text, /translation would lose output\.0\.phase/); }
     else { assert.equal(response.status, 200, response.text); if (surface === 'responses') {
       const output = JSON.parse(response.text).output[0]; assert.equal(output.phase, phase || undefined);
     } else assert.ok(response.text.includes('fixture-client-ok')); }

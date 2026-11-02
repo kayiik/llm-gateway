@@ -198,8 +198,12 @@ func (rt *Runtime) ReadCachedCatalogForPrincipal(providerID string, caller core.
 	result := catalogRead(providerID, caller)
 	result.Diagnostics.FromCache = true
 	if result.Err == nil {
-		evidence := rt.catalogService.Cached(context.Background(), catalogKey(providerID, caller)).Record.Evidence
+		cached, shared := rt.cachedCatalogForPrincipal(providerID, caller)
+		evidence := cached.Evidence
 		result.Models, result.RefreshedAt = gatewayRows(evidence.Models), evidence.ObservedAt
+		if shared {
+			result.Diagnostics.SourceScope, result.Diagnostics.OwnerScope = "gateway", "gateway"
+		}
 	}
 	result.Diagnostics.Status = "synced"
 	if result.RefreshedAt.IsZero() {
@@ -330,10 +334,8 @@ type catalogDiscovery struct {
 // legitimate empty catalog is stored like any other.
 func (d *catalogDiscovery) discover(ctx context.Context) ([]core.ModelInfo, error) {
 	if d.caller.Kind == core.CallerHuman {
-		if observed, found, err := iam.ActiveProviderAccountObservation(
-			callerPrincipalID(d.caller), d.providerID,
-		); err == nil && found {
-			d.initial = credentialObservation(&observed)
+		if observed, found, err := activeCatalogCredentialObservation(d.caller, d.providerID); err == nil && found {
+			d.initial = observed
 		}
 	}
 	models, observation, err := d.runtime.listProviderModels(ctx, d.providerID, d.caller)
@@ -357,8 +359,16 @@ func (d *catalogDiscovery) rebase() bool {
 		d.observation.CredentialRevision <= d.initial.CredentialRevision {
 		return false
 	}
-	current, found, err := iam.ActiveProviderAccountObservation(callerPrincipalID(d.caller), d.providerID)
-	return err == nil && found && *credentialObservation(&current) == *d.observation
+	current, found, err := activeCatalogCredentialObservation(d.caller, d.providerID)
+	return err == nil && found && *current == *d.observation
+}
+
+func activeCatalogCredentialObservation(caller core.Caller, providerID string) (*CredentialObservation, bool, error) {
+	observed, found, err := iam.ActiveProviderAccountObservation(callerPrincipalID(caller), providerID)
+	if err != nil || !found {
+		return nil, found, err
+	}
+	return credentialObservation(&observed), true, nil
 }
 
 // CatalogLookup returns a single model's info from the (lazily-refreshed) catalog.
@@ -386,15 +396,12 @@ func (rt *Runtime) CatalogLookupForPrincipal(
 // never performs provider discovery. Dispatch uses it to avoid adding a catalog
 // network call to the request path.
 func (rt *Runtime) CatalogCachedLookupForPrincipal(providerID, model string, caller core.Caller) (ModelInfo, bool) {
-	key, cached := cachedCatalogKey(providerID, caller)
-	if !cached {
-		return ModelInfo{}, false
+	for _, row := range rt.cachedCatalog(providerID, caller).Evidence.Models {
+		if row.ID == model {
+			return gatewayModelInfo(row), true
+		}
 	}
-	row, found := rt.catalogService.CachedLookup(context.Background(), key, model)
-	if !found {
-		return ModelInfo{}, false
-	}
-	return gatewayModelInfo(row), true
+	return ModelInfo{}, false
 }
 
 // catalogDiscoveryTimeout bounds the discovery a request waits for and each
@@ -538,18 +545,46 @@ func (rt *Runtime) CatalogCached(providerID string) ([]ModelInfo, time.Time) {
 }
 
 func (rt *Runtime) CatalogCachedForPrincipal(providerID string, caller core.Caller) ([]ModelInfo, time.Time) {
-	evidence := rt.cachedCatalog(providerID, caller).Evidence
+	key, available := cachedCatalogKey(providerID, caller)
+	if !available {
+		return nil, time.Time{}
+	}
+	// Status reads report this caller's own discovery. Shared-model fallback is
+	// for callable catalog lookups, not evidence that this caller synchronized.
+	evidence := rt.catalogService.Cached(context.Background(), key).Record.Evidence
 	return gatewayRows(evidence.Models), evidence.ObservedAt
 }
 
 // cachedCatalog is the stored catalog of providerID for caller, fresh or
 // not, which core's catalog service serves without discovering it.
 func (rt *Runtime) cachedCatalog(providerID string, caller core.Caller) core.CatalogRecord {
+	record, _ := rt.cachedCatalogForPrincipal(providerID, caller)
+	return record
+}
+
+// An absent caller cache may read the shared system catalog only when that is
+// also the credential this caller would use. An explicitly empty caller cache
+// and a human's private connection never borrow another account's models.
+func (rt *Runtime) cachedCatalogForPrincipal(providerID string, caller core.Caller) (core.CatalogRecord, bool) {
 	key, cached := cachedCatalogKey(providerID, caller)
 	if !cached {
-		return core.CatalogRecord{}
+		return core.CatalogRecord{}, false
 	}
-	return rt.catalogService.Cached(context.Background(), key).Record
+	record := rt.catalogService.Cached(context.Background(), key).Record
+	if !record.Evidence.ObservedAt.IsZero() || len(record.Evidence.Models) > 0 || catalogFileKey(key) == providerID || CatalogRequiresPrincipal(providerID) {
+		return record, false
+	}
+	if principalID, kind := callerPrincipal(caller); kind == "human" {
+		private, err := iam.HasActivePrivateProviderConnection(principalID, providerID)
+		if err != nil || private {
+			return record, false
+		}
+	}
+	shared := rt.catalogService.Cached(context.Background(), catalogKey(providerID, gatewayCaller())).Record
+	if shared.Evidence.ObservedAt.IsZero() && len(shared.Evidence.Models) == 0 {
+		return record, false
+	}
+	return shared, true
 }
 
 // cachedCatalogKey is the key of the stored catalog of providerID for

@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -105,6 +106,59 @@ func TestCatalogReadServiceProjectCacheBoundary(t *testing.T) {
 	}
 	if calls.Load() != 2 {
 		t.Fatalf("service/project cache fetches = %d, want 2", calls.Load())
+	}
+}
+
+func TestCachedSharedCatalogVisibleToNewCallerButNotPrivateOverride(t *testing.T) {
+	var calls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		t.Error("reading an already stored catalog must not contact the upstream")
+	}))
+	defer upstream.Close()
+	setupCatalogReadTest(t, upstream.URL)
+	config.Update(func(s *config.Settings) {
+		s.CredentialEncryptionKey = base64.RawURLEncoding.EncodeToString(make([]byte, 32))
+	})
+	shared := catalogEntry{SchemaVersion: catalogSchemaVersion, Models: []ModelInfo{{ID: "shared-model"}}, RefreshedAt: time.Now()}
+	putCatalogEntry("catalog-read", shared)
+	owner, err := iam.CreatePrincipal("human", "fixture:catalog-owner", "", "Catalog owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	callers := []core.Caller{
+		{ID: owner.ID, Kind: core.CallerHuman},
+		{ID: "fixture-service", Kind: core.CallerService, ProjectID: "fixture-project"},
+	}
+	for _, caller := range callers {
+		result := ReadCachedCatalogForPrincipal("catalog-read", caller)
+		if len(result.Models) != 1 || result.Models[0].ID != "shared-model" || result.RefreshedAt.IsZero() {
+			t.Fatalf("shared catalog unavailable to %s: %+v", caller.Kind, result)
+		}
+		if row, found := CatalogCachedLookupForPrincipal("catalog-read", "shared-model", caller); !found || row.ID != "shared-model" {
+			t.Fatalf("shared prepared lookup unavailable to %s: %+v, %t", caller.Kind, row, found)
+		}
+	}
+	if _, err := iam.PutProviderConnection(iam.ProviderConnectionCreate{
+		PrincipalID: owner.ID, ProviderID: "catalog-read", Name: "personal",
+		Kind: "api_key", Secret: "fixture-private-key", Source: iam.ConnectionSourceUser,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadCachedCatalogForPrincipal("catalog-read", callers[0]); len(got.Models) != 0 {
+		t.Fatalf("private owner borrowed the shared catalog: %+v", got)
+	}
+	putCatalogEntry(catalogCacheKey("catalog-read", callers[0]), catalogEntry{
+		SchemaVersion: catalogSchemaVersion, Models: []ModelInfo{{ID: "private-model"}}, RefreshedAt: time.Now(),
+	})
+	if _, found := CatalogCachedLookupForPrincipal("catalog-read", "shared-model", callers[0]); found {
+		t.Fatal("private owner borrowed a model absent from their catalog")
+	}
+	if got := ReadCachedCatalogForPrincipal("catalog-read", callers[0]); len(got.Models) != 1 || got.Models[0].ID != "private-model" {
+		t.Fatalf("owner-specific catalog was lost: %+v", got)
+	}
+	if calls.Load() != 0 {
+		t.Fatal("cached reads fetched the source")
 	}
 }
 

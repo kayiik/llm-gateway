@@ -26,6 +26,7 @@ export function KeyScopeEditor({ data, policy, onChange }: {
   const providerDraft = asList(policy.allowed_providers).map(String);
   const selectedRoutes = routeDraft.map((value) => value.trim()).filter(Boolean);
   const selectedProviders = providerDraft.map((value) => value.trim()).filter(Boolean);
+  const selectedModels = asList(policy.allowed_models).map(String).map((value) => value.trim()).filter(Boolean);
   const routeNames = [...new Set([...Object.keys(endpoints), ...selectedRoutes])].sort();
   const catalogProviderIDs = [
     ...asList(data.providers).map((value) => stringValue(asRecord(value).id)),
@@ -57,18 +58,20 @@ export function KeyScopeEditor({ data, policy, onChange }: {
         <p class="form-help">Empty means all project-permitted providers. Restrictions apply to every route target, not just direct calls. This does not pin a credential account.</p>
       </fieldset>
       <label>Additional model selectors (comma-separated)<input name="allowed_models" value={asList(policy.allowed_models).map(String).join(",")} onInput={(event) => onChange({ ...policy, allowed_models: event.currentTarget.value.split(",") })} placeholder="provider/model or canonical route name" /></label>
-      <p class="form-help">Empty adds no model restriction. For a routed call, this list must include the route name, not just its member models.</p>
+       <p class="form-help">Empty adds no model restriction. A route name grants its members; a provider/model selector narrows a route to matching members. Project rules can narrow them further.</p>
     </details>
     <div class="key-scope__preview" aria-live="polite"><h3>Access summary</h3><p>{keyPolicySummary(policy)}</p>
       {selectedRoutes.map((route) => {
         const members = asList(asRecord(endpoints[route]).failover).map(asRecord);
         return <div key={route}><strong>{route}</strong>{members.length ? <ol>{members.map((member, index) => {
           const provider = stringValue(member.provider);
-          const excluded = selectedProviders.length > 0 && !selectedProviders.includes(provider);
-          return <li key={`${index}-${provider}`}><span class="technical">{provider}/{stringValue(member.model)}</span>{excluded ? " - excluded by key provider rule" : " - subject to project rules and credentials"}</li>;
+           const excluded = selectedProviders.length > 0 && !selectedProviders.includes(provider);
+           const model = stringValue(member.model);
+           const excludedModel = selectedModels.length > 0 && !selectedModels.includes(route) && !selectedModels.includes(model) && !selectedModels.includes(`${provider}/${model}`);
+           return <li key={`${index}-${provider}`}><span class="technical">{provider}/{model}</span>{excluded ? " - excluded by key provider rule" : excludedModel ? " - excluded by key model rule" : " - subject to project rules and credentials"}</li>;
         })}</ol> : <p class="form-help">Route members unavailable in this view. An unknown or deleted route cannot be called.</p>}</div>;
       })}
-      <p class="form-help">This is a policy summary, not an inference test. Connection availability and project policy are checked on each request. Paid fallback remains possible.</p>
+       <p class="form-help">This is a draft policy summary. After saving, use the key's Current access action for a backend-derived snapshot of project rules and credential eligibility. Paid fallback remains possible.</p>
       {Object.entries(keyQuotaLabels).filter(([field]) => numberValue(policy[field]) > 0).map(([field, label]) => <p class="form-help" key={field}>{label}: {String(policy[field])} (configured key limit)</p>)}
     </div>
   </section>;

@@ -311,6 +311,37 @@ export async function runRealWireMatrix({ admin, request, publicCall, metrics, s
     row.verified = true;
   });
 
+  await test('real-responses-model-chat-and-route-final-answer-projection', async row => {
+    const input = { model: 'rw-codex/gpt-5.6-luna', messages: [{ role: 'user', content: 'Return exactly CAPTURE_OK.' }], max_tokens: 64 };
+    const codexChat = await publicCall('rw-codex-chat-projection', '/v1/chat/completions', input, undefined, 'allow');
+    assert.equal(codexChat.status, 200, codexChat.text);
+    assert.match(JSON.parse(codexChat.text).choices?.[0]?.message?.content ?? '', /CAPTURE_OK/);
+
+    const codexStream = await publicCall('rw-codex-chat-stream-projection', '/v1/chat/completions', { ...input, stream: true, stream_options: { include_usage: true } }, undefined, 'allow');
+    assert.equal(codexStream.status, 200, codexStream.text);
+    const codexText = codexStream.text.split(/\r?\n/).filter(line => line.startsWith('data: {')).map(line => JSON.parse(line.slice(6)).choices?.[0]?.delta?.content ?? '').join('');
+    assert.equal(codexText, 'CAPTURE_OK');
+    assert.match(codexStream.text, /data: \[DONE\]/);
+
+    const copilotChat = await publicCall('rw-copilot-responses-chat-projection', '/v1/chat/completions', { ...input, model: 'rw-copilot/gpt-5.6-luna' }, undefined, 'allow');
+    assert.equal(copilotChat.status, 200, copilotChat.text);
+    assert.match(JSON.parse(copilotChat.text).choices?.[0]?.message?.content ?? '', /CAPTURE_OK/);
+
+    await admin('endpoints', {
+      name: 'rw-responses-route', ingress: ['/v1/chat/completions', '/v1/messages'], allow_adaptation: true,
+      failover: [{ provider: 'rw-codex', model: 'gpt-5.6-luna' }, { provider: 'rw-anthropic', model: 'qwen2.5:0.5b' }],
+    });
+    const routedChat = await publicCall('rw-codex-routed-chat-projection', '/v1/chat/completions', { ...input, model: 'rw-responses-route' }, undefined, '');
+    assert.equal(routedChat.status, 200, routedChat.text);
+    assert.match(JSON.parse(routedChat.text).choices?.[0]?.message?.content ?? '', /CAPTURE_OK/);
+    const routedMessages = await publicCall('rw-codex-routed-messages-projection', '/v1/messages', {
+      model: 'rw-responses-route', max_tokens: 64, messages: [{ role: 'user', content: 'Return exactly CAPTURE_OK.' }],
+    }, undefined, '');
+    assert.equal(routedMessages.status, 200, routedMessages.text);
+    assert.match(JSON.parse(routedMessages.text).content?.[0]?.text ?? '', /CAPTURE_OK/);
+    row.verified = true;
+  });
+
   const rwMetrics = (await metrics()).realWire;
   assert.ok(rwMetrics.served.length >= 19, `expected at least 19 real-wire exchanges served, got ${rwMetrics.served.length}`);
   assert.equal(rwMetrics.rejected, 0, `unexpected real-wire rejections: ${rwMetrics.rejected}`);

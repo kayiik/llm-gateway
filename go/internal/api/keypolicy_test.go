@@ -20,7 +20,7 @@ func TestAuthorizeKeyPolicy_ModelAllowlist(t *testing.T) {
 	}
 }
 
-func TestModelPolicyAllowsEquivalentDirectModelIDsButRequiresRouteName(t *testing.T) {
+func TestModelPolicyTargetsEquivalentDirectModelIDsAndRouteMembers(t *testing.T) {
 	oldEndpoints := config.Get().Endpoints
 	t.Cleanup(func() { config.Update(func(s *config.Settings) { s.Endpoints = oldEndpoints }) })
 	config.Update(func(s *config.Settings) {
@@ -29,40 +29,40 @@ func TestModelPolicyAllowsEquivalentDirectModelIDsButRequiresRouteName(t *testin
 		}
 	})
 	targets := []router.Target{{Provider: "copilot", Model: "gpt-4o"}}
-	if !modelPolicyAllows([]string{"copilot/gpt-4o"}, "gpt-4o", "", targets) {
+	if len(modelPolicyTargets([]string{"copilot/gpt-4o"}, "gpt-4o", "", targets)) != 1 {
 		t.Fatal("namespaced allowlist should permit the equivalent bare model")
 	}
-	if !modelPolicyAllows([]string{"gpt-4o"}, "copilot/gpt-4o", "", targets) {
+	if len(modelPolicyTargets([]string{"gpt-4o"}, "copilot/gpt-4o", "", targets)) != 1 {
 		t.Fatal("bare allowlist should permit the equivalent namespaced model")
 	}
 	resolution, err := resolveAs("smart", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if modelPolicyAllows([]string{"copilot/gpt-4o"}, "smart", resolution.Category, resolution.Targets) {
-		t.Fatal("a route must be explicitly allowlisted by route name")
+	if len(modelPolicyTargets([]string{"copilot/gpt-4o"}, "smart", resolution.Category, resolution.Targets)) != 1 {
+		t.Fatal("a model selector should admit its matching route member")
 	}
-	if !modelPolicyAllows([]string{"smart"}, "smart", resolution.Category, resolution.Targets) {
+	if len(modelPolicyTargets([]string{"smart"}, "smart", resolution.Category, resolution.Targets)) != 1 {
 		t.Fatal("explicit route allowlist should pass")
 	}
 	resolution, err = resolveAs("SMART", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if modelPolicyAllows([]string{"copilot/gpt-4o"}, "SMART", resolution.Category, resolution.Targets) {
-		t.Fatal("case-variant route names must still require the route allowlist")
+	if len(modelPolicyTargets([]string{"copilot/gpt-4o"}, "SMART", resolution.Category, resolution.Targets)) != 1 {
+		t.Fatal("case-variant request lost its matching route member")
 	}
-	if !modelPolicyAllows([]string{"smart"}, "SMART", resolution.Category, resolution.Targets) {
+	if len(modelPolicyTargets([]string{"smart"}, "SMART", resolution.Category, resolution.Targets)) != 1 {
 		t.Fatal("case-variant route request should match the canonical route allowlist")
 	}
 	resolution, err = resolveAs(" smart ", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if modelPolicyAllows([]string{"copilot/gpt-4o"}, " smart ", resolution.Category, resolution.Targets) {
-		t.Fatal("whitespace-variant route names must still require the route allowlist")
+	if len(modelPolicyTargets([]string{"copilot/gpt-4o"}, " smart ", resolution.Category, resolution.Targets)) != 1 {
+		t.Fatal("whitespace-variant request lost its matching route member")
 	}
-	if !modelPolicyAllows([]string{"smart"}, " smart ", resolution.Category, resolution.Targets) {
+	if len(modelPolicyTargets([]string{"smart"}, " smart ", resolution.Category, resolution.Targets)) != 1 {
 		t.Fatal("whitespace-variant route request should match the canonical route allowlist")
 	}
 
@@ -75,10 +75,10 @@ func TestModelPolicyAllowsEquivalentDirectModelIDsButRequiresRouteName(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if modelPolicyAllows([]string{"smart"}, "SMART", resolution.Category, resolution.Targets) {
+	if len(modelPolicyTargets([]string{"smart"}, "SMART", resolution.Category, resolution.Targets)) != 0 {
 		t.Fatal("an allowlist for the lower-case route must not authorize a distinct upper-case route")
 	}
-	if !modelPolicyAllows([]string{"SMART"}, "SMART", resolution.Category, resolution.Targets) {
+	if len(modelPolicyTargets([]string{"SMART"}, "SMART", resolution.Category, resolution.Targets)) != 1 {
 		t.Fatal("the exact canonical upper-case route should be allowed")
 	}
 }

@@ -10,8 +10,8 @@ github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs
 github.com/hashicorp/golang-lru/v2 v2.0.7/go.mod h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM=
 github.com/kayiik/llm-provider-auth v0.0.2 h1:2+luRSw3V8cef8CF94yRHAuiPGIvMVihflcQKC+sFyM=
 github.com/kayiik/llm-provider-auth v0.0.2/go.mod h1:ZkX5PAVlTomHuglA8dTvrk/inNexe7YQq0Oey+dj8nc=
-github.com/kayiik/llm-translate v0.0.5 h1:uj3YZ96XN/hrCP1n2GS7sZ4G/g/nrjo8sFsWWu3q6Lk=
-github.com/kayiik/llm-translate v0.0.5/go.mod h1:TCmZ3uDwod5ZenNLa07GeA/aMutKKZCJnmfMLvmvl/0=
+github.com/kayiik/llm-translate v0.0.7 h1:ODwOJIZd3q7Jgc11t5wBSZs9qGacQa8WyesJR73V/hM=
+github.com/kayiik/llm-translate v0.0.7/go.mod h1:TCmZ3uDwod5ZenNLa07GeA/aMutKKZCJnmfMLvmvl/0=
 github.com/kayiik/llmgw-core v0.0.7 h1:c8Mm/mcxq6xKp+aameDtRwcU7fzV2AriDP4TcmjYa3I=
 github.com/kayiik/llmgw-core v0.0.7/go.mod h1:Q3khvNjmScer2a7J2rvy4t92oMK/wEgx5MH1AbvcAyc=
 github.com/mattn/go-isatty v0.0.24 h1:tGZZoVgT/KiqK1c8ocVLeDS8BSWMRd47J3Lbz7vsReI=

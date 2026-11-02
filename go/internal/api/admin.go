@@ -1280,6 +1280,10 @@ func handleUpsertEndpoint(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if issue := endpointServingIngressIssue(contract, expanded, principal); issue != nil {
+		writeError(w, http.StatusBadRequest, issue.Error())
+		return
+	}
 	warnings := []string{}
 	for existing := range endpoints {
 		if existing != name && !endpointReferences(endpoints, existing, name, map[string]bool{}) {
