@@ -1,0 +1,1281 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "change",
+  "contract": {
+    "digest": "da05219969e051b692980ada8e8066ac909bf88d11ad6a5af6338834a8cc384f"
+  },
+  "authoring_provenance": {
+    "status": "established",
+    "path": ".release-harness/drafts/llm-gateway.record.json",
+    "digest": "e819045146db82b3754d02e0950d13ca8527706a2b478ada58c176c24e706d2b"
+  },
+  "sources": [
+    {
+      "source_id": "primary",
+      "status": "established",
+      "repository_identity": "https://github.com/kayiik/llm-gateway.git",
+      "base_ref": "v0.0.6",
+      "base_commit": "3802100d04fe4ef901399e3099673c7aff012c88",
+      "merge_base": "3802100d04fe4ef901399e3099673c7aff012c88",
+      "head_commit": "f3648e056e1644114be65f4d0728f20620a641ae",
+      "head_tree": "a12d3c3b734e2ee022d70fc7d34f91ae1d62a0af",
+      "reviewed_source_digest": "cb7bdbecf80b0feca9bf3de51c56227816ddc149f6d1cc50afafda4868333589",
+      "changed_paths": [
+        {
+          "status": "modified",
+          "path": "docs/PROVIDERS.md",
+          "old_blob": "79ab34ea7c527c15e507cb4fd22527cc48e3e178",
+          "new_blob": "fa5500bbe3c308bfb18b0a046b30d0afaf9e3cda"
+        },
+        {
+          "status": "modified",
+          "path": "docs/TESTING.md",
+          "old_blob": "f28c45555947bb2535b170576dc04bc3d9bbfc64",
+          "new_blob": "b4b64a517eaa06bb087655a92a65de28f7863644"
+        },
+        {
+          "status": "modified",
+          "path": "go/cmd/llmgw/main.go",
+          "old_blob": "d5e5e10ede892a21a5f510a16aa44249b2fe0a2c",
+          "new_blob": "eebd7054dc6034528fd732e78d8cccc29b20e2a5"
+        },
+        {
+          "status": "modified",
+          "path": "go/go.mod",
+          "old_blob": "459ea7ad8ecca766f0bc1bb0898a0ce21cb67433",
+          "new_blob": "0464c3b4055ac0ae2f53ddd9c516a576d9864639"
+        },
+        {
+          "status": "modified",
+          "path": "go/go.sum",
+          "old_blob": "ce5cf04c87430566760993573cc26c5b91386c5b",
+          "new_blob": "5f8ad2c418feba2840f254675054b22afa28eb93"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/api/adaptation_fidelity_contract_test.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "f4fc0779971c658c1fcf1b7837ead1ef6ca0956d"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/anonymous_provider_automation_test.go",
+          "old_blob": "36d526fb9a9b3dd686f9ea8614a80203ee84b058",
+          "new_blob": "d8c7183bfc57b7224e733f46b19dbd6bfe0c8462"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/audio_test.go",
+          "old_blob": "3a3dcbd1efa7892dfc4856038778b3c04f3799ea",
+          "new_blob": "8a4d8b949420630dcece2dd1b746402c4ec4b9d9"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/audio.go",
+          "old_blob": "f1554e9988c1125fc817c0507ae61f369bc57752",
+          "new_blob": "db7050874f008f99dd6f3eabfa77582565743b51"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/characterization_test.go",
+          "old_blob": "0ba94ff33b12abce164296feb284570c29e5d33d",
+          "new_blob": "e905522107c948092dc2bd3326e6509fad67dafe"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/cli_contract_test.go",
+          "old_blob": "abfa53c03e7c781d307552e80e8c3fb7abb5ccb9",
+          "new_blob": "e4e13801e8ff31abd2b7f2986350e4b107d27ea1"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/connections_api_test.go",
+          "old_blob": "5deebd5bfbca8b866256e24d5835c2039c1edd92",
+          "new_blob": "f3ed4256e2bfdd3f0be149eb789fee9f84f2e250"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/connections.go",
+          "old_blob": "16dac16330402ca4de6ffc6b30881b4aea95dbcf",
+          "new_blob": "5fc144cf4b7c0e3ee69077eb691e44d44ffc150e"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/api/conversation_stream_test.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "edfd9a85420491f59c64e46224040a71b7aed816"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/disabled_provider_policy_test.go",
+          "old_blob": "c58ef2055fd39e37a0c35996f6c9e8421196bb28",
+          "new_blob": "1a808c9beb61bf57e5a0d9bd2c577814611e77a5"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/embeddings_test.go",
+          "old_blob": "012d219bdeeea6e9c5fa87a7832c9de3198a899f",
+          "new_blob": "b1a2b447675c2b455332e138b93243c50509ed67"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/embeddings.go",
+          "old_blob": "95d6e3d6f8e2e43d9b80d7b0f71c2fcba06da716",
+          "new_blob": "9c21288e45c4f9bec192770ecb586989908ef7c0"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/models_test.go",
+          "old_blob": "2466b39be2debef213996f97fbcb75ccec8810a8",
+          "new_blob": "5325f37c2b35a67e23305c4ea4400527307f8e7a"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/models.go",
+          "old_blob": "a0360e77371d33065756472b5ec4872ad3219006",
+          "new_blob": "53fc2908591a580a778527d8764715d139f13985"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/native_policy_integration_test.go",
+          "old_blob": "34b4a666ac3c497404cb720e14328f2f158048b4",
+          "new_blob": "e41d37615df6d557db507196029b1f4b5c2ce4be"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/api/oauth_completion_expiry_test.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "0baf22142549087dcb1da6b20dd74597e59549ed"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/oauth_completion.go",
+          "old_blob": "72a5b11207853d2a922d51a5be459b5b96279c86",
+          "new_blob": "4adea71a31fc4a97b1ad84a2d6cced254bdb6412"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/oauth_test.go",
+          "old_blob": "19f4c68b040fad64063723737691d4ed3b43488a",
+          "new_blob": "c115e758a0e16b8bc810ea366c01c3d944162715"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/openai.go",
+          "old_blob": "9278aafaacd8ab3ed701e43c1b84d4c6ff62a36c",
+          "new_blob": "2f38cdd72400ecf10386f325884434f11efbe2f1"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/playground_audio.go",
+          "old_blob": "2187e37053550aae0c7c1e68733ab0743aadcf7a",
+          "new_blob": "37b312bbb5b3a54d36d334eda0d2d65ae36479ec"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/api/qualification_credentials_test.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "46defe1764264aeab1d72637daf14ae2f01925dd"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/api/qualification_policy_test.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "e35166028e6292c89cb41d5ed1bd4cd36d0aa344"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/api/qualification_refusals_test.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "3eee123dcd7ca35237afedad5bb9cec25e1c104d"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/request_id.go",
+          "old_blob": "7eb86c3d94020c6e71674824d38d6e671c3cedf1",
+          "new_blob": "8cfb31f99ea7d27ac8f55730d331e06e00be0576"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/api/shared_upstream_test.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "3ea5eb3e75974e9683bb93b6f3064458217fa6dc"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/api/stage2_responses_terminal_test.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "1a9c99bd19da7a23e6ee2ad728b96b1098b369b5"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/testdata/characterization/models.golden",
+          "old_blob": "6281718d9e672fd75482c643593715d2fb9726dc",
+          "new_blob": "be8d7c55aec62207e2d3cdf54a2fc1b4e05d596b"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/testdata/characterization/openai-messages-via-chat-stream.golden",
+          "old_blob": "59748f60f07fa2d6e0af93e8c4637b034c0ea8c0",
+          "new_blob": "10eec5139e17edbb880b87c2c65d1dbc99a37269"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/transport_mode_test.go",
+          "old_blob": "19d3cc64f778aae4cdbc52dd709ff761d75641c3",
+          "new_blob": "c78b30a887af3d7005ec76d93513eef241fe4ca4"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/transport_mode.go",
+          "old_blob": "0877d743ec38ffd6c52a478f0a10cdc958dc2a09",
+          "new_blob": "42185bf016bfef299dd040ae3bf250264496044d"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/capture/http_test.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "8cde12c85f6cf09d8a0a60b51304e50a09b43ca8"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/capture/http.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "4090d51261fd59d6ebac0053176fee9d97f6d2a5"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/alerts_test.go",
+          "old_blob": "e213533205788dc9a1a1396c75a88175151fe43a",
+          "new_blob": "0b41ace9ba792a1ec5a2c40e04c579ca7fead2ff"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/alerts.go",
+          "old_blob": "96c189b3c8876d07d124103647e9b131cd4a763c",
+          "new_blob": "f2fb8206cd4943e2f3612bd9663b210187a2e67f"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/provider_accounts_test.go",
+          "old_blob": "a3343305c5edc2eeaf8f912d4baaa720dae532ab",
+          "new_blob": "07c561369a7c868fe2fb2dc2fd93f185f857144e"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/azureopenai_test.go",
+          "old_blob": "4418eddf02a94c2ab42a97889ae0ad3645d9a740",
+          "new_blob": "ef0b24032d51534dff32f2a4ac1448709580955d"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/azureopenai.go",
+          "old_blob": "692b9f6e44a529ec753923750ca0ab4cdf5c8ee6",
+          "new_blob": "ffff09a2f20771074d1fc29eaeb43df9e782fbd4"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/catalog_schema_test.go",
+          "old_blob": "2951dfe2bab6f16d93c3964eac19fa628c9ea76c",
+          "new_blob": "3a5bbfa3e5f8ceafcb7513c41022677ec5e7e2e9"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/catalog_store.go",
+          "old_blob": "a8e1ac2ef18b13c3eca084b0667da38274951690",
+          "new_blob": "bb5a84707a218733c83499e18daa6a2fd6c7e6c4"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/providers/catalog_transport_test.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "e4bed5578824c85a81bc463ca606ec1430a449d3"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/providers/catalog_transport.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "c81addccb4f06ee13ee6d3b1c2e0f0cc56b843ea"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/catalog.go",
+          "old_blob": "59dc0cce7e8a2dedf1eaeacc905ba24b84cf9573",
+          "new_blob": "46fbd8ace07e96fd7c6b8a647782ae61c12d93f8"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/providers/diagnostic_copilot_restart_test.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "6a5469b0e41b3963d6c55e637e97326b944639a7"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/extension_vertical.go",
+          "old_blob": "0a236ae3823f2334204f2bfcea7bc081ee13cbdb",
+          "new_blob": "509f287a2f3982c70773f01dcdf67811a3c62430"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/googleai.go",
+          "old_blob": "cd01ab948b28567cbd420faf087932b28cfc7467",
+          "new_blob": "34299391e0f58b6dd1b481d0c96ee2b293915063"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/httpstream.go",
+          "old_blob": "b9632be00e815093393c4242b5752e39b3d92a07",
+          "new_blob": "f77a04c0064e8350adbf283bbcfa75d0a8f4614f"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/openai_models_test.go",
+          "old_blob": "7af4a7941558590adc60300bf0c323d0f624be4c",
+          "new_blob": "810675b055d2e8481c128e385f99635af69bef34"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/openai.go",
+          "old_blob": "2565a254ab1a07fa3146be0c0525ab4aa895d580",
+          "new_blob": "d457ceff96ebea2644ea4e23c73371a4ddc6c0b4"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/prepared_bridge.go",
+          "old_blob": "b3f20f873b37b6fdb49d5600ecdac0e42eb2d5ca",
+          "new_blob": "5f8ea227e48ad655b481baa4dcaf981c92539ab2"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/prepared_echo.go",
+          "old_blob": "888ca5b2f6f2a0953df9545bf237371eb268daa7",
+          "new_blob": "78cf85a5922952b4659c0db0ba9cd5587feb6f81"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/provider.go",
+          "old_blob": "78b42fe4df4208223e2b53b9051df48c2b6567f8",
+          "new_blob": "1b0d9de8f6f01e966881d398f85ad40b49377157"
+        },
+        {
+          "status": "deleted",
+          "path": "go/internal/web/console/dist/assets/index-B5wz72D9.css",
+          "old_blob": "5db1c7a7a0f43296a22bf02f3ffe979163587f59",
+          "new_blob": "0000000000000000000000000000000000000000"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/web/console/dist/assets/index-BWcKED0o.js",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "b6d386f424c2c62c30e6f1765121359166479393"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/web/console/dist/assets/index-CJRE0bW9.css",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "a2cfee6b60cd59db15c18b4dbce83037f04c08a7"
+        },
+        {
+          "status": "deleted",
+          "path": "go/internal/web/console/dist/assets/index-DKwIFLSU.js",
+          "old_blob": "056e156d71c9cf56fb76c734d11c1adbc4a3d2da",
+          "new_blob": "0000000000000000000000000000000000000000"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/dist/index.html",
+          "old_blob": "becdb2e5716d79e8d6ceb7d6ce6fc504047b8ae8",
+          "new_blob": "4c09125143eb60bbd2e3ec27650c54303f53e880"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/src/App.tsx",
+          "old_blob": "fd74f170d995da3fa8c16884974c187b115c1dd0",
+          "new_blob": "781f7448bfd6fe7e4e2f8655c9c636495569ec94"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/src/components/providers/ExtensionShelf.tsx",
+          "old_blob": "6f578d7ea373ed29bc423dd62758418b66a8bab3",
+          "new_blob": "db68cbc88ceb2fad31bab8d7cd7449f8e2e04f9a"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/src/components/providers/provider-hub.css",
+          "old_blob": "8934cbe0f8e9bcb74b737a01a76629502717cfaa",
+          "new_blob": "3a9e6bc0135426628181811ac1d29bca62ec0225"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/src/components/providers/ProviderHub.tsx",
+          "old_blob": "c5a7d05d98f88af1c64ff6881b5a06be7640093d",
+          "new_blob": "e705775178345a51e33d3c73288f29687531c9ee"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/src/pages/Playground.tsx",
+          "old_blob": "fdb0678d883537340c6910e296eb5ad2f1ee8c9d",
+          "new_blob": "c90ceca4483de91b32052417e692d8aec639e50c"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/src/pages/ProviderDetail.tsx",
+          "old_blob": "22b5c2e58790920d2c5dd77669442c9bea39b619",
+          "new_blob": "97aeeed33699ad2f6845627ab3881ebfc5420f43"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/src/styles/base.css",
+          "old_blob": "c483ec50558c947c59801dcf02be69146eac11e5",
+          "new_blob": "89dfe763238287c995619aa4191091296ab225cb"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/tests/app-refresh.test.mjs",
+          "old_blob": "4216d7bdfa123c8263744e847db998453a1aff93",
+          "new_blob": "78e66befa90f58b1ca952a5a0da23f2c887607d9"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/tests/extension-shelf.test.mjs",
+          "old_blob": "9ac6cf1ecabb74ad65acbaa77d2687164c2d45ad",
+          "new_blob": "1ca33984b58fca12b5b68e55188df494b2b4e184"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/tests/playground-behavior.test.mjs",
+          "old_blob": "486a6e30872482b0366cdd13edeff5fa46ee8331",
+          "new_blob": "31a543cd472fc4f757dc9d4a13ca7237082de321"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/tests/playground-stream.test.mjs",
+          "old_blob": "611461c67944b6b0fc93475a3ff2270ed76ab5db",
+          "new_blob": "68d5efef8b38772800fa78571a4ed821e3e6c9b1"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/tests/provider-detail.test.mjs",
+          "old_blob": "0d7c84cc4a19957f5de5218e8711acb4793b407f",
+          "new_blob": "48e3e9ee63aa13500098652a8b9d745555e9e11d"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/tests/smoke.test.mjs",
+          "old_blob": "eea57f5edaedd6855e463bffe9782ecd51e7c35f",
+          "new_blob": "d3d2b83839b2ebe5c7fc77bdd532721bcaa3eafa"
+        },
+        {
+          "status": "added",
+          "path": "test/browser-runtime.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "b8c4bea1c9e2fbadcc00565144e5239521507688"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/advisory-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "1d47bf1a135f4bba7ffed0de2356ad303a943d4c"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/alerts-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "86f44bad36e26ba8ed0644643c32fa4c9c66c6b3"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/audio-native-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "bbd78860c0c2c698bf26b6b295efcf14348e06a1"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/audio-native-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "c693587305d2373fd7542f89235d15ebdbe6f8db"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/azure-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "087ec399d470cb2a945741bf5623900b7609074d"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/azure-fixture.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "ed595d569989e19ada3088489124fbdfe036bbc2"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/azure-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "2905d32b165f3d225ac9fd6097f4c22c61bb43d1"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/bedrock-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "7681b29f3c87a751cb72b8cbe7c62f4b4b4f9364"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/bedrock-fixture.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "d9530fa7e0763b49e0f7c457c55d374519f69c7d"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/browser-gap-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "09738000f306ea8f127c77adca6cacb564d42466"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/caller-rate-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "7078e8df50bb32b1b79ffa3002592444fe52abf2"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/cancellation-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "4a004a5bfb5e539c66651e1c22908ff8ab142129"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/captured-wire-replay.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "8ea4ae4d57e47b3e48065a8e97f0b50f147932f7"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/captured-wire-replay.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "a573e2c7492b4d31a380deee765f7465d9f531a5"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/catalog-prime.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "98cdf655c1c3b185458c5f31658fcb1b81d9634d"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/client-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "1b60a9d0bf50e18b429db949c776ade8211d94d2"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/client-fixture.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "f48fef21310fbf64175c2a113b25096ecf165028"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/compatible-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "7ea8178adde274d272fd4120a5037b288d659a2c"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/compatible-fixture.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "811bdaffe7d9110cfa8b8ee2ea9a9baadb720cd7"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/compatible-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "9f03aa9ff19a0f7656f85fc0d2a0058ca90e8de9"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/discovery-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "98a848a7010b3416287a899ecdf13df5b928c769"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/discovery-fixture.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "4f6b92eec6ba453a2f924105aa0df9c94a433071"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/discovery-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "5d7edd8620f26ac4aaf46948e6307e6d98b65682"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/embeddings-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "81d83e41320612be72e2d6a05456e269c8267265"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/embeddings-matrix.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "f738a3b29410b4f023a39870f65e431d530d31ad"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/extension-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "352cf0afb4dbc300ede622f6712f5bbc30f9b72a"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/extension-fixture.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "847d2d1c1e354571bbea9fac5dcf725508589bb6"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/extension-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "384f91ccb0df1872a2769ebe37411e255bd05e0d"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/external-key-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "1241c49df15bc488138fbbd3e216c35d63fc2eee"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/external-key-fixture.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "4f4188b93a992d12adfbe10e958006e9fc6fd346"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/fake-upstream.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "44f93bd4c9068d93d9e06e99809b35f26e768cc5"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/fixtures/conversation.json",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "cd95b4bb30fa713099a90ce87e8e432fd9b1eb39"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/fixtures/recorded-codex-responses.sse",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "e0398bd6bbdb026a5ee730fbba7e5243f8b01b57"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/fixtures/recorded-codex-tools.json",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "049d97f435960c8beece78f64d66c2d1648ecc74"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/fixtures/recorded-groq-chat.json",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "9a1e625416fb78e817791cc4bc5199f3866e2fce"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/fixtures/recorded-groq-chat.sse",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "4f0552a23795ccf305b752690544e29b86856ccb"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/fixtures/recorded-groq-transcription.json",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "aa90b6967528351808d421757594bf9c9e23316c"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/fixtures/recorded-upstream-bundle.json",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "75331d03412509346573ec27ecc87f01d284be92"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/fixtures/synthetic-chat-usage.sse",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "6b2bde0ba1d8c277612804c617463c5f92754d10"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/fixtures/synthetic-hello.mp3",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "46d0503bc8a038cebfc16c562573709c38109d6e"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/google-boundary-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "ae77c6589843b1524f251f0bb7ddd7c93ed7caff"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/google-boundary-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "08f6774ae4a333278c76562a643379e6cbed6952"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/http-boundary-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "7a8bec6cb5d260ea058dd99be2b2136ee963d24a"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/iam-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "9fab76fbd59369c12fae11ecff2724b77abb4066"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/iam-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "4e012fc336bd2e9d6eaa58d54502f574e6c7bcc2"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/media-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "624edc1f546f7ade2af7e9a5b4d1c8fba65b5eb0"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/media-fixture.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "b0f840db7ce92017cb51b988097f39a6d89c87d0"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/media-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "e97b04c6b0fccf973d3bb75cf14aac1ebb933892"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/multimodal-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "01cf74e3013a1a19b115af350045650b7b9b9194"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/multimodal-fixture.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "9e87ce1ae23eccaee595fdca9a1359e7e6e8115c"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/multimodal-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "5ca035328b9997802b5fe76d9b5d8c7efc4982b2"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/nonstreaming-tool-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "62514236bd16c28a79f76765c3832315ccad4c87"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/ollama-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "f0d9dee9c7daa6ad0d8026ca253043a0acbf054c"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/ollama-fixture.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "7c3ac711caefb430409ebb1cc236ea452d97fae9"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/ollama-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "9b34d0242274d6fa315a4a57b2da9613d51d137c"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/operational-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "dc817f6eb3dc5ab3e9943bf7bb7270e8d0ee95f6"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/phase-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "24379b971ee0026d52d72155e200abe8080073bd"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/protocol-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "033ed549b7d4bddda159457b3f1a3057f0002077"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/protocol-fixture.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "60fa9610c25df77a9ad332c0a1ca25d868b5f508"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/quota-fixture.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "f56c4b8cab8f5936dcf1721c4b7e0afb0a15470b"
+        },
+        {
+          "status": "modified",
+          "path": "test/integration/README.md",
+          "old_blob": "cbd77e05d762d8903e2f81021721f70ed9285584",
+          "new_blob": "c5445109c167173805c25b001014c1e92b857772"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/real-wire-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "896fe397246df8c6d50b9de39aa7840e5acaca13"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/real-wire-superserver.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "918b38622e523d663c807d4f5f5ea85abfcde22d"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/realtime-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "5d8ee9d8b6e273845e891c79a8067aca610d4953"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/realtime-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "e895853690558e944de786cf24f675ba8b89d367"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/recorded-replay.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "ff670244c961315c5636e03d76ecf3317373b8eb"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/refresh-binding-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "6c9abcea51d22e9d7e82aa3a2730f3c4f29bcd8f"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/remaining-fixtures.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "f68c8385f7e7e59742a91d7256f093d725f4064b"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/routing-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "f3067d177de458e318ca4ff98f564d236c8b05cc"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/routing-fixture.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "3ef2899efd0b32958b1bf47097b3eeb53005a9c7"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/routing-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "33219f0665b77566bec7ca26873f0e7eff673afb"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/run-recorded-http.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "e564d3b1c9220142cffecf59c8faabe59465c598"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/run-recorded-http.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "c82247175919aed6e8450f68246fc9a0c22a9da5"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/shutdown-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "509726de339aeb397053703d82629d039d1d6fde"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/shutdown-fixture.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "1022cf4c2737f01abc2760f3734b2b64ebe78817"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/streaming-tool-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "b57ecd935d1c8cbda47f733ee4559ebba0aaa374"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/streaming-tool-matrix.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "08cb0ae425569d54b260049e43b2e11fefebaa73"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/transparent-matrix.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "09ccb279262cccd3ed83e6d714172b4d0ef83352"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/websocket-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "f5713e9614b5fb42c7502682b15507880f128346"
+        },
+        {
+          "status": "added",
+          "path": "test/integration/websocket-fixture.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "1087c67394ea7ba566b4d2bcc429652ad8d5fe11"
+        },
+        {
+          "status": "added",
+          "path": "test/live-acceptance/fixture-protocol.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "4909d74cd977e0860c1922d655fb5b511aa2101b"
+        },
+        {
+          "status": "added",
+          "path": "test/live-acceptance/fixture-protocol.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "1cadd99412868944df689525ed1f524ba0f80d6d"
+        },
+        {
+          "status": "modified",
+          "path": "test/live-acceptance/fixture-server.mjs",
+          "old_blob": "6e7badbcb0bebe07839bdc1e9644b858f2ff8158",
+          "new_blob": "94fe3f28601bb8cff6fd4f3370045fdfe12647f8"
+        },
+        {
+          "status": "modified",
+          "path": "test/live-acceptance/README.md",
+          "old_blob": "0aed4fe2291c79846457df4b186887049390f197",
+          "new_blob": "3aae6eb331d5f9b6e1f4e3a698cfb35e6e75a9e6"
+        },
+        {
+          "status": "modified",
+          "path": "test/live-acceptance/run.mjs",
+          "old_blob": "96be96e22e0e405fd19bda102b048f3f4ae3fa8a",
+          "new_blob": "054c3abb5a3edab46a76902429b2232b3df49ce2"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/archive-fixtures.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "5b7db009e76b3f186ec9778863a916940db6a8b5"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/browser-proxy.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "7cde9352af82b1bac72a9a6a025a3c447ffe2031"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/capture-assessment.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "5c6de5db3debb555e0e6c3379e9d241f229c4dc1"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/capture-assessment.test.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "d0142b58582a793b4a1ca35907a060af4c39fe4a"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/clone-state.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "41ba4b92b803a0137999deef6378e47ff2443c41"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/installed-browser.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "ff764a5819f7a542ade7e2f8da91de90c5267e3f"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/installed-clients.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "e6e18274edc259c7e46054d4108f87aa77d63fad"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/installed-discovery.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "71081f7d8332af075172ff4c61ecf0120b490d70"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/installed-extension.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "c3e42d131ee6e9b66daaa2920e98e531a67a8939"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/installed-external-keys.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "e0f2c32a83c3c109f339eda1328f4861e991995b"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/installed-media.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "ecaf3a9a7678e3bef6c03e26528be0078078d664"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/installed-metrics.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "309dc0e73b833b91e60542f2b4bf36fc62cd8713"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/installed-operational.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "1ee6042a5fc855ab8f44b2a76bce7fc38b3fc7ab"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/installed-owner.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "53bd4bc6d80e0f9193fadab9039d64cc652fa3bb"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/installed-rate.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "491b74608ccbdc364b48d04c41e9d154d1056f31"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/installed-shutdown.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "80cf0e12e4d71bd3aba2df1bb8721fc58243c67a"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/installed-state.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "aba0275baefdd0608e88925e5ece7af6462fd26d"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/installed-transparent.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "999062cb4376d640269e75c5182aebbc2b9f60db"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/owner-browser.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "569a8153ef43dd53bc5f0c684e7c363ebebc8fe9"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/owner-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "b6ec19d91b8d8dab5af3ab2eb6469887e2931302"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/retention-fixture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "10e66f3925924181c7b7f1714e2c7b501861ff23"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/run-live-capture.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "bf034e2df52ee0b083a6760bc4318af77840d63b"
+        },
+        {
+          "status": "added",
+          "path": "test/qualification/state-volume.mjs",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "a3e9752ea720692a6543371dc73f12b5cc2bb115"
+        }
+      ]
+    }
+  ],
+  "facts": [
+    {
+      "id": "F1",
+      "claim": "Every accepted assertion A1-A10 was freshly exercised against a readonly Go 1.27.3 build of exact source f47ec68783cb74b549fcb08b2b877dfb69073de5. The CLI version and health commands exit0; /health returns200 with status ok; /v1/models returns200 with object list; invalid JSON returns422 with the expected Chat, Responses and Messages error shapes; unauthenticated admin state returns401 with Admin authentication required.; the embedded console returns200 with its title; unconfigured metrics returns404. All ten assertions pass.",
+      "status": "observed",
+      "evidence": {
+        "source": "f47ec68783cb74b549fcb08b2b877dfb69073de5",
+        "method": "Fresh local CLI and HTTP evaluation of the exact accepted predicates, not a historical or live-provider observation"
+      }
+    },
+    {
+      "id": "F2",
+      "claim": "The source-check binary has SHA256 c4798e8ae3e4791a3055934972b8b9a00ea7bfcbc060b0a3d66319efffed4206. Its isolated process used new temporary state and an ephemeral loopback port, cleared inherited Gateway/provider credential variables, disabled roster refresh, permitted unauthenticated data-plane access only and blocked external HTTP(S) through a closed loopback proxy. The child process was stopped in finally. No inference was performed by these ten checks.",
+      "status": "observed",
+      "evidence": {
+        "source": "f47ec68783cb74b549fcb08b2b877dfb69073de5",
+        "method": "Fresh binary checksum, isolated fixture configuration and process termination"
+      }
+    },
+    {
+      "id": "F3",
+      "claim": "The consumer selects the ACTUAL published Translate v0.0.4 module and go.mod sums h1:+DKMrmn21OkeDW0vcNFDRIImkGIdAS0GG12l3ZZ0sng= and h1:TCmZ3uDwod5ZenNLa07GeA/aMutKKZCJnmfMLvmvl/0=. The public module origin is 62d7717a98291b0e6eeda9753c1aa18c87bd2d21. Core remains v0.0.4 and Auth v0.0.1. Readonly actual module selection, module verification, tidy-diff and the new binary build pass without replacements or a workspace. Producer source, PR and main CI passed; required Gateway CI for this exact revision remains separate and is not claimed green here.",
+      "status": "observed",
+      "evidence": {
+        "source": "go/go.mod, go/go.sum and https://github.com/kayiik/llm-translate/releases/tag/v0.0.4",
+        "method": "Fresh public-proxy/sumdb module resolution and real consumer graph/build"
+      }
+    },
+    {
+      "id": "F4",
+      "claim": "The baseline-to-current diff contains exactly docs/CLIENTS.md, go/go.mod, go/go.sum and test/live-acceptance/run.mjs: the direct Translate pin, Claude's literal X-LLMGW-Compatibility: allow header and its setup instructions. The actual producer delta adds string response-root provider for Responses-to-Chat or Messages-to-Chat assessment, string choices.N.native_finish_reason only beside standard stop/length/tool_calls, and string choices.N.message.reasoning. Nonempty dropped reasoning text produces advisory loss; nontext reasoning and material replay/content loss are unsupported. Model/system_fingerprint were already recognized observations, not the entirety of the new allowance. Existing request reasoning controls and object/numeric annotation forms are rejected by the retained negative tests. No workflow, CLI implementation, HTTP handler, console, Docker or toolchain path occurs in the four-file Gateway diff. The selected accepted contract contains no requires identities.",
+      "status": "observed",
+      "evidence": {
+        "source": "git diff v0.0.5..f47ec68783cb74b549fcb08b2b877dfb69073de5; published Translate v0.0.4; selected accepted contract",
+        "method": "Exact four-file diff, producer correction review and accepted assertion comparison"
+      }
+    },
+    {
+      "id": "F5",
+      "claim": "The preceding bounded correction verification used real Claude CLI2.1.278 against one free target for nine cases: direct output, one tool, multi-turn, route, native rejection, explicit opt-in, hard refusal, soft retry and pre-commit failover. That fixture bound the tested producer source locally. No published image or additional provider/client combination was executed in those nine cases. The current Gateway readonly build, vet and full Go test suite also pass with the real published dependency graph; the full test command completed in127.463 seconds and every tested package passed. No current Gateway remote CI or shipped-image observation is recorded by those local results.",
+      "status": "observed",
+      "evidence": {
+        "source": "test/live-acceptance/run.mjs and tested Translate source 8eb050739a9a9db42e159d48951a8d2458f78c7f",
+        "method": "Bounded real-client observations and explicit comparison of evidence scope"
+      }
+    }
+  ],
+  "impact": {
+    "assertions": [
+      {
+        "id": "A1",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F4"
+        ]
+      },
+      {
+        "id": "A2",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F4"
+        ]
+      },
+      {
+        "id": "A3",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F4"
+        ]
+      },
+      {
+        "id": "A4",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F4"
+        ]
+      },
+      {
+        "id": "A5",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F3",
+          "F4"
+        ]
+      },
+      {
+        "id": "A6",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F3",
+          "F4"
+        ]
+      },
+      {
+        "id": "A7",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F3",
+          "F4"
+        ]
+      },
+      {
+        "id": "A8",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F4"
+        ]
+      },
+      {
+        "id": "A9",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F4"
+        ]
+      },
+      {
+        "id": "A10",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F4"
+        ]
+      }
+    ],
+    "requires": [],
+    "possible_binding_changes": []
+  },
+  "questions": [],
+  "conclusion": {
+    "action": "reuse_contract",
+    "summary": "Reuse the accepted contract for exact source f47ec68783cb74b549fcb08b2b877dfb69073de5. Fresh evaluation of A1-A10 against its new real-published-graph binary passes all ten predicates. The narrow Translate dependency correction and explicit Claude conversion opt-in do not change those boundary propositions, and there are no requires identities. Required normal CI, deterministic release certification and shipped-image real-client acceptance remain distinct; this review does not certify a broad live provider matrix or unresolved accurate-heard realtime history. Attributable confirmation is by the actual owner-delegated release coordinator, not an invented personal owner inspection."
+  },
+  "proposed": {
+    "by": "gateway-release-coordinator (owner-delegated)",
+    "at": "2026-10-23T23:12:39.199Z"
+  },
+  "digest": "acdaf7a333579ff7c76470b43f28ba8b36a83ee7b7d3b19869fb16c131de4015"
+}

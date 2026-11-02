@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0.0",
+  "review_digest": "acdaf7a333579ff7c76470b43f28ba8b36a83ee7b7d3b19869fb16c131de4015",
+  "events": [
+    {
+      "by": "gateway-release-coordinator (owner-delegated)",
+      "at": "2026-11-02T14:35:11.175Z"
+    }
+  ]
+}
