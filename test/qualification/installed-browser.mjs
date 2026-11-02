@@ -417,7 +417,9 @@ export async function runInstalledBrowser({ origin, adminKey, artifacts, phase }
       await main.getByRole('checkbox', { name: 'Select every revoked or expired key shown', exact: true }).check();
       const selected = main.getByRole('button', { name: /Delete \d+ selected/ }); await selected.waitFor();
       const firstPageCount = Number((await selected.innerText()).match(/\d+/)?.[0]); assert.ok(firstPageCount > 0 && firstPageCount < made.length);
-      page.once('dialog', dialog => { void dialog.accept(); }); await selected.click();
+      const deleted = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/admin/api/keys/delete');
+      page.once('dialog', dialog => { void dialog.accept(); }); await selected.click(); assert.equal((await deleted).status(), 200);
+      await main.getByRole('status').getByText(/keys? deleted\./).waitFor();
       await main.getByRole('searchbox', { name: 'Search keys', exact: true }).fill('Browser bulk ' + phase);
       const remaining = await page.evaluate(async ({ projectID, ids }) => { const key = sessionStorage.getItem('llmgw.console.static-admin-key'); const response = await fetch('/admin/api/keys?project_id=' + encodeURIComponent(projectID) + '&status=all&limit=100', { headers: { Authorization: 'Bearer ' + key } }); return (await response.json()).keys.filter(item => ids.includes(item.id)).length; }, { projectID: project.id, ids: made });
       assert.equal(remaining, made.length - firstPageCount, 'a visible-page bulk operation must leave other pages untouched');
