@@ -2,7 +2,6 @@ package providers
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -58,6 +57,6 @@ func TestDiagnosticCopilotResponsesModelAfterDaemonRestart(t *testing.T) {
 	case <-time.After(2 * time.Second):
 	}
 	if err != nil || surface != string(core.ModelSurfaceResponses) || !strings.Contains(string(answer.Body), "fixture answer") {
-		t.Fatal(fmt.Sprintf("cached catalog + daemon: surface=%s, err=%v, body=%s", surface, err, answer.Body))
+		t.Fatalf("cached catalog + daemon: surface=%s, err=%v, body=%s", surface, err, answer.Body)
 	}
 }

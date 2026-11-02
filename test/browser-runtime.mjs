@@ -4,6 +4,14 @@ import { pathToFileURL } from 'node:url';
 
 export async function loadPlaywright() {
   try { return await import('playwright'); } catch { /* optional local runtime */ }
+  try {
+    const local = await import(new URL('./live-acceptance/node_modules/playwright/index.mjs', import.meta.url).href);
+    return local.default ?? local;
+  } catch { /* fallback to index.js or global */ }
+  try {
+    const local = await import(new URL('./live-acceptance/node_modules/playwright/index.js', import.meta.url).href);
+    return local.default ?? local;
+  } catch { /* fallback to playwright-core */ }
   try { return await import('playwright-core'); } catch { /* existing CLI runtime */ }
   const globalRoot = execSync('npm root -g', { encoding: 'utf8' }).trim();
   const runtime = await import(pathToFileURL(join(globalRoot, '@playwright', 'cli', 'node_modules', 'playwright-core', 'index.js')).href);
