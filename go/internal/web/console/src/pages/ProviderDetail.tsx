@@ -154,27 +154,27 @@ export function ProviderDetail({ entryID, data, mode, onChanged, onBack, onOpenP
   const openCircuits = openCircuitsOf(instances);
 
   // Per-provider model catalog, scoped to the selected owner when OAuth/private credentials apply.
-  const [catalog, setCatalog] = useState<JSONRecord | null>(null);
-  const [catalogError, setCatalogError] = useState("");
+  const [catalogResult, setCatalogResult] = useState<{ path: string; data?: JSONRecord; error?: string } | null>(null);
   const catalogRequest = useRef(0);
   const catalogPath = mode === "admin"
-    ? (ownerID && supportsOAuth ? `/models?principal_id=${encodeURIComponent(ownerID)}&diagnostics=1` : "/models?diagnostics=1")
+    ? (ownerID ? `/models?principal_id=${encodeURIComponent(ownerID)}&diagnostics=1` : "/models?diagnostics=1")
     : "/models";
+  const catalog = catalogResult?.path === catalogPath ? catalogResult.data : null;
+  const catalogError = catalogResult?.path === catalogPath ? catalogResult.error : "";
   useEffect(() => {
     const request = ++catalogRequest.current;
-    setCatalog(null);
-    setCatalogError("");
+    setCatalogResult(null);
     if (!configured) return;
 
     const fetchCatalog = (path: string) => {
       getJSON<JSONRecord>(mode, path)
         .then((payload) => {
           if (request !== catalogRequest.current) return;
-          setCatalog(payload);
+          setCatalogResult({ path, data: payload });
         })
         .catch((cause) => {
           if (request === catalogRequest.current) {
-            setCatalogError(cause instanceof Error ? cause.message : "Model catalog could not load.");
+            setCatalogResult({ path, error: cause instanceof Error ? cause.message : "Model catalog could not load." });
           }
         });
     };

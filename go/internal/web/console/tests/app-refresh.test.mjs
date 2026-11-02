@@ -62,3 +62,20 @@ test("a successful refresh resolves", async () => {
   await page(render()).props.onChanged();
   assert.deepEqual(page(render()).props.data, { keys: [{ id: "key-3" }] });
 });
+
+test("sign-out invalidates an in-flight state response in the same browser context", async () => {
+  const render = mount(App);
+  let release;
+  responses = [ok({ keys: [{ id: "before-signout" }] }), new Promise(resolve => { release = resolve; })];
+  render(); await settle();
+  const loaded = page(render()); assert.ok(loaded);
+  const refreshing = loaded.props.onChanged().catch(() => {});
+  const shell = find(render(), node => typeof node.props?.onStaticAdminSignOut === "function");
+  assert.ok(shell, "the active admin shell exposes its actual sign-out action");
+  shell.props.onStaticAdminSignOut();
+  assert.equal(page(render()), undefined, "sign-out immediately hides the formerly loaded page");
+  release(ok({ keys: [{ id: "late-state" }] }));
+  await refreshing; await settle();
+  const after = render();
+  assert.equal(page(after), undefined, "the stale page must remain unmounted after sign-out");
+});

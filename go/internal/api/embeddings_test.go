@@ -249,6 +249,54 @@ func TestEmbeddingsProxiesToUpstream(t *testing.T) {
 	}
 }
 
+func TestEmbeddingsRouteUsageKeepsOriginalSelector(t *testing.T) {
+	for name, upstreamStatus := range map[string]int{"success": http.StatusOK, "upstream-error": http.StatusServiceUnavailable, "transport-error": 0} {
+		t.Run(name, func(t *testing.T) {
+			resetState(t)
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/v1/models" {
+					_, _ = w.Write([]byte(`{"data":[{"id":"embedding-model","supported_endpoints":["/embeddings"]}]}`))
+					return
+				}
+				w.WriteHeader(upstreamStatus)
+				_, _ = w.Write([]byte(`{"object":"list","data":[],"usage":{"prompt_tokens":9,"total_tokens":9}}`))
+			}))
+			defer upstream.Close()
+			configureProxyProvider(t, upstream.URL)
+			oldEndpoints := config.Get().Endpoints
+			t.Cleanup(func() { config.Update(func(s *config.Settings) { s.Endpoints = oldEndpoints }) })
+			config.Update(func(s *config.Settings) {
+				s.Endpoints = map[string]*config.EndpointConfig{
+					"embedding-route": {Failover: []config.EndpointMember{{Provider: "proxy", Model: "embedding-model"}}},
+				}
+			})
+			wantStatus := upstreamStatus
+			if upstreamStatus == 0 {
+				upstream.Close()
+				wantStatus = http.StatusBadGateway
+			}
+			rec := httptest.NewRecorder()
+			NewServer(Runtime{}).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(`{"model":"embedding-route","input":"hello"}`)))
+			if rec.Code != wantStatus {
+				t.Fatalf("status=%d want=%d body=%s", rec.Code, wantStatus, rec.Body.String())
+			}
+			db, err := iam.DB()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var count int
+			var requestedModel string
+			if err := db.QueryRow(`SELECT COUNT(*), requested_model FROM usage_events`).Scan(&count, &requestedModel); err != nil {
+				t.Fatal(err)
+			}
+			if count != 1 || requestedModel != "embedding-route" {
+				t.Fatalf("usage=(count=%d requested_model=%q), want original embedding-route selector", count, requestedModel)
+			}
+		})
+	}
+}
+
 func TestNativeGoogleEmbeddingsRejectUnsupportedOpenAIOptions(t *testing.T) {
 	resetState(t)
 	calls := 0
@@ -268,7 +316,7 @@ func TestNativeGoogleEmbeddingsRejectUnsupportedOpenAIOptions(t *testing.T) {
 	providers.ResetProviders()
 	t.Cleanup(providers.ResetProviders)
 
-	for _, field := range []map[string]any{{"dimensions": 128}, {"encoding_format": "base64"}, {"input": []any{"valid", 17}}} {
+	for _, field := range []map[string]any{{"dimensions": 128}, {"encoding_format": "base64"}, {"input": []any{"valid", 17}}, {"stream": true}} {
 		body := map[string]any{"model": "studio/gemini-embedding-001", "input": "hello"}
 		for key, value := range field {
 			body[key] = value

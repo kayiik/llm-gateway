@@ -1,0 +1,22 @@
+{
+  "provenance": {
+    "boundary": "Gateway-observed native transcription response and submitted multipart field/file description",
+    "provider_request": "Reconstructed stub expectation, not an original upstream HTTP capture; Gateway CreateFormFile rebuilds the file part as application/octet-stream while preserving its bytes",
+    "audio": "Synthetic speech saying Hello.; generated during the separately qualified Edge TTS case, not a person's recording",
+    "substitutions": ["Generated x_groq.id replaced with fixture-transcription-request"]
+  },
+  "request": {
+    "model": "whisper-large-v3-turbo",
+    "language": "en",
+    "response_format": "json",
+    "audio_file": "synthetic-hello.mp3",
+    "audio_type": "audio/mpeg",
+    "upstream_audio_type": "application/octet-stream",
+    "audio_bytes": 11232,
+    "audio_sha256": "80edf8be0d78bec5f175b5b22d795b72912060b13c8070c0034e95f8d3f2f954"
+  },
+  "response": {
+    "text": " Hello.",
+    "x_groq": { "id": "fixture-transcription-request" }
+  }
+}

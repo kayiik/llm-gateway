@@ -533,7 +533,7 @@ WHERE enabled=1
 			"threshold_percent": rule.threshold, "key_id": event.KeyID,
 			"scope_id": scopeID,
 		}
-		if err := enqueueOutboxTx(
+		if _, err := enqueueOutboxTx(
 			tx, kind, event.ProjectID, event.PrincipalID, payload,
 			fmt.Sprintf("%s:%s:%d:%s", rule.id, scopeID, start, kind),
 		); err != nil {
@@ -601,13 +601,16 @@ WHERE r.enabled=1 AND r.kind='key_expiry' AND k.status='active'
 			"key_prefix": item.prefix, "expires_at": item.expiresAt,
 			"days": item.days,
 		}
-		if err := enqueueOutboxTx(
+		inserted, err := enqueueOutboxTx(
 			tx, "key_expiring", item.projectID, item.principalID, payload,
 			fmt.Sprintf("%s:%s:%d", item.ruleID, item.keyID, item.expiresAt),
-		); err != nil {
+		)
+		if err != nil {
 			return 0, err
 		}
-		count++
+		if inserted {
+			count++
+		}
 	}
 	return count, tx.Commit()
 }
@@ -615,16 +618,21 @@ WHERE r.enabled=1 AND r.kind='key_expiry' AND k.status='active'
 func enqueueOutboxTx(
 	tx *sql.Tx, kind, projectID, principalID string, payload map[string]any,
 	dedupeKey string,
-) error {
+) (bool, error) {
 	raw, _ := json.Marshal(payload)
-	_, err := tx.Exec(`
+	result, err := tx.Exec(`
 INSERT OR IGNORE INTO outbox_events(
  ts,kind,project_id,principal_id,payload_json,status,attempts,available_at,dedupe_key
 ) VALUES(?,?,?,?,?,'pending',0,?,?)`,
 		time.Now().Unix(), kind, nullable(projectID), nullable(principalID),
 		string(raw), time.Now().Unix(), dedupeKey,
 	)
-	return err
+	if err != nil {
+		return false, err
+	}
+	// A duplicate is safe to ignore, but must not be reported as new work.
+	inserted, err := result.RowsAffected()
+	return inserted == 1, err
 }
 
 func metricValue(counter quotaCounter, metric string) int64 {

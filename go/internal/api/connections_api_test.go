@@ -236,6 +236,36 @@ func TestUserConnectionsAreOwnerScoped(t *testing.T) {
 		theirItems[0].(map[string]any)["connection_name"] != "other" {
 		t.Fatalf("other owner list: %d %+v", status, theirs)
 	}
+	connectionID := theirItems[0].(map[string]any)["id"].(string)
+	path := "/user/api/connections/" + connectionID
+	status, denied := ssoConnectionRequest(t, server.URL, "user-one", http.MethodDelete, path, nil)
+	if status != http.StatusNotFound {
+		t.Fatalf("cross-owner revoke: %d %+v", status, denied)
+	}
+	status, denied = jsonRequest(t, server.URL+path, http.MethodDelete, "", nil)
+	if status != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated revoke: %d %+v", status, denied)
+	}
+	secret, _, found, err := iam.ProviderConnectionSecret(other.ID, "gemini", "other")
+	if err != nil || !found || secret != "other-secret" {
+		t.Fatalf("refused revoke changed owner credential: found=%v err=%v", found, err)
+	}
+	events, err := iam.ListAudit(100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		if event.Action == "provider_connection.revoke" && event.Result == "success" {
+			t.Fatal("refused revoke produced success audit")
+		}
+	}
+	status, revoked := ssoConnectionRequest(t, server.URL, "user-two", http.MethodDelete, path, nil)
+	if status != http.StatusOK || revoked["ok"] != true {
+		t.Fatalf("owner revoke: %d %+v", status, revoked)
+	}
+	if _, _, found, err := iam.ProviderConnectionSecret(other.ID, "gemini", "other"); err != nil || found {
+		t.Fatalf("owner revoke did not stop resolution: found=%v err=%v", found, err)
+	}
 }
 
 func ssoConnectionRequest(

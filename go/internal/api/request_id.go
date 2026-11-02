@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"net/http"
 	"regexp"
+
+	"llmgw/internal/capture"
 )
 
 // requestIDHeader carries a request's ID both ways: a client may name its
@@ -31,7 +33,8 @@ func assignRequestIDs(next http.Handler) http.Handler {
 			id = newRequestID()
 		}
 		w.Header().Set(requestIDHeader, id)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestIDKey{}, id)))
+		ctx := context.WithValue(r.Context(), requestIDKey{}, id)
+		next.ServeHTTP(w, r.WithContext(capture.WithID(ctx, id)))
 	})
 }
 

@@ -9,7 +9,7 @@ header X-Llmgw-Transport-Mode: translated
 header X-Llmgw-Ttfb-Ms: <ms>
 header X-Request-Id: <generated req_>
 upstream: POST /f/chat/completions
-upstream body: {"max_tokens":64,"messages":[{"content":"Say hello","role":"user"}],"model":"chat-model","stream":true}
+upstream body: {"max_tokens":64,"messages":[{"content":"Say hello","role":"user"}],"model":"chat-model","stream":true,"stream_options":{"include_usage":true}}
 body:
 event: message_start
 data: {"message":{"content":[],"id":"<generated msg_>","model":"chat-model","role":"assistant","stop_reason":null,"stop_sequence":null,"type":"message","usage":{"input_tokens":0,"output_tokens":0}},"type":"message_start"}
@@ -30,7 +30,7 @@ event: content_block_stop
 data: {"index":0,"type":"content_block_stop"}
 
 event: message_delta
-data: {"delta":{"stop_reason":"end_turn","stop_sequence":null},"type":"message_delta","usage":{"output_tokens":4}}
+data: {"delta":{"stop_reason":"end_turn","stop_sequence":null},"type":"message_delta","usage":{"input_tokens":3,"output_tokens":4}}
 
 event: message_stop
 data: {"type":"message_stop"}

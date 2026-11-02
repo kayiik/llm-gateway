@@ -134,6 +134,27 @@ test("a provider whose circuit is open says whose requests it refuses", async ()
   assert.doesNotMatch(text(rows.find((row) => row.key === "openrouter-2")), /Circuit open/);
 });
 
+test("advanced endpoint editing preserves a DashScope instance and its stored credential", async () => {
+  const sent = [];
+  globalThis.__api = { sendJSON: async (mode, path, method, body) => { sent.push({ mode, path, method, body }); return {}; }, sendForm: async () => { throw new Error("unexpected multipart upload"); } };
+  const render = mount(() => ConnectDialog({
+    entry: { id: "dashscope", label: "Alibaba", auth_methods: ["api_key"], requires_api_key: true, onboarding_fields: ["api_key"], default_base_url: "https://default.example/v1", provider_config: { id: "existing-alibaba", base_url: "https://chosen.example/v1", api_key_set: true, force_api_support: true } },
+    mode: "edit", onClose() {}, onConfigured: async () => {},
+  }));
+  const advanced = find(render(), (node) => node.type === "details" && /Advanced endpoint/.test(text(node)));
+  assert.ok(advanced, "an optional endpoint override is available even when onboarding only advertises an API key");
+  const url = find(advanced, (node) => node.type === "input" && node.props?.autoComplete === "url");
+  assert.equal(url.props.value, "https://chosen.example/v1");
+  find(render(), (node) => node.type === "form").props.onSubmit({ preventDefault() {} });
+  await settle();
+  assert.equal(sent[0].body.base_url, "https://chosen.example/v1", "an untouched override is preserved");
+  url.props.onInput(input("https://other-region.example/v1"));
+  find(render(), (node) => node.type === "form").props.onSubmit({ preventDefault() {} });
+  await settle();
+  assert.deepEqual(sent.map(({ body }) => ({ id: body.id, registry: body.registry_id, key: body.api_key, adaptation: body.force_api_support })), [0, 1].map(() => ({ id: "existing-alibaba", registry: "dashscope", key: "", adaptation: true })));
+  assert.equal(sent[1].body.base_url, "https://other-region.example/v1");
+});
+
 test("a service account upload carries the API adaptation setting", async () => {
   for (const enabled of [true, false]) {
     const forms = [];
@@ -156,4 +177,85 @@ test("a service account upload carries the API adaptation setting", async () => 
     assert.equal(forms[0].form.get("id"), "vertex");
     assert.equal(forms[0].form.get("force_api_support"), String(enabled));
   }
+});
+
+for (const [name, auth] of [["personal API key", "api_key"], ["OAuth", "oauth_device"]]) {
+  test(`Details catalog follows A, B and global for ${name} connections`, async () => {
+    const scoped = (owner) => `/models?principal_id=${owner}&diagnostics=1`;
+    const row = (owner) => ({ id: `fixture-provider/model-${owner}`, owned_by: "fixture-provider" });
+    const { requests } = fakeAPI({
+      [scoped("person-a")]: { data: [row("a")] },
+      [scoped("person-b")]: { data: [row("b")] },
+      "/models?diagnostics=1": { data: [row("global")] },
+    });
+    const render = detail("fixture-provider", {
+      default_owner: { id: "person-a" },
+      provider_registry: [{ id: "fixture-provider", label: "Fixture provider", auth_methods: [auth], availability: "available" }],
+      provider_statuses: [{ id: "fixture-provider", configured_provider_ids: ["fixture-provider"], instances: [{ id: "fixture-provider" }] }],
+      providers: [{ id: "fixture-provider" }],
+    });
+    render();
+    await settle();
+    let tree = render();
+    assert.equal(requests.at(-1), scoped("person-a"));
+    assert.match(text(tree), /fixture-provider\/model-a/);
+    assert.doesNotMatch(text(tree), /fixture-provider\/model-(b|global)/);
+
+    find(tree, (node) => node.props?.label === "Catalog owner").props.onChange("person-b");
+    tree = render();
+    assert.doesNotMatch(text(tree), /fixture-provider\/model-a/, "owner A's models must disappear immediately when B is selected");
+    await settle();
+    tree = render();
+    assert.equal(requests.at(-1), scoped("person-b"));
+    assert.match(text(tree), /fixture-provider\/model-b/);
+    assert.doesNotMatch(text(tree), /fixture-provider\/model-(a|global)/);
+
+    find(tree, (node) => node.props?.label === "Catalog owner").props.onChange("");
+    tree = render();
+    assert.doesNotMatch(text(tree), /fixture-provider\/model-b/, "private models must disappear when the private owner is cleared");
+    await settle();
+    tree = render();
+    assert.equal(requests.at(-1), "/models?diagnostics=1");
+    assert.doesNotMatch(text(tree), /fixture-provider\/model-(a|b)/);
+    assert.ok(find(tree, (node) => node.props?.title === "Select a catalog owner"));
+  });
+}
+
+test("Details ignores a late catalog from the previous person", async () => {
+  const { requests, pending } = fakeAPI({});
+  const render = detail("fixture-provider", {
+    default_owner: { id: "person-a" },
+    provider_registry: [{ id: "fixture-provider", auth_methods: ["api_key"], availability: "available" }],
+    provider_statuses: [{ id: "fixture-provider", configured_provider_ids: ["fixture-provider"], instances: [{ id: "fixture-provider" }] }],
+    providers: [{ id: "fixture-provider" }],
+  });
+  let tree = render();
+  find(tree, (node) => node.props?.label === "Catalog owner").props.onChange("person-b");
+  render();
+  assert.deepEqual(requests, ["/models?principal_id=person-a&diagnostics=1", "/models?principal_id=person-b&diagnostics=1"]);
+  pending.get(requests[1])({ data: [{ id: "fixture-provider/model-b", owned_by: "fixture-provider" }] });
+  await settle();
+  tree = render();
+  assert.match(text(tree), /fixture-provider\/model-b/);
+  pending.get(requests[0])({ data: [{ id: "fixture-provider/model-a", owned_by: "fixture-provider" }] });
+  await settle();
+  tree = render();
+  assert.match(text(tree), /fixture-provider\/model-b/);
+  assert.doesNotMatch(text(tree), /fixture-provider\/model-a/);
+});
+
+test("portal Details uses its authenticated caller rather than an admin principal override", async () => {
+  const { requests } = fakeAPI({ "/models": { data: [{ id: "fixture-provider/own-model", owned_by: "fixture-provider" }] } });
+  const render = mount(() => ProviderDetail({ entryID: "fixture-provider", data: {
+    default_owner: { id: "person-a" },
+    provider_registry: [{ id: "fixture-provider", auth_methods: ["api_key"] }],
+    provider_statuses: [{ id: "fixture-provider", configured_provider_ids: ["fixture-provider"], instances: [{ id: "fixture-provider" }] }],
+    providers: [{ id: "fixture-provider" }],
+  }, mode: "portal", onChanged: async () => {}, onBack() {} }));
+  render();
+  await settle();
+  const tree = render();
+  assert.deepEqual(requests, ["/models"]);
+  assert.match(text(tree), /fixture-provider\/own-model/);
+  assert.equal(find(tree, (node) => node.props?.label === "Catalog owner"), undefined);
 });

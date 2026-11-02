@@ -301,3 +301,44 @@ func TestDeviceSignInReportsDenialAndExpiry(t *testing.T) {
 		})
 	}
 }
+
+func TestDeviceSignInRejectsAnotherPrincipalAndProviderWithoutConsumingFlow(t *testing.T) {
+	signIn := newCodexSignIn(t, "")
+	config.Update(func(s *config.Settings) {
+		s.Providers["codex-other"] = &config.ProviderConfig{Type: "openai_compatible", RegistryID: "openai_codex"}
+	})
+	status, started := selfServiceCodexStarter.start(t, signIn, map[string]any{"flow": "device_code", "connection_name": "personal"})
+	deviceCode, _ := started["device_code"].(string)
+	if status != http.StatusOK || deviceCode == "" {
+		t.Fatalf("start status=%d answer=%+v", status, started)
+	}
+	body := map[string]any{"device_code": deviceCode, "connection_name": "personal"}
+	for _, tc := range []struct{ subject, provider string }{{"other-codex-user", "codex"}, {"codex-user", "codex-other"}} {
+		status, answer := ssoConnectionRequest(t, signIn.server.URL, tc.subject, http.MethodPost, "/user/api/connections/"+tc.provider+"/oauth/poll", body)
+		if status != http.StatusOK || answer["status"] != "expired" || signIn.daemonPolls() != 0 {
+			t.Fatalf("cross-scope poll status=%d answer=%+v daemon=%d", status, answer, signIn.daemonPolls())
+		}
+	}
+	for _, subject := range []string{"codex-user", "other-codex-user"} {
+		person, found, err := iam.PrincipalBySubject("authentik:" + subject)
+		if err != nil || !found {
+			t.Fatalf("person lookup found=%v err=%v", found, err)
+		}
+		rows, err := iam.ListProviderConnections(person.ID, "")
+		if err != nil || len(rows) != 0 {
+			t.Fatalf("refused poll created connection: count=%d err=%v", len(rows), err)
+		}
+	}
+	signIn.mu.Lock()
+	signIn.answer = oauthflow.PollResult{Status: oauthflow.PollApproved, Record: tokenstore.Record{AccessToken: "fixture-access", Expiry: time.Now().Add(time.Hour)}}
+	signIn.mu.Unlock()
+	signIn.skew.Add(int64(time.Minute))
+	status, answer := ssoConnectionRequest(t, signIn.server.URL, "codex-user", http.MethodPost, "/user/api/connections/codex/oauth/poll", body)
+	if status != http.StatusOK || answer["status"] != "authorized" || signIn.daemonPolls() != 1 {
+		t.Fatalf("correct owner poll status=%d answer=%+v daemon=%d", status, answer, signIn.daemonPolls())
+	}
+	status, answer = ssoConnectionRequest(t, signIn.server.URL, "codex-user", http.MethodPost, "/user/api/connections/codex/oauth/poll", body)
+	if status != http.StatusOK || answer["status"] != "expired" || signIn.daemonPolls() != 1 {
+		t.Fatalf("completed flow reused: status=%d answer=%+v daemon=%d", status, answer, signIn.daemonPolls())
+	}
+}

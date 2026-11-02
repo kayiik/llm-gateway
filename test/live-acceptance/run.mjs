@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { randomBytes, randomUUID } from "node:crypto";
+import { loadPlaywright } from "../browser-runtime.mjs";
 import {
   buildRoutePlans,
   chatCompletionPassed,
@@ -70,6 +71,7 @@ function check(name, status, detail, required = true, evidence = {}) {
 
 async function writeReport() {
   report.execution.completed_at = new Date().toISOString();
+  report.execution.local_checks_passed = report.execution.completed && report.execution.cleanup_completed && report.checks.filter(item => item.required).every(item => item.status === "passed");
   report.policy = evaluatePolicy(report);
   await mkdir(resolve(output, ".."), { recursive: true });
   await writeFile(output, JSON.stringify(report, null, 2) + "\n");
@@ -501,9 +503,9 @@ async function recordLiveCheck(name, passed, result, finalModel) {
 
 async function testPlayground(identity, healthy, plans) {
   let chromium;
-  try { ({ chromium } = await import("playwright")); }
+  try { ({ chromium } = await loadPlaywright()); }
   catch (error) { check("playwright", "failed", error.message, true); return; }
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, ...(process.env.LLMGW_BROWSER_CHANNEL ? { channel: process.env.LLMGW_BROWSER_CHANNEL } : {}) });
   let passes = 0;
   try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
@@ -596,7 +598,7 @@ async function testClaude(identity, healthy, plans) {
   }
   const claudeCommand = process.env.LLMGW_CLAUDE_BIN || "claude";
   const target = `${healthy[0].provider}/${healthy[0].model}`;
-  const claudeConfig = resolve(repo, ".acceptance-claude", runID);
+  const claudeConfig = resolve(tmpdir(), `llmgw-claude-config-${runID}`);
   const claudeWorkspace = resolve(tmpdir(), `llmgw-claude-${runID}`);
   await mkdir(claudeConfig, { recursive: true });
   await mkdir(claudeWorkspace, { recursive: true });
@@ -610,7 +612,12 @@ async function testClaude(identity, healthy, plans) {
     ANTHROPIC_CUSTOM_HEADERS: "X-LLMGW-Compatibility: allow",
     DISABLE_PROMPT_CACHING: "1",
     CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: "1",
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    DISABLE_TELEMETRY: "1",
+    DISABLE_ERROR_REPORTING: "1",
   };
+  const cliVersion = await command(claudeCommand, ["--version"], { cwd: claudeWorkspace, env, timeout: 15_000 });
+  report.execution.claude_version = cliVersion.stdout;
   const invoke = async (name, model, prompt, extra = [], persist = false) => {
     try {
       const persistence = persist ? [] : ["--no-session-persistence"];
@@ -647,11 +654,13 @@ async function testClaude(identity, healthy, plans) {
     const result = await invoke(`four-turn-${index + 1}`, target, turns[index], ["--tools=", ...resume], true);
     if (index === 1) result.passed = result.passed && result.text.includes(memoryA);
     if (index === 3) result.passed = result.passed && result.text.includes(memoryA) && result.text.includes(memoryB);
+    report.claude.at(-1).status = result.passed ? "passed" : "failed";
     required.push([`four-turn-${index + 1}`, result]);
   }
   for (const plan of plans) required.push([plan.name, await invoke(plan.name, plan.name, "Reply with exactly: ok", ["--tools="])]);
-  const toolResult = await invoke("read-tool", plans.at(-1).name, "Use Read on fixture.txt and return its first line exactly.", ["--tools=Read", "--allowedTools=Read", "--permission-mode", "dontAsk"]);
+  const toolResult = await invoke("read-tool", plans.at(-1).name, `Use Read on ${resolve(claudeWorkspace, "fixture.txt")} and return its first line exactly.`, ["--tools=Read", "--allowedTools=Read", "--permission-mode", "dontAsk"]);
   toolResult.passed = toolResult.passed && toolResult.text.includes("llmgw-live-acceptance");
+  report.claude.at(-1).status = toolResult.passed ? "passed" : "failed";
   required.push(["read-tool", toolResult]);
   const passed = required.filter(([, result]) => result.passed).length;
   for (const [name, result] of required) {
@@ -679,7 +688,6 @@ async function testClaude(identity, healthy, plans) {
 
 async function setupDocker() {
   progress(`docker: preparing ${mode} gateway`);
-  report.execution.commit = (await command("git", ["rev-parse", "HEAD"])).stdout;
   const candidateImage = process.env.LLMGW_ACCEPTANCE_IMAGE;
   if (candidateImage) {
     // A candidate built on this engine has nothing to pull; a published one does.
@@ -699,7 +707,11 @@ async function setupDocker() {
     report.execution.candidate_image = candidateImage;
     report.execution.candidate_digest = expectedDigest;
     report.execution.candidate_revision = revision;
+    report.execution.image_id = inspection.Id;
+    report.execution.commit = revision && revision !== "unknown" ? revision : "";
+    report.execution.source_identity = "candidate-image-label; workspace Git not inspected";
   } else {
+    report.execution.commit = (await command("git", ["rev-parse", "HEAD"])).stdout;
     progress("docker: building local image");
     await docker("build", "-f", "go/Dockerfile", "--build-arg", `VERSION=acceptance-${report.execution.commit.slice(0, 8)}`, "--build-arg", `COMMIT=${report.execution.commit}`, "-t", image, "go");
   }
@@ -839,7 +851,7 @@ async function runAcceptance() {
       await testAPIs(identity.token, plans, healthy);
       progress("playground: testing browser targets");
       await testPlayground(identity, healthy, plans);
-      if (mode === "live") {
+      if (mode === "live" || process.env.LLMGW_ACCEPTANCE_CLAUDE === "1") {
         progress("claude: testing CLI capabilities");
         await testClaude(identity, healthy, plans);
       }

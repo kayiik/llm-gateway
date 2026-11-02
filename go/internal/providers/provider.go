@@ -40,12 +40,13 @@ type ContextSpeechSynthesizer interface {
 
 // ModelInfo is one row of a provider's catalog.
 type ModelInfo struct {
-	ID                string                  `json:"id"`
-	Vendor            string                  `json:"vendor,omitempty"`
-	Label             string                  `json:"label,omitempty"`
-	Free              bool                    `json:"free,omitempty"`
-	Capabilities      map[string]any          `json:"capabilities,omitempty"`
-	TypedCapabilities *core.ModelCapabilities `json:"typed_capabilities,omitempty"`
+	ID                string                                  `json:"id"`
+	Vendor            string                                  `json:"vendor,omitempty"`
+	Label             string                                  `json:"label,omitempty"`
+	Free              bool                                    `json:"free,omitempty"`
+	Capabilities      map[string]any                          `json:"capabilities,omitempty"`
+	TypedCapabilities *core.ModelCapabilities                 `json:"typed_capabilities,omitempty"`
+	WirePreservation  map[core.ModelSurface]core.SupportState `json:"wire_preservation,omitempty"`
 	// SupportedSurfaces are the HTTP surfaces a model can be called through
 	// (e.g. "/v1/chat/completions", "/v1/messages") — distinct from an
 	// "endpoint" in the routing-target sense used elsewhere in this codebase.

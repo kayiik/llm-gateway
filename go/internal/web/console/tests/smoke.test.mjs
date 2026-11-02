@@ -658,17 +658,16 @@ test("playground is a chat surface with multi-turn history", () => {
   assert.match(playground, /Raw gateway response/);
 });
 
-test("playground keeps failed requests out of conversation history", () => {
+test("playground does not invent an assistant answer from an error", () => {
   const playground = readFileSync(resolve(root, "src/pages/Playground.tsx"), "utf8");
   assert.doesNotMatch(playground, /isError\?: boolean/);
   assert.doesNotMatch(playground, /setTurns\(\[\.\.\.history, \{\s*role: "assistant",\s*content: msg/s);
-  assert.match(playground, /setTurns\(turns\);\s*setDraft\(\(current\) => current \|\| text\);\s*reportError\(cause\)/);
   assert.match(playground, /const executionRequest = useRef\(0\)/);
   assert.match(playground, /const executionPending = useRef\(false\)/);
   assert.match(playground, /const executionAbort = useRef<AbortController \| null>\(null\)/);
   assert.match(playground, /\[model, projectID, scopedPrincipalID, textSurface, surface\]/);
   assert.match(playground, /onClear=\{\(\) => \{ executionAbort\.current\?\.abort\(\); executionAbort\.current = null; executionRequest\.current \+= 1;/);
-  assert.match(playground, /setResult\(null\);\s*reportError\(cause/);
+  assert.match(playground, /reportError\(cause/);
   assert.match(playground, /Catalog discovery does not guarantee current inference availability/);
 });
 
@@ -704,7 +703,7 @@ test("playground selects and builds each supported text surface", () => {
   assert.match(playground, /transportForSurface\(model, surface\) === "native"/);
   assert.match(playground, /transportForSurface\(model, surface\) === "translated"/);
   assert.match(playground, /`\/playground\$\{textSurface\}`/);
-  assert.match(playground, /body\.input = statefulResponses \? text : requestHistory/);
+  assert.match(playground, /body\.input = statefulResponses \? submittedTool \? requestHistory\(textSurface, history\.slice\(-1\)\) : text : requestHistory/);
   assert.match(playground, /body\.previous_response_id = previousResponseID/);
   assert.match(playground, /body\.max_tokens = 1024/);
   assert.match(playground, /function parseTextResponse/);

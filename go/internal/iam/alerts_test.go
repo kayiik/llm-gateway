@@ -187,6 +187,14 @@ func TestKeyExpiryScheduledAlert(t *testing.T) {
 		events[0].Payload["key_id"] != issued.ID {
 		t.Fatalf("events=%+v", events)
 	}
+	count, err = EvaluateScheduledAlerts(now)
+	if err != nil || count != 0 {
+		t.Fatalf("duplicate evaluation reported %d new events, err=%v", count, err)
+	}
+	events, err = PendingOutbox(10)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("duplicate evaluation changed the outbox: events=%+v err=%v", events, err)
+	}
 }
 
 func TestOutboxErrorsSanitizePersistenceAndHistoricalRows(t *testing.T) {

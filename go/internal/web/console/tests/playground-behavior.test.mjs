@@ -5,7 +5,7 @@ import { build } from "esbuild";
 const { outputFiles } = await build({
   stdin: {
     contents: `
-      export { modeFor, modesFor, playgroundFailure } from "./src/pages/Playground.tsx";
+      export { modeFor, modesFor, playgroundFailure, playgroundUserTurn, requestHistory } from "./src/pages/Playground.tsx";
       export { APIError, requestJSON } from "./src/lib/api.ts";
     `,
     resolveDir: new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"),
@@ -48,6 +48,35 @@ test("playground failure keeps safe status, code, retry, and action", () => {
     retry: "After 17",
     action: "Wait for the provider window.",
   });
+});
+
+test("tool followup closes the actual assistant call before a note and remains in later history", () => {
+  for (const surface of ["/v1/chat/completions", "/v1/messages", "/v1/responses"]) {
+    const call = surface === "/v1/responses" ? { type: "function_call", id: "item-actual", call_id: "call-actual", name: "lookup", arguments: "{}" }
+      : surface === "/v1/messages" ? { type: "tool_use", id: "call-actual", name: "lookup", input: {} }
+      : { id: "call-actual", type: "function", function: { name: "lookup", arguments: "{}" } };
+    const wire = surface === "/v1/chat/completions" ? [{ role: "assistant", content: null, tool_calls: [call] }] : [call];
+    const before = [{ role: "user", content: "lookup" }, { role: "assistant", content: "", toolCalls: [call], wire }];
+    const frozen = structuredClone(before);
+    const turn = subject.playgroundUserTurn(surface, before, "Use this result.", { id: "call-actual", output: "actual-result" });
+    const history = subject.requestHistory(surface, [...before, turn]);
+    if (surface === "/v1/messages") {
+      assert.equal(history[2].role, "user");
+      assert.deepEqual(history[2].content, [{ type: "tool_result", tool_use_id: "call-actual", content: "actual-result" }, { type: "text", text: "Use this result." }]);
+    } else {
+      assert.deepEqual(history[2], surface === "/v1/responses" ? { type: "function_call_output", call_id: "call-actual", output: "actual-result" } : { role: "tool", tool_call_id: "call-actual", content: "actual-result" });
+      assert.deepEqual(history[3], { role: "user", content: "Use this result." });
+    }
+    const later = subject.requestHistory(surface, [...before, turn, { role: "assistant", content: "done" }, { role: "user", content: "another turn" }]);
+    assert.deepEqual(later.slice(0, history.length), history);
+    assert.deepEqual(before, frozen, "building a followup must not mutate captured provider wire");
+  }
+});
+
+test("an unrelated or already-completed tool call cannot enter followup history", () => {
+  const turns = [{ role: "assistant", content: "", toolCalls: [{ id: "actual-call" }] }];
+  assert.throws(() => subject.playgroundUserTurn("/v1/chat/completions", turns, "note", { id: "foreign-call", output: "unrelated" }), /pending call/);
+  assert.throws(() => subject.playgroundUserTurn("/v1/chat/completions", [...turns, { role: "assistant", content: "completed" }], "note", { id: "actual-call", output: "late" }), /pending call/);
 });
 
 test("API client preserves the server error envelope and Retry-After", async () => {

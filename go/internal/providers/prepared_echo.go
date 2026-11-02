@@ -158,13 +158,14 @@ func (preparedEchoProvider) PrepareCall(_ context.Context, request core.Request,
 		if err := ctx.Err(); err != nil {
 			return core.Response{}, err
 		}
-		record:=core.BeginSourceUsage(ctx,core.UpstreamAPIChatCompletions,translate.UsageDialectChat)
+		record := core.BeginSourceUsage(ctx, core.UpstreamAPIChatCompletions, translate.UsageDialectChat)
 		response, err := (EchoProvider{}).Complete(request.Model, canonical, nil)
 		if err != nil {
-			record.Finish(translate.CompletionFailed,false)
+			record.Finish(translate.CompletionFailed, false)
 			return core.Response{}, err
 		}
-		record.Merge(response["usage"]);record.Finish(translate.CompletionComplete,false)
+		record.Merge(response["usage"])
+		record.Finish(translate.CompletionComplete, false)
 		body, err := json.Marshal(response)
 		return core.Response{Body: body, ContentType: core.ContentTypeJSON}, err
 	},
@@ -172,12 +173,12 @@ func (preparedEchoProvider) PrepareCall(_ context.Context, request core.Request,
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-		stream, err := (EchoProvider{}).Stream(request.Model, canonical, nil)
+			stream, err := (EchoProvider{}).Stream(request.Model, canonical, nil)
 			if err != nil {
 				return nil, err
 			}
-		record:=core.BeginSourceUsage(ctx,core.UpstreamAPIChatCompletions,translate.UsageDialectChat)
-		return &preparedEchoStream{inner: stream, ctx: ctx,record:record}, nil
+			record := core.BeginSourceUsage(ctx, core.UpstreamAPIChatCompletions, translate.UsageDialectChat)
+			return &preparedEchoStream{inner: stream, ctx: ctx, record: record}, nil
 		}), nil
 }
 
@@ -197,15 +198,15 @@ func (p preparedEchoProvider) Stream(ctx context.Context, request core.Request) 
 }
 
 type preparedEchoStream struct {
-	inner StreamIter
-	ctx   context.Context
-	ended bool
+	inner  StreamIter
+	ctx    context.Context
+	ended  bool
 	record *core.SourceUsageRecorder
 }
 
 func (s *preparedEchoStream) Next() ([]byte, error) {
 	if err := s.ctx.Err(); err != nil {
-		s.record.Finish(translate.CompletionPartial,true)
+		s.record.Finish(translate.CompletionPartial, true)
 		return nil, err
 	}
 	if s.ended {
@@ -215,11 +216,19 @@ func (s *preparedEchoStream) Next() ([]byte, error) {
 		return []byte("data: " + chunk + "\n\n"), nil
 	}
 	if err := s.inner.Err(); err != nil {
-		s.record.Finish(translate.CompletionFailed,false)
+		s.record.Finish(translate.CompletionFailed, false)
 		return nil, err
 	}
 	s.ended = true
-	s.record.Finish(translate.CompletionComplete,false)
+	s.record.Finish(translate.CompletionComplete, false)
 	return []byte("data: [DONE]\n\n"), nil
 }
-func (s *preparedEchoStream) Close() error {err:=s.inner.Close();if s.ctx.Err()!=nil{s.record.Finish(translate.CompletionPartial,true)}else{s.record.Finish(translate.CompletionPartial,false)};return err}
+func (s *preparedEchoStream) Close() error {
+	err := s.inner.Close()
+	if s.ctx.Err() != nil {
+		s.record.Finish(translate.CompletionPartial, true)
+	} else {
+		s.record.Finish(translate.CompletionPartial, false)
+	}
+	return err
+}

@@ -481,6 +481,29 @@ func TestAzureCatalogCursorCannotRedirectToAnotherHost(t *testing.T) {
 	}
 }
 
+func TestAzureCatalogHTTPRedirectCannotLeaveResource(t *testing.T) {
+	foreignRequests := 0
+	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		foreignRequests++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer foreign.Close()
+	resource := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, foreign.URL+"/openai/deployments", http.StatusFound)
+	}))
+	defer resource.Close()
+	models, _, err := newAzureTestProvider(t, resource.URL+"/openai/v1").catalog()
+	if err == nil || len(models) != 0 {
+		t.Fatalf("redirected catalog succeeded with models=%+v, error=%v", models, err)
+	}
+	if code, _, _ := CatalogFailure(err); code != "catalog_not_discoverable" {
+		t.Fatalf("catalog failure code = %q, want catalog_not_discoverable", code)
+	}
+	if foreignRequests != 0 {
+		t.Fatalf("catalog followed %d redirect(s) outside the resource", foreignRequests)
+	}
+}
+
 // A proxy-prefixed path is rejected at configuration time. It reads like a
 // valid endpoint — the suffix is right there — but catalog discovery derives
 // its route from scheme+host alone (azureResourceOrigin) and requests

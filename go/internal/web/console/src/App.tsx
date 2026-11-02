@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { AppShell } from "./components/AppShell";
 import { ErrorState, LoadingState, RenderBoundary } from "./components/PageState";
 import { APIError, authenticationRedirectCode, clearStaticAdminKey, getJSON, hasStaticAdminKey, storeStaticAdminKey, type JSONRecord } from "./lib/api";
@@ -61,6 +61,7 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [adminSignInRequired, setAdminSignInRequired] = useState(false);
   const [staticAdminKeyActive, setStaticAdminKeyActive] = useState(() => isAdmin && hasStaticAdminKey());
+  const stateRequest = useRef(0);
   const [catalogPrincipalID, setCatalogPrincipalID] = useState("");
   const [appliedPlaygroundOwner, setAppliedPlaygroundOwner] = useState("");
   const playgroundRoute = useMemo(() => {
@@ -76,14 +77,18 @@ export function App() {
   // load resolves to the failure, if any, instead of throwing: the initial load
   // has no caller to catch it, while refresh reports it to the caller.
   const load = async (showLoading = true): Promise<Error | null> => {
+    const request = ++stateRequest.current;
     if (showLoading) setLoading(true);
     setError(null);
     try {
       const endpoint = mode === "portal" ? "/me" : "/state";
-      setData(await getJSON<JSONRecord>(mode, endpoint));
+      const next = await getJSON<JSONRecord>(mode, endpoint);
+      if (request !== stateRequest.current) return null;
+      setData(next);
       if (mode === "admin") setAdminSignInRequired(false);
       return null;
     } catch (cause) {
+      if (request !== stateRequest.current) return null;
       const failure = cause instanceof Error ? cause : new Error("The console could not load gateway state.");
       setError(failure.message);
       if (cause instanceof APIError && cause.code === authenticationRedirectCode) {
@@ -101,7 +106,7 @@ export function App() {
       }
       return failure;
     } finally {
-      if (showLoading) setLoading(false);
+      if (showLoading && request === stateRequest.current) setLoading(false);
     }
   };
   // Pages call refresh after their own request succeeded. A failure keeps the
@@ -144,10 +149,12 @@ export function App() {
     void load(true);
   };
   const signOutStaticAdminKey = () => {
+    stateRequest.current++;
     clearStaticAdminKey();
     setStaticAdminKeyActive(false);
     setData(null);
     setError(null);
+    setLoading(false);
     setAdminSignInRequired(true);
   };
 

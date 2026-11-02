@@ -263,11 +263,12 @@ body:
       ],
       "typed_capabilities": {
         "freshness": {
-          "discovered_at": "<time>"
+          "discovered_at": "<time>",
+          "expires_at": "<time>"
         },
         "inputs": {
           "image": "unknown",
-          "text": "supported"
+          "text": "unknown"
         },
         "limits": {},
         "operations": {
@@ -280,18 +281,18 @@ body:
           "video": "unknown"
         },
         "provenance": {
-          "confidence": "medium",
-          "source": "inferred"
+          "confidence": "high",
+          "source": "registry_static"
         },
         "reasoning": "unknown",
         "schema_version": 1,
         "stateful_responses": "unknown",
-        "streaming": "unknown",
+        "streaming": "supported",
         "structured_output": "unknown",
         "surfaces": {
-          "chat_completions": "unknown",
+          "chat_completions": "unsupported",
           "messages": "supported",
-          "responses": "unknown"
+          "responses": "unsupported"
         },
         "tools": "unknown"
       }

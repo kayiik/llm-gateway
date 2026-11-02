@@ -118,6 +118,11 @@ func TestDisabledProviderPolicyPrecedenceAllPublicSurfaces(t *testing.T) {
 			for _, model := range tc.models {
 				for _, path := range paths {
 					for _, stream := range []bool{false, true} {
+						// Explicit embedding streaming is invalid before target policy
+						// resolution; this matrix tests policy for valid requests.
+						if path == "/v1/embeddings" && stream {
+							continue
+						}
 						w := disabledPolicyRequest(t, handler, path, model, key.Token, stream)
 						if w.Code != tc.status || !strings.Contains(w.Body.String(), tc.message) || calls.Load() != 0 || strings.Contains(w.Header().Get("Content-Type"), "event-stream") {
 							t.Fatalf("%s %s stream=%t: status=%d calls=%d body=%s", path, model, stream, w.Code, calls.Load(), w.Body.String())

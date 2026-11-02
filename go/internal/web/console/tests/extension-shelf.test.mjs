@@ -37,14 +37,15 @@ function listed(extensions, overrides = {}) {
   };
 }
 
-function mountShelf(extensions, { search = "", filter = "all", state, stateData = data } = {}) {
-  const view = { search, filter, added: [], opened: [], changed: 0 };
+function mountShelf(extensions, { search = "", filter = "all", state, stateData = data, ownerID = "" } = {}) {
+  const view = { search, filter, ownerID, added: [], opened: [], played: [], changed: 0 };
   const shelfState = state ?? listed(extensions).state;
   const render = mount(() => shelf.ExtensionShelf({
-    data: stateData, extensions: shelfState, search: view.search, filter: view.filter,
+    data: stateData, extensions: shelfState, search: view.search, filter: view.filter, ownerID: view.ownerID,
     onChanged: async () => { view.changed += 1; },
     onAddAccount: (entry, providerID) => view.added.push([entry.id, providerID]),
     onOpenDetail: (entryID) => view.opened.push(entryID),
+    onOpenPlayground: (...args) => view.played.push(args),
   }));
   return { render, view, state: shelfState };
 }
@@ -53,6 +54,57 @@ const buttonIn = (tree, label) => find(tree, (node) => node.type === "button" &&
 const rowsOf = (tree) => findAll(find(tree, (node) => node.type === "tbody"), (node) => node.type === "tr");
 const rowFor = (tree, label) => rowsOf(tree).find((row) => text(row).startsWith(label));
 const notices = (tree) => findAll(tree, (node) => node.props?.message).map((node) => node.props.message.title);
+
+test("extension models and explicit Playground actions follow the selected owner without inference", async () => {
+  const sent = api((method, path) => {
+    if (method !== "GET") throw new Error("catalog navigation must not send inference or mutate state");
+    const owner = new URL(path, "https://gateway.example").searchParams.get("principal_id");
+    return { data: [{ id: `copilot/model-${owner || "global"}`, owned_by: "copilot" }] };
+  });
+  const { render, view } = mountShelf([workstation], { ownerID: "person-a" });
+  trigger(render(), "workstation").props.onClick();
+  render(); await settle();
+  let tree = render();
+  assert.ok(sent.some(([method, path]) => method === "GET" && path.includes("principal_id=person-a")), "the open shelf requests the selected person's catalog");
+  let row = rowFor(tree, "GitHub Copilot");
+  assert.match(text(row), /1 model/);
+  assert.match(text(row), /copilot\/model-person-a/);
+  const play = find(row, (node) => node.type === "button" && node.props?.["aria-label"] === "Open copilot/model-person-a in Playground");
+  assert.ok(play, "a model has an explicit inference-navigation action");
+  play.props.onClick();
+  assert.deepEqual(view.played, [["copilot/model-person-a", "copilot", "person-a"]]);
+
+  view.ownerID = "person-b";
+  assert.doesNotMatch(text(render()), /copilot\/model-person-a/, "old owner's models disappear in the first render");
+  await settle(); tree = render();
+  assert.match(text(rowFor(tree, "GitHub Copilot")), /copilot\/model-person-b/);
+  view.ownerID = "";
+  assert.doesNotMatch(text(render()), /copilot\/model-person-b/);
+  await settle(); tree = render();
+  assert.match(text(rowFor(tree, "GitHub Copilot")), /copilot\/model-global/);
+  assert.ok(find(rowFor(tree, "GitHub Copilot"), (node) => node.props?.["aria-label"] === "Open copilot/model-global in Playground").props.disabled, "inference still needs an explicit human owner");
+  assert.ok(sent.every(([method]) => method === "GET"));
+});
+
+test("a late private catalog cannot overwrite the next owner and failures are not zero models", async () => {
+  let finishA;
+  api((method, path) => {
+    if (path.includes("person-a")) return new Promise((resolve) => { finishA = resolve; });
+    if (path.includes("person-b")) return { data: [{ id: "copilot/model-b", owned_by: "copilot" }] };
+    throw new Error("Catalog access was refused.");
+  });
+  const { render, view } = mountShelf([workstation], { ownerID: "person-a" });
+  trigger(render(), "workstation").props.onClick(); render(); await settle();
+  view.ownerID = "person-b"; render(); await settle();
+  assert.match(text(rowFor(render(), "GitHub Copilot")), /copilot\/model-b/);
+  finishA({ data: [{ id: "copilot/model-a", owned_by: "copilot" }] });
+  await settle();
+  assert.doesNotMatch(text(render()), /copilot\/model-a/);
+  view.ownerID = "person-c"; render(); await settle();
+  const row = rowFor(render(), "GitHub Copilot");
+  assert.match(text(row), /Catalog unavailable/);
+  assert.doesNotMatch(text(row), /0 models|copilot\/model-b/);
+});
 
 test("each extension's row says what its daemon serves and whether it answers", () => {
   api();
@@ -110,7 +162,7 @@ test("Add creates the provider the extension serves, then takes the step it need
   trigger(render(), "workstation").props.onClick();
   find(rowFor(render(), "OpenAI Codex"), (node) => node.type === "button").props.onClick();
   await settle();
-  assert.deepEqual(sent, [["POST", "/providers", { type: "openai_codex", id: "openai_codex-2", extension: "workstation" }]]);
+  assert.deepEqual(sent, [["GET", "/models?diagnostics=1"], ["POST", "/providers", { type: "openai_codex", id: "openai_codex-2", extension: "workstation" }]]);
   assert.equal(view.changed, 1, "the state reloads, and the listing with it");
   assert.deepEqual(view.added, [["openai_codex", "openai_codex-2"]], "a sign-in provider asks for an account");
 
@@ -163,7 +215,7 @@ test("Check now replaces the extension's status, and says when it could not run"
   trigger(render(), "workstation").props.onClick();
   buttonIn(render(), "Check now").props.onClick();
   await settle();
-  assert.deepEqual(sent, [["POST", "/extensions/workstation/check", {}]]);
+  assert.deepEqual(sent, [["GET", "/models?diagnostics=1"], ["POST", "/extensions/workstation/check", {}]]);
   assert.deepEqual(checked.calls, [["setStatus", "workstation", buildBox.status]]);
 
   api(() => { throw new Error("Admin authentication required."); });

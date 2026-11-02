@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"llmgw/internal/capture"
 	"llmgw/internal/config"
 	"llmgw/internal/providers"
 	"llmgw/internal/router"
@@ -48,6 +49,7 @@ type embeddingsRequest struct {
 	EncodingFormat string `json:"encoding_format,omitempty"`
 	Dimensions     any    `json:"dimensions,omitempty"`
 	User           string `json:"user,omitempty"`
+	Stream         bool   `json:"stream,omitempty"`
 }
 
 // embeddingsCreditsMilli is what one embeddings request costs against a key's
@@ -83,6 +85,11 @@ func handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	if inputEmpty(req.Input) {
 		recordFailureUsage("openai.embeddings", req.Model, principal, 400, "missing_input", started)
 		writeError(w, 400, "'input' is required (a string or an array of strings)")
+		return
+	}
+	if req.Stream {
+		recordFailureUsage("openai.embeddings", req.Model, principal, http.StatusBadRequest, "streaming_unsupported", started)
+		writeError(w, http.StatusBadRequest, "embeddings do not support streaming")
 		return
 	}
 
@@ -166,9 +173,9 @@ func handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	copyAuthHeaders(upstream, headers, false)
 	upstream.Header.Set("Content-Type", "application/json")
 
-	resp, err := embeddingsClient.Do(upstream)
+	resp, err := capture.Wrap(embeddingsClient).Do(upstream)
 	if err != nil {
-		recordFailureUsage("openai.embeddings", req.Model, principal, 502, "upstream", started)
+		recordFailureUsage("openai.embeddings", requestedModel, principal, 502, "upstream", started)
 		writeError(w, 502, "embeddings upstream error")
 		return
 	}
@@ -180,7 +187,7 @@ func handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	// needs no schema change — an embedding produces no output tokens because it
 	// generates nothing.
 	recordUsage(router.UsageRecord{
-		RequestID: principal.RequestID, Endpoint: "openai.embeddings", RequestedModel: provider + "/" + upstreamModel,
+		RequestID: principal.RequestID, Endpoint: "openai.embeddings", RequestedModel: requestedModel,
 		RoutedModel: upstreamModel, Provider: provider,
 		Project: principal.Project, Key: principal.Key,
 		ProjectID: principal.ProjectID, PrincipalID: principal.PrincipalID,

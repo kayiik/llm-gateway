@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"llmgw/internal/capture"
 	"llmgw/internal/config"
 
 	"github.com/kayiik/llm-provider-auth/tokenstore"
@@ -198,12 +199,12 @@ func newExtensionHTTPClient() *http.Client {
 	if shared, ok := http.DefaultTransport.(*http.Transport); ok {
 		transport = shared.Clone()
 	}
-	return &http.Client{
+	return capture.Forward(&http.Client{
 		Transport: transport,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
-	}
+	})
 }
 
 // extensionClient returns the client of ext, one of the extensions settings

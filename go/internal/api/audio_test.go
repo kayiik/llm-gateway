@@ -338,6 +338,35 @@ func TestMiMoSpeechUsesCoreAudioSurface(t *testing.T) {
 	}
 }
 
+func TestNativeAudioInvalidFormatReturnsClientErrorBeforeSourceDispatch(t *testing.T) {
+	for _, testCase := range []struct{ name, kind, model, format, voice string }{
+		{"elevenlabs", "elevenlabs", "eleven_multilingual_v2", "wav", "fixture-voice"},
+		{"mimo", "mimo", "mimo-v2.5-tts", "mp3", "mimo_default"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			resetState(t)
+			calls := 0
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				w.WriteHeader(http.StatusTeapot)
+			}))
+			defer upstream.Close()
+			configureCoreAudioProvider(t, testCase.name, testCase.kind, upstream.URL)
+			payload, _ := json.Marshal(map[string]string{
+				"model": testCase.name + "/" + testCase.model, "input": "hello", "voice": testCase.voice,
+				"response_format": testCase.format,
+			})
+			request := httptest.NewRequest(http.MethodPost, "/v1/audio/speech", bytes.NewReader(payload))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			NewServer(Runtime{}).ServeHTTP(response, request)
+			if response.Code != http.StatusBadRequest || calls != 0 {
+				t.Fatalf("status=%d source calls=%d body=%s", response.Code, calls, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestUpstreamErrorStatusPreservesTypedRedirect(t *testing.T) {
 	err := providers.HTTPInvocationError("proxy", http.StatusTemporaryRedirect, []byte("redirect"))
 	if status := upstreamErrorStatus(err); status != http.StatusTemporaryRedirect {

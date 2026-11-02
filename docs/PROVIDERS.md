@@ -25,7 +25,7 @@ is `endpoints`.
 | --- | --- | --- | --- | --- |
 | Claude Code | Anthropic gateway client | Gateway key | Client only | Client setup, not an upstream provider; no Claude personal OAuth. |
 | OpenAI | OpenAI-compatible | API key | System or personal | Standard project API-key integration. |
-| Anthropic | Native Anthropic | API key or setup token | System or personal | Native Messages and token counting; setup tokens are stored only as encrypted connections. |
+| Anthropic | Native Anthropic | API key; legacy setup-token connections remain accepted | System or personal | Native Messages and token counting. |
 | Google Gemini | Google's OpenAI-compatible endpoint | API key | System or personal | Distinct from native AI Studio. |
 | Google AI Studio | Native Gemini | API key | System or personal | Chat with streaming and tools, image, and video. |
 | Vertex AI (Agent Platform) | Native Gemini/Vertex | API key or service-account JSON | System or personal | Project/location required; discovery credential requirements can differ from inference. Optional request type selects default, PayGo, or dedicated provisioned throughput. |
@@ -111,6 +111,12 @@ sign-in methods. Add a provider, then paste its token or connect its account as
 declared. OAuth connections belong to a human and do not fall back to a shared
 system key. A provider declaring `none` requires no provider credential. Provider
 and account setup does not run inference.
+
+For the daemon's `anthropic_setup_token` integration, supply an existing Anthropic
+setup token as a `setup_token` connection; an ordinary API key is not that
+credential type. Tokens are stored as encrypted connections. This integration
+does not provide browser OAuth sign-in or token refresh. Use the direct
+`anthropic` provider for ordinary Anthropic API-key access.
 
 An offline extension shows its configured instances without invented capability
 claims. Extensions can be edited and checked in place, and removed once no

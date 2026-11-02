@@ -281,10 +281,13 @@ func listModels(principal *config.Principal, options modelListOptions) (map[stri
 			if len(unknown) > 0 {
 				entry["unknown_surfaces"] = unknown
 			}
-			entry["typed_capabilities"] = providers.AdaptModelCapabilities(
-				capabilities, surfaces, modelDiscoveredAt(row, discoveredAt),
-				verifiedAt,
-			)
+			if row.TypedCapabilities != nil {
+				entry["typed_capabilities"] = row.TypedCapabilities
+			} else {
+				entry["typed_capabilities"] = providers.AdaptModelCapabilities(
+					capabilities, surfaces, modelDiscoveredAt(row, discoveredAt), verifiedAt,
+				)
+			}
 			data = append(data, entry)
 		}
 	}

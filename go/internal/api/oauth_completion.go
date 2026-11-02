@@ -24,14 +24,17 @@ func storeOAuthConnection(ctx context.Context, done oauthflow.Completion) (strin
 	}
 	principalID, _ := iam.CallerPrincipalID(done.Caller)
 	params, record := done.Params, done.Record
-	// The drivers carry, to the second, the expiry the gateway has always
-	// stored: 0 for a device grant's token that names none, the zero time's
-	// second for a code grant's.
+	// Providers may issue nonexpiring grants. The store represents absent expiry
+	// as zero seconds, not the negative Unix value of time.Time{}.
+	var expiresAt int64
+	if !record.Expiry.IsZero() {
+		expiresAt = record.Expiry.Unix()
+	}
 	create := iam.OAuthConnectionCreate{
 		PrincipalID: principalID, ProviderID: done.Instance, Name: params[oauthParamConnectionName],
 		Kind: params[oauthParamKind], Source: params[oauthParamSource], MakeDefault: true,
 		AccessToken: record.AccessToken, RefreshToken: record.RefreshToken, IDToken: record.IDToken,
-		TokenType: record.TokenType, ExpiresAt: record.Expiry.Unix(), AccountID: record.AccountID,
+		TokenType: record.TokenType, ExpiresAt: expiresAt, AccountID: record.AccountID,
 		AccountLabel: record.Metadata[providers.OAuthMetadataAccountLabel],
 		ProjectID:    record.Metadata[providers.OAuthMetadataProjectID], Status: "active",
 		OAuthProfile:  record.Metadata[providers.OAuthMetadataProfile],

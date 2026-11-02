@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"llmgw/internal/config"
@@ -319,6 +321,302 @@ func TestCLIErrorEnvelopeContract(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPublicHTTPToolConversations(t *testing.T) {
+	for _, wire := range []string{"chat", "responses", "messages"} {
+		for _, ingress := range []string{"chat", "responses", "messages"} {
+			for _, route := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s-to-%s/route=%v", ingress, wire, route), func(t *testing.T) {
+					f := newNativePolicyFixture(t)
+					wirePath := map[string]string{"chat": "/chat/completions", "responses": "/responses", "messages": "/v1/messages"}[wire]
+					f.catalogSurfaces = []string{wirePath}
+					config.Update(func(s *config.Settings) {
+						s.APIKey = "gateway-token"
+						s.Providers["chat"].RegistryID = "openrouter"
+						s.Providers["responses"].ForceApiSupport = true
+						s.Endpoints["conversation"] = &config.EndpointConfig{Failover: []config.EndpointMember{{Provider: wire, Model: "fixture"}}, Ingress: []string{"/v1/chat/completions", "/v1/responses", "/v1/messages"}, AllowAdaptation: true}
+					})
+					if wire != "messages" {
+						providers.RefreshCatalog(wire)
+					}
+					var calls atomic.Int32
+					f.inference = func(w http.ResponseWriter, r *http.Request, body map[string]any) {
+						stage := calls.Add(1)
+						if r.URL.Path != wirePath || body["model"] != "fixture" {
+							t.Errorf("wrong actual target: path=%s model=%v", r.URL.Path, body["model"])
+						}
+						if stage == 2 {
+							assertConversationToolResult(t, wire, body)
+						}
+						reply := conversationReply(wire, stage == 2)
+						if ingress != wire {
+							reply = adaptableConversationReply(wire, stage == 2)
+						}
+						writeJSON(w, http.StatusOK, reply)
+					}
+					model, permission := wire+"/fixture", "allow"
+					if route {
+						model, permission = "conversation", ""
+					}
+					path := map[string]string{"chat": "/v1/chat/completions", "responses": "/v1/responses", "messages": "/v1/messages"}[ingress]
+					first := conversationRequest(ingress, model, nil)
+					if !route && wire != ingress && !(ingress == "chat" && wire == "responses") {
+						status, raw := cliRequest(t, f.server.URL+path, first)
+						if status != http.StatusBadRequest || calls.Load() != 0 || !bytes.Contains(raw, []byte("adaptation_required")) {
+							t.Fatalf("permission default changed: status=%d calls=%d body=%s", status, calls.Load(), raw)
+						}
+					}
+					status, raw := cliRequest(t, f.server.URL+path, first, permission)
+					if ingress == "responses" && wire == "messages" {
+						if status != http.StatusBadRequest || calls.Load() != 0 || !bytes.Contains(raw, []byte("request_loss")) || !bytes.Contains(raw, []byte("strict")) {
+							t.Fatalf("unsupported strict-tool conversion was not refused: status=%d calls=%d body=%s", status, calls.Load(), raw)
+						}
+						return
+					}
+					if status != http.StatusOK {
+						t.Fatalf("first turn status=%d body=%s", status, raw)
+					}
+					var answer map[string]any
+					if err := json.Unmarshal(raw, &answer); err != nil {
+						t.Fatal(err)
+					}
+					assertConversationCall(t, ingress, answer)
+					if ingress == wire && answer["vendor_request_id"] != "trace" {
+						t.Fatalf("native metadata changed: %+v", answer)
+					}
+					if !route && ingress == "responses" && wire == "responses" {
+						item := answer["output"].([]any)[0].(map[string]any)
+						if item["id"] != "item_fixture" {
+							t.Fatalf("native item ID changed: %+v", item)
+						}
+						bound := conversationRequest(ingress, model, answer)
+						bound["input"].([]any)[1].(map[string]any)["id"] = item["id"]
+						boundStatus, boundRaw := cliRequest(t, f.server.URL+path, bound, permission)
+						if boundStatus != http.StatusForbidden || calls.Load() != 1 || !bytes.Contains(boundRaw, []byte("private human provider connection")) {
+							t.Fatalf("opaque replay binding changed: status=%d calls=%d body=%s", boundStatus, calls.Load(), boundRaw)
+						}
+					}
+					second := conversationRequest(ingress, model, answer)
+					status, raw = cliRequest(t, f.server.URL+path, second, permission)
+					if status != http.StatusOK {
+						t.Fatalf("tool-result turn status=%d body=%s", status, raw)
+					}
+					if err := json.Unmarshal(raw, &answer); err != nil {
+						t.Fatal(err)
+					}
+					assertConversationFinal(t, ingress, answer)
+					if calls.Load() != 2 {
+						t.Fatalf("upstream attempts=%d want two", calls.Load())
+					}
+				})
+			}
+		}
+	}
+}
+
+func conversationReply(wire string, final bool) map[string]any {
+	usage := map[string]any{"input_tokens": 2, "output_tokens": 1, "total_tokens": 3}
+	if final {
+		usage = map[string]any{"input_tokens": 3, "output_tokens": 2, "total_tokens": 5}
+	}
+	switch wire {
+	case "chat":
+		message, finish := map[string]any{"role": "assistant", "content": nil, "tool_calls": []any{map[string]any{"id": "call_fixture", "type": "function", "function": map[string]any{"name": "lookup", "arguments": `{"q":"fixture"}`}}}}, "tool_calls"
+		if final {
+			message, finish = map[string]any{"role": "assistant", "content": "complete-fixture"}, "stop"
+		}
+		return map[string]any{"id": "chat_fixture", "object": "chat.completion", "model": "fixture", "choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": finish}}, "usage": map[string]any{"prompt_tokens": usage["input_tokens"], "completion_tokens": usage["output_tokens"], "total_tokens": usage["total_tokens"]}, "vendor_request_id": "trace"}
+	case "messages":
+		content, stop := []any{map[string]any{"type": "tool_use", "id": "call_fixture", "name": "lookup", "input": map[string]any{"q": "fixture"}}}, "tool_use"
+		if final {
+			content, stop = []any{map[string]any{"type": "text", "text": "complete-fixture"}}, "end_turn"
+		}
+		return map[string]any{"id": "msg_fixture", "type": "message", "role": "assistant", "model": "fixture", "content": content, "stop_reason": stop, "usage": map[string]any{"input_tokens": usage["input_tokens"], "output_tokens": usage["output_tokens"]}, "vendor_request_id": "trace"}
+	default:
+		output := []any{map[string]any{"id": "item_fixture", "type": "function_call", "call_id": "call_fixture", "name": "lookup", "arguments": `{"q":"fixture"}`, "status": "completed"}}
+		if final {
+			output = []any{map[string]any{"id": "message_fixture", "type": "message", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "complete-fixture"}}, "status": "completed"}}
+		}
+		return map[string]any{"id": "resp_fixture", "object": "response", "model": "fixture", "status": "completed", "output": output, "usage": usage, "completed_at": 2, "frequency_penalty": 0, "presence_penalty": 0, "prompt_cache_key": "cache", "prompt_cache_retention": "24h", "safety_identifier": "safe", "vendor_request_id": "trace"}
+	}
+}
+
+func adaptableConversationReply(wire string, final bool) map[string]any {
+	reply := conversationReply(wire, final)
+	// Positive conversions use assessed fields; native and refusal tests retain
+	// metadata that cannot be represented faithfully on another wire.
+	for _, key := range []string{"vendor_request_id", "completed_at", "frequency_penalty", "presence_penalty", "prompt_cache_key", "prompt_cache_retention", "safety_identifier"} {
+		delete(reply, key)
+	}
+	return reply
+}
+
+func conversationRequest(ingress, model string, answer map[string]any) map[string]any {
+	user := map[string]any{"role": "user", "content": "lookup fixture"}
+	body := map[string]any{"model": model}
+	switch ingress {
+	case "responses":
+		body["input"] = "lookup fixture"
+		body["tools"] = []any{map[string]any{"type": "function", "name": "lookup", "parameters": map[string]any{"type": "object"}, "strict": false}}
+		if answer != nil {
+			items := []any{user}
+			for _, raw := range answer["output"].([]any) {
+				original := raw.(map[string]any)
+				item := make(map[string]any, len(original))
+				for key, value := range original {
+					if key != "id" {
+						item[key] = value
+					}
+				}
+				// Public callers replay complete function content using call_id;
+				// opaque provider item IDs require the existing private binding.
+				items = append(items, item)
+			}
+			body["input"] = append(items, map[string]any{"type": "function_call_output", "call_id": "call_fixture", "output": "result-fixture"})
+		}
+	case "messages":
+		body["messages"], body["tools"], body["max_tokens"] = []any{user}, cliTool(false), 32
+		if answer != nil {
+			body["messages"] = []any{user, map[string]any{"role": "assistant", "content": answer["content"]}, map[string]any{"role": "user", "content": []any{map[string]any{"type": "tool_result", "tool_use_id": "call_fixture", "content": "result-fixture"}}}}
+		}
+	default:
+		body["messages"], body["tools"] = []any{user}, cliTool(true)
+		if answer != nil {
+			body["messages"] = []any{user, answer["choices"].([]any)[0].(map[string]any)["message"], map[string]any{"role": "tool", "tool_call_id": "call_fixture", "content": "result-fixture"}}
+		}
+	}
+	return body
+}
+
+func assertConversationCall(t *testing.T, ingress string, answer map[string]any) {
+	t.Helper()
+	var id, name, arguments string
+	switch ingress {
+	case "chat":
+		choice := answer["choices"].([]any)[0].(map[string]any)
+		calls, _ := choice["message"].(map[string]any)["tool_calls"].([]any)
+		if len(calls) != 1 || choice["finish_reason"] != "tool_calls" {
+			t.Fatalf("bad tool call response: %+v", answer)
+		}
+		call := calls[0].(map[string]any)
+		fn := call["function"].(map[string]any)
+		id, _ = call["id"].(string)
+		name, _ = fn["name"].(string)
+		arguments, _ = fn["arguments"].(string)
+	case "responses":
+		calls := answer["output"].([]any)
+		if len(calls) != 1 || answer["status"] != "completed" {
+			t.Fatalf("bad function response: %+v", answer)
+		}
+		call := calls[0].(map[string]any)
+		id, _ = call["call_id"].(string)
+		name, _ = call["name"].(string)
+		arguments, _ = call["arguments"].(string)
+	default:
+		calls := answer["content"].([]any)
+		if len(calls) != 1 || answer["stop_reason"] != "tool_use" {
+			t.Fatalf("bad tool use response: %+v", answer)
+		}
+		call := calls[0].(map[string]any)
+		id, _ = call["id"].(string)
+		name, _ = call["name"].(string)
+		a, _ := json.Marshal(call["input"])
+		arguments = string(a)
+	}
+	var args map[string]any
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil || id != "call_fixture" || name != "lookup" || !reflect.DeepEqual(args, map[string]any{"q": "fixture"}) {
+		t.Fatalf("call identity/arguments changed: %+v", answer)
+	}
+}
+
+func assertConversationToolResult(t *testing.T, wire string, body map[string]any) {
+	t.Helper()
+	if wire == "responses" {
+		items, _ := body["input"].([]any)
+		foundCall, foundResult := false, false
+		for _, raw := range items {
+			item, _ := raw.(map[string]any)
+			if item["type"] == "function_call" {
+				foundCall = item["call_id"] == "call_fixture" && item["name"] == "lookup" && item["arguments"] == `{"q":"fixture"}`
+			}
+			if item["type"] == "function_call_output" {
+				foundResult = item["call_id"] == "call_fixture" && item["output"] == "result-fixture"
+			}
+		}
+		if !foundCall || !foundResult {
+			t.Errorf("Responses history/result changed: %+v", body)
+		}
+		return
+	}
+	messages, _ := body["messages"].([]any)
+	if len(messages) != 3 {
+		t.Errorf("conversation history length changed: %+v", body)
+		return
+	}
+	assistant, _ := messages[1].(map[string]any)
+	result, _ := messages[2].(map[string]any)
+	if assistant["role"] != "assistant" {
+		t.Errorf("assistant history lost: %+v", body)
+	}
+	if wire == "chat" {
+		calls, _ := assistant["tool_calls"].([]any)
+		if len(calls) != 1 {
+			t.Errorf("assistant call lost: %+v", body)
+			return
+		}
+		call := calls[0].(map[string]any)
+		if call["id"] != "call_fixture" || result["role"] != "tool" || result["tool_call_id"] != "call_fixture" || result["content"] != "result-fixture" {
+			t.Errorf("Chat result identity changed: %+v", body)
+		}
+	} else {
+		calls, _ := assistant["content"].([]any)
+		outputs, _ := result["content"].([]any)
+		if len(calls) != 1 || len(outputs) != 1 {
+			t.Errorf("Messages call/result lost: %+v", body)
+			return
+		}
+		call, output := calls[0].(map[string]any), outputs[0].(map[string]any)
+		if call["type"] != "tool_use" || call["id"] != "call_fixture" || result["role"] != "user" || output["type"] != "tool_result" || output["tool_use_id"] != "call_fixture" || output["content"] != "result-fixture" {
+			t.Errorf("Messages result identity changed: %+v", body)
+		}
+	}
+}
+
+func assertConversationFinal(t *testing.T, ingress string, answer map[string]any) {
+	t.Helper()
+	var text, stop string
+	switch ingress {
+	case "chat":
+		choice := answer["choices"].([]any)[0].(map[string]any)
+		text, _ = choice["message"].(map[string]any)["content"].(string)
+		stop, _ = choice["finish_reason"].(string)
+		if stop != "stop" {
+			t.Fatalf("final finish state=%s", stop)
+		}
+	case "responses":
+		item := answer["output"].([]any)[0].(map[string]any)
+		text, _ = item["content"].([]any)[0].(map[string]any)["text"].(string)
+		if answer["status"] != "completed" {
+			t.Fatalf("final status=%v", answer["status"])
+		}
+	default:
+		text, _ = answer["content"].([]any)[0].(map[string]any)["text"].(string)
+		if answer["stop_reason"] != "end_turn" {
+			t.Fatalf("final stop state=%v", answer["stop_reason"])
+		}
+	}
+	if text != "complete-fixture" {
+		t.Fatalf("final content changed: %+v", answer)
+	}
+	usage, _ := answer["usage"].(map[string]any)
+	input, output := "input_tokens", "output_tokens"
+	if ingress == "chat" {
+		input, output = "prompt_tokens", "completion_tokens"
+	}
+	if usage[input] != float64(3) || usage[output] != float64(2) {
+		t.Fatalf("final usage changed: %+v", answer)
 	}
 }
 

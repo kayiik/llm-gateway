@@ -41,6 +41,11 @@ node run.mjs
 
 Live mode uses the installed `claude` command by default. CI resolves the pinned
 platform binary from `@anthropic-ai/claude-code` with `claude-bin.mjs`.
+Set `LLMGW_ACCEPTANCE_CLAUDE=1` to exercise that real client against the controlled
+deterministic fixtures too. The report records its actual version. Supply
+`LLMGW_ACCEPTANCE_IMAGE` to test an existing exact candidate; source identity then
+comes from its inspected image metadata without inspecting workspace Git. An
+unknown image revision remains unknown.
 
 ## Separate live qualification
 

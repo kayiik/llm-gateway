@@ -59,6 +59,11 @@ node --test scripts/test-local.test.mjs
 
 ## Integration and release validation
 
+Start with API-first user scenarios through the Gateway's public endpoints and
+representative provider contracts. Record minimal, sanitized request/response
+exchanges at the provider boundary, then replay them through the Gateway as
+deterministic regression fixtures. State explicitly what each recording proves.
+
 Use [fixture integration](../test/integration/README.md) for deterministic endpoint
 checks and [client UAT](../test/uat/README.md) for installed-client/provider checks.
 Fixtures establish only the behavior they assert; they do not certify an

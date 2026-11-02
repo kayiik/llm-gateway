@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"llmgw/internal/capture"
 )
 
 const inferenceMaxResponseBytes = 64 << 20
@@ -18,7 +20,7 @@ const inferenceMaxResponseBytes = 64 << 20
 // httpClient bounds a whole request, which suits a catalog or another short
 // document; an inference request uses providerClient.
 func httpClient(timeout float64) *http.Client {
-	return &http.Client{Timeout: time.Duration(timeout * float64(time.Second))}
+	return capture.Wrap(&http.Client{Timeout: time.Duration(timeout * float64(time.Second))})
 }
 
 // providerClient returns the client of a provider's inference requests,
@@ -32,14 +34,14 @@ func httpClient(timeout float64) *http.Client {
 func providerClient(timeout float64) *http.Client {
 	wait := time.Duration(timeout * float64(time.Second))
 	if wait <= 0 {
-		return &http.Client{}
+		return capture.Wrap(&http.Client{})
 	}
 	transport := &http.Transport{}
 	if shared, ok := http.DefaultTransport.(*http.Transport); ok {
 		transport = shared.Clone()
 	}
 	transport.ResponseHeaderTimeout = wait
-	return &http.Client{Transport: &idleTimeoutTransport{next: transport, idle: wait}}
+	return capture.Wrap(&http.Client{Transport: &idleTimeoutTransport{next: transport, idle: wait}})
 }
 
 // idleTimeoutTransport gives every response body it returns an idle timeout;

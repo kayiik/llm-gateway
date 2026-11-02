@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"llmgw/internal/capture"
 	"llmgw/internal/config"
 	"llmgw/internal/iam"
 	"llmgw/internal/providers"
@@ -279,7 +280,7 @@ func handleAdminPlaygroundEmbeddings(w http.ResponseWriter, r *http.Request) {
 	copyAuthHeaders(request, headers, false)
 	request.Header.Set("Content-Type", "application/json")
 	started := time.Now()
-	response, err := embeddingsClient.Do(request)
+	response, err := capture.Wrap(embeddingsClient).Do(request)
 	latency := time.Since(started).Milliseconds()
 	if err != nil {
 		recordPlaygroundEmbeddingUsage(body.Model, providerID, upstreamModel, principal, project, http.StatusBadGateway, latency, "upstream")
@@ -387,7 +388,7 @@ func playgroundSpeechAudio(
 	}
 	copyAuthHeaders(request, headers, false)
 	request.Header.Set("Content-Type", "application/json")
-	response, err := audioClient.Do(request)
+	response, err := capture.Wrap(audioClient).Do(request)
 	if err != nil {
 		return nil, "", "", 0, err
 	}
@@ -502,7 +503,7 @@ func handleAdminPlaygroundTranscription(w http.ResponseWriter, r *http.Request) 
 	}
 	copyAuthHeaders(request, headers, true)
 	request.Header.Set("Content-Type", contentType)
-	response, err := audioClient.Do(request)
+	response, err := capture.Wrap(audioClient).Do(request)
 	latency := time.Since(started).Milliseconds()
 	if err != nil {
 		recordUsage(router.UsageRecord{

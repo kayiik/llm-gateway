@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"llmgw/internal/capture"
 	"llmgw/internal/config"
 	"llmgw/internal/iam"
 	"llmgw/internal/providers"
@@ -335,7 +336,7 @@ func handleTranscriptions(w http.ResponseWriter, r *http.Request) {
 	req, _ := http.NewRequestWithContext(r.Context(), "POST", base+"/audio/transcriptions", buf)
 	copyAuthHeaders(req, headers, true)
 	req.Header.Set("Content-Type", contentType)
-	resp, err := audioClient.Do(req)
+	resp, err := capture.Wrap(audioClient).Do(req)
 	if err != nil {
 		recordFailureUsage("openai.transcriptions", model, principal, 502, "upstream", started)
 		writeError(w, 502, "audio transcription upstream error")
@@ -434,7 +435,7 @@ func handleSpeech(w http.ResponseWriter, r *http.Request) {
 	req, _ := http.NewRequestWithContext(r.Context(), "POST", base+"/audio/speech", bytes.NewReader(payload))
 	copyAuthHeaders(req, headers, false)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := audioClient.Do(req)
+	resp, err := capture.Wrap(audioClient).Do(req)
 	if err != nil {
 		recordFailureUsage("openai.speech", reqModel, principal, 502, "upstream", started)
 		writeError(w, 502, "audio speech upstream error")

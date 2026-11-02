@@ -114,9 +114,9 @@ func modelTransportSurfaces(
 	surfaces []string,
 	evaluatedAt time.Time,
 ) ([]string, []string, []string) {
-	provider, credential, _ := transportDeclaration(providerID, caller)
+	provider, _ := providers.GetProviderForPrincipal(providerID, caller)
 	model.Capabilities, model.SupportedSurfaces = capabilities, surfaces
-	native, emulated, unknown := core.ListingSurfaces(provider, credential, transportEvidence(model, refreshedAt), evaluatedAt)
+	native, emulated, unknown := providers.CatalogTransportSurfaces(provider, model, refreshedAt, transportCatalogFreshness, evaluatedAt)
 	// This signaling path is served directly by the gateway rather than the
 	// core conversation adapters. Only a current explicit API declaration is
 	// positive listing evidence; neither the provider label nor model name is.

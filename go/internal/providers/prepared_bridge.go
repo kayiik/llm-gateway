@@ -136,7 +136,13 @@ func (p *preparedCoreProvider) PrepareCall(ctx context.Context, request core.Req
 			return nil, err
 		}
 	}
-	call, err := core.PrepareCall(ctx, coretranslation.Adapter{Provider: provider}, request, options)
+	// The extension planner selects the model's native endpoint itself. Its
+	// legacy provider-wide Chat facade must not pre-convert that request.
+	planner := provider
+	if _, ownsMapping := provider.(*extensionPreparedProvider); !ownsMapping {
+		planner = coretranslation.Adapter{Provider: provider}
+	}
+	call, err := core.PrepareCall(ctx, planner, request, options)
 	if err != nil {
 		return nil, err
 	}

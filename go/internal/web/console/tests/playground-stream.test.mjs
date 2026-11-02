@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { bundle, find, input, mount, settle, text } from "./hook-harness.mjs";
+import { conversation, createFakeUpstream } from "../../../../../test/integration/fake-upstream.mjs";
 
 const api = await bundle(fileURLToPath(new URL("../src/lib/api.ts", import.meta.url)));
+const recordedAnswer = JSON.parse(readFileSync(new URL("../../../../../test/integration/fixtures/recorded-groq-chat.json", import.meta.url), "utf8")).responses[1];
 
 test("server-sent events are read whole, however the stream splits them", () => {
   let taken = api.takeServerSentEvents('event: route\ndata: {"served":{"provider":"echo"}}\n\nevent: delta\r\ndata: {"text":"Hel');
@@ -46,7 +49,7 @@ test("a stream is read as it arrives, and a refusal before it opens rejects as a
   }
 });
 
-const { Playground } = await bundle(fileURLToPath(new URL("../src/pages/Playground.tsx", import.meta.url)), [{
+const { Playground, requestHistory } = await bundle(fileURLToPath(new URL("../src/pages/Playground.tsx", import.meta.url)), [{
   filter: /\/lib\/api$/,
   contents: [
     "export class APIError extends Error {}",
@@ -84,6 +87,41 @@ async function playground(stream) {
   return { render, streams };
 }
 const thread = (tree) => find(tree, (node) => typeof node.type === "function" && Array.isArray(node.props?.turns)).props;
+
+test("zero eligible projects explains recovery without creating one, then disposable membership enables recorded inference", async () => {
+  const calls = [];
+  let state = { ...data, projects: [], memberships: [] };
+  globalThis.__api = {
+    getJSON: async (mode, path) => { calls.push({ method: "GET", mode, path }); return catalog; },
+    sendJSON: async () => { throw new Error("the empty state must not create a project, membership, or request"); },
+    streamEvents: async (mode, path, body, onEvent) => {
+      calls.push({ method: "POST", mode, path, body });
+      onEvent({ event: "delta", data: { text: recordedAnswer.choices[0].message.content } });
+      onEvent({ event: "done", data: { raw_response: recordedAnswer, usage: recordedAnswer.usage } });
+    },
+  };
+  const render = mount(() => Playground({ data: state, mode: "admin", principalID: "user-1", onPrincipalIDChange() {} }));
+  render(); await settle();
+  let tree = render();
+  const empty = find(tree, (node) => node.props?.title === "No eligible project is available");
+  assert.match(empty.props.detail, /active project.*owner or administrator membership/i);
+  assert.equal(empty.props.action.type, "a", "admin gets a normal project-management link, not an automatic bootstrap");
+  assert.equal(empty.props.action.props.href, "#projects");
+  assert.equal(calls.length, 0);
+  state = { ...data, projects: [...data.projects], memberships: [...data.memberships] };
+  for (let i = 0; i < 6; i += 1) { render(); await settle(); }
+  tree = render();
+  assert.ok(calls.some((call) => call.method === "GET" && call.path === "/models?project_id=project-1&principal_id=user-1&diagnostics=1"));
+  const composer = find(tree, (node) => node.type === "textarea" && /Send a message/.test(node.props?.placeholder ?? ""));
+  (composer.props.onInput ?? composer.props.oninput)(input("Use the fixture answer."));
+  find(render(), (node) => node.type === "form" && node.props?.class === "chat-composer surface").props.onSubmit({ preventDefault() {} });
+  await settle(); tree = render();
+  const request = calls.find((call) => call.method === "POST");
+  assert.equal(request.body.project_id, "project-1");
+  assert.equal(request.body.principal_id, "user-1");
+  assert.equal(thread(tree).turns.at(-1).content, recordedAnswer.choices[0].message.content);
+  assert.equal(find(tree, (node) => node.props?.title === "No eligible project is available"), undefined);
+});
 
 test("an answer streams into the conversation as it arrives, then settles as the full answer", async () => {
   let finish;
@@ -146,7 +184,75 @@ test("stopping a stream keeps what arrived, and a stream that fails is reported"
   });
   await settle();
   tree = failing.render();
-  assert.equal(thread(tree).turns.length, 0, "a failed answer leaves the conversation as it was");
-  assert.equal(find(tree, (node) => node.type === "textarea" && /Send a message/.test(node.props?.placeholder ?? "")).props.value, "Hi there", "the message waits to be sent again");
+  const incomplete = thread(tree).turns;
+  assert.equal(incomplete.length, 2, "a client-received delta remains visible after a post-open failure");
+  assert.equal(incomplete[1].content, "Par"); assert.equal(incomplete[1].incomplete, true);
+  assert.deepEqual(requestHistory("/v1/chat/completions", incomplete), [{ role: "user", content: "Hi there" }], "the incomplete assistant cannot be replayed as a complete turn");
   assert.ok(find(tree, (node) => node.props?.detail === "Upstream provider stream failed."), "the stream's failure is reported");
+});
+
+test("the shared upstream conversation renders through Playground events", { timeout: 5000 }, async (t) => {
+  const { server } = createFakeUpstream();
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/chat/v1/chat/completions`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "fixture", messages: [{ role: "tool", tool_call_id: conversation.tool.id, content: conversation.tool.result }] }),
+  });
+  assert.equal(response.status, 200);
+  const upstream = await response.json();
+  // The backend matrix verifies the wire conversion. Here the same upstream
+  // contract feeds the Gateway events whose presentation belongs to this page.
+  const { render } = await playground(onEvent => {
+    onEvent({ event: "route", data: { served: { provider: "echo", model: "echo-default" } } });
+    onEvent({ event: "delta", data: { text: upstream.choices[0].message.content } });
+    onEvent({ event: "done", data: { served: { provider: "echo", model: "echo-default" }, latency_ms: 12, usage: upstream.usage, raw_response: upstream } });
+    return Promise.resolve();
+  });
+  await settle();
+  const tree = render();
+  assert.equal(thread(tree).turns[1].content, conversation.text);
+  assert.equal(thread(tree).turns[1].streaming, undefined);
+  assert.match(text(tree), /12 ms/);
+});
+
+test("the shared fake offers deterministic throttling and cancellable delay", { timeout: 5000 }, async (t) => {
+  const refused = createFakeUpstream({ status: 429 });
+  await new Promise(resolve => refused.server.listen(0, "127.0.0.1", resolve));
+  t.after(() => { refused.server.closeAllConnections(); refused.server.close(); });
+  const response = await fetch(`http://127.0.0.1:${refused.server.address().port}/chat/v1/chat/completions`, {
+    method: "POST", body: JSON.stringify({ messages: [] }),
+  });
+  assert.equal(response.status, 429);
+  assert.equal((await response.json()).error.type, "fixture_error");
+  assert.equal(refused.metrics.inference, 1);
+
+  const slow = createFakeUpstream({ delayMs: 100 });
+  await new Promise(resolve => slow.server.listen(0, "127.0.0.1", resolve));
+  t.after(() => { slow.server.closeAllConnections(); slow.server.close(); });
+  const controller = new AbortController();
+  const pending = fetch(`http://127.0.0.1:${slow.server.address().port}/chat/v1/chat/completions`, {
+    method: "POST", body: JSON.stringify({ messages: [] }), signal: controller.signal,
+  });
+  for (let turn = 0; turn < 100 && !slow.metrics.inference; turn++) await new Promise(resolve => setTimeout(resolve, 1));
+  assert.equal(slow.metrics.inference, 1);
+  controller.abort();
+  await assert.rejects(pending, error => error.name === "AbortError");
+  for (let turn = 0; turn < 100 && !slow.metrics.cancelled; turn++) await new Promise(resolve => setTimeout(resolve, 1));
+  assert.equal(slow.metrics.cancelled, 1);
+});
+
+test("an interrupted shared upstream stream cannot look like a completed answer", { timeout: 5000 }, async (t) => {
+  const { server, metrics } = createFakeUpstream({ chunkDelayMs: 5, disconnectAfter: 2 });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  await assert.rejects(async () => {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/chat/v1/chat/completions`, {
+      method: "POST", body: JSON.stringify({ stream: true, messages: [] }),
+    });
+    await response.text();
+  });
+  assert.equal(metrics.inference, 1);
+  for (let turn = 0; turn < 100 && !metrics.cancelled; turn++) await new Promise(resolve => setTimeout(resolve, 1));
+  assert.equal(metrics.cancelled, 1);
 });

@@ -323,6 +323,41 @@ func TestModelTransportSurfacesUsesInferredSurfaceArgument(t *testing.T) {
 	}
 }
 
+func TestExtensionModelTransportSurfacesDoesNotInferTranslationFromAbsentWireEvidence(t *testing.T) {
+	before := *config.Get()
+	t.Cleanup(func() { config.Update(func(settings *config.Settings) { *settings = before }) })
+	config.Update(func(settings *config.Settings) {
+		settings.OpenAICodexClientID = "fixture-client"
+		settings.Providers = map[string]*config.ProviderConfig{
+			"codex":   {Type: "openai_compatible", RegistryID: "openai_codex"},
+			"copilot": {Type: "github_copilot"},
+		}
+		settings.Extensions = map[string]config.Extension{
+			"fixture": {ID: "fixture", URL: "http://127.0.0.1:1"},
+		}
+	})
+	providers.InstallForTests(t)
+	now := time.Now()
+	for _, providerID := range []string{"codex", "copilot"} {
+		t.Run(providerID, func(t *testing.T) {
+			caller := core.Caller{ID: "owner", Kind: core.CallerHuman}
+			if _, _, err := transportDeclaration(providerID, caller); err != nil {
+				t.Fatalf("fixture provider could not be built: %v", err)
+			}
+			row := providers.ModelInfo{
+				ID: "fixture-model", Capabilities: map[string]any{"chat": true},
+				SupportedSurfaces: []string{"/responses"},
+			}
+			native, emulated, unknown := modelTransportSurfaces(
+				providerID, caller, row, now, row.Capabilities, row.SupportedSurfaces, now,
+			)
+			if len(native) != 0 || len(emulated) != 0 || len(unknown) != 3 {
+				t.Fatalf("absent preservation evidence became a transport claim: native=%v translated=%v unknown=%v", native, emulated, unknown)
+			}
+		})
+	}
+}
+
 func TestModelVerifiedAtRequiresSuccessfulMatchingProbe(t *testing.T) {
 	checks := []iam.ProviderCheck{
 		{Operation: iam.CheckVerify, Success: true, Model: "other", CheckedAt: 10},

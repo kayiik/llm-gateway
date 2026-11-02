@@ -2,6 +2,8 @@ package providers
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -127,5 +129,29 @@ func TestPreVertexEmptyActionsCatalogEntriesAreDiscarded(t *testing.T) {
 	models, refreshed := CatalogCached("vertex_ai")
 	if len(models) != 0 || !refreshed.IsZero() {
 		t.Fatalf("schema-4 Vertex catalog survived: models=%+v refreshed=%v", models, refreshed)
+	}
+}
+
+func TestPreOpenRouterCapabilitiesCatalogIsRediscovered(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("LLMGW_STATE_DIR", dir)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"fresh","supported_parameters":["tools"]}]}`))
+	}))
+	defer server.Close()
+	config.Update(func(s *config.Settings) {
+		s.Providers = map[string]*config.ProviderConfig{"fixture": {Type: "openai_compatible", RegistryID: "openrouter", BaseURL: server.URL, APIKey: "fixture"}}
+	})
+	resetCatalogForTest(t)
+	legacy := `{"fixture":{"schema_version":7,"models":[{"id":"stale"}],"refreshed_at":"` + time.Now().UTC().Format(time.RFC3339) + `"}}`
+	if err := os.WriteFile(filepath.Join(dir, "catalog.json"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rows := CatalogModels("fixture")
+	if requests != 1 || len(rows) != 1 || rows[0].ID != "fresh" || rows[0].TypedCapabilities == nil || rows[0].TypedCapabilities.Tools != core.SupportSupported {
+		t.Fatalf("stale catalog did not refresh: requests=%d rows=%+v", requests, rows)
 	}
 }

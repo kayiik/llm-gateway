@@ -22,7 +22,7 @@ import {
 type TextSurface = "/v1/chat/completions" | "/v1/responses" | "/v1/messages";
 // A turn being streamed shows its text as it arrives; one the user stopped
 // keeps what arrived.
-type ChatTurn = { role: "user" | "assistant"; content: string; reasoning?: string; toolCalls?: JSONRecord[]; wire?: unknown[]; served?: string; latency?: number; streaming?: boolean; stopped?: boolean };
+type ChatTurn = { role: "user" | "assistant"; content: string; reasoning?: string; toolCalls?: JSONRecord[]; wire?: unknown[]; served?: string; latency?: number; streaming?: boolean; stopped?: boolean; incomplete?: boolean };
 export type PlaygroundFailure = { message: string; status: number; code: string; retry: string; action: string };
 
 const textSurfaces: { path: TextSurface; label: string }[] = [
@@ -83,14 +83,36 @@ function parseTextResponse(surface: TextSurface, raw: JSONRecord): Pick<ChatTurn
   };
 }
 
-function requestHistory(surface: TextSurface, turns: ChatTurn[]): unknown[] {
+export function requestHistory(surface: TextSurface, turns: ChatTurn[]): unknown[] {
   return turns.flatMap((turn) => {
-    if (turn.role === "user") return [{ role: "user", content: turn.content }];
+    if (turn.incomplete) return [];
+    if (turn.role === "user") return turn.wire?.length ? turn.wire : [{ role: "user", content: turn.content }];
     if (surface === "/v1/responses" && turn.wire?.length) return turn.wire;
     if (surface === "/v1/messages" && turn.wire?.length) return [{ role: "assistant", content: turn.wire }];
     if (surface === "/v1/chat/completions" && turn.wire?.length) return turn.wire;
     return [{ role: "assistant", content: turn.content }];
   });
+}
+
+export function playgroundUserTurn(surface: TextSurface, turns: ChatTurn[], content: string, result?: { id: string; output: string }): ChatTurn {
+  const turn: ChatTurn = { role: "user", content };
+  if (!result) return turn;
+  if (!result.id) throw new Error("Enter the provider's tool call ID before adding a tool result.");
+  const previous = turns.at(-1);
+  if (previous?.role !== "assistant" || !previous.toolCalls?.some((call) => stringValue(call.call_id, stringValue(call.id)) === result.id)) {
+    throw new Error("The tool result must match a pending call in the last provider answer.");
+  }
+  // A tool result closes the assistant call before the optional user note. Its
+  // native wire stays in history, so later turns cannot replay an unclosed call.
+  if (surface === "/v1/messages") {
+    turn.wire = [{ role: "user", content: [{ type: "tool_result", tool_use_id: result.id, content: result.output }, { type: "text", text: content }] }];
+  } else {
+    const output = surface === "/v1/responses"
+      ? { type: "function_call_output", call_id: result.id, output: result.output }
+      : { role: "tool", tool_call_id: result.id, content: result.output };
+    turn.wire = [output, { role: "user", content }];
+  }
+  return turn;
 }
 
 function toolsForSurface(surface: TextSurface, tools: unknown[]): JSONRecord[] {
@@ -104,7 +126,7 @@ function toolsForSurface(surface: TextSurface, tools: unknown[]): JSONRecord[] {
 
 const ChatTurnView = memo(function ChatTurnView({ turn }: { turn: ChatTurn }) {
   return <article class={`chat-turn chat-turn--${turn.role}${turn.streaming ? " chat-turn--streaming" : ""}`}>
-    <header><span>{turn.role === "user" ? "You" : "Assistant"}</span>{turn.served ? <small class="technical">{turn.served}{turn.latency ? ` · ${turn.latency} ms` : ""}</small> : null}{turn.streaming ? <small><RefreshCw class="spin" size={12} /> Streaming</small> : null}{turn.stopped ? <small class="chat-turn__stopped">Stopped</small> : null}</header>
+    <header><span>{turn.role === "user" ? "You" : "Assistant"}</span>{turn.served ? <small class="technical">{turn.served}{turn.latency ? ` · ${turn.latency} ms` : ""}</small> : null}{turn.streaming ? <small><RefreshCw class="spin" size={12} /> Streaming</small> : null}{turn.stopped ? <small class="chat-turn__stopped">Stopped</small> : null}{turn.incomplete ? <small class="chat-turn__stopped">Incomplete</small> : null}</header>
     <p>{turn.content}</p>
     {turn.reasoning ? <details class="chat-turn__detail"><summary>Reasoning</summary><pre>{turn.reasoning}</pre></details> : null}
     {turn.toolCalls?.length ? <details class="chat-turn__detail"><summary>Tool calls ({turn.toolCalls.length})</summary><pre>{JSON.stringify(turn.toolCalls, null, 2)}</pre></details> : null}
@@ -377,7 +399,11 @@ export function Playground({ data, mode, principalID, onPrincipalIDChange, prese
     if (!requireScope()) return;
     const text = (override ?? draft).trim();
     if (!text) { setFailure(null); setError("Enter a message."); return; }
-    const history: ChatTurn[] = [...turns, { role: "user", content: text }];
+    const submittedTool = toolsOpen && toolResult.trim() ? { id: toolCallID.trim(), output: toolResult.trim() } : undefined;
+    let userTurn: ChatTurn;
+    try { userTurn = playgroundUserTurn(textSurface, turns, text, submittedTool); }
+    catch (cause) { reportError(cause); return; }
+    const history: ChatTurn[] = [...turns, userTurn];
     const request = ++executionRequest.current;
     const controller = new AbortController();
     executionAbort.current = controller;
@@ -401,12 +427,13 @@ export function Playground({ data, mode, principalID, onPrincipalIDChange, prese
         served: `${stringValue(served.provider)}/${stringValue(served.model)}`,
         latency: numberValue(payload.latency_ms),
       }]);
+      if (submittedTool) { setToolResult(""); setToolCallID(""); }
     };
     try {
       const body: JSONRecord = { project_id: projectID, model };
       const statefulResponses = textSurface === "/v1/responses" && selected?.statefulResponses === "supported" && previousResponseID;
       if (textSurface === "/v1/responses") {
-        body.input = statefulResponses ? text : requestHistory(textSurface, history);
+        body.input = statefulResponses ? submittedTool ? requestHistory(textSurface, history.slice(-1)) : text : requestHistory(textSurface, history);
         if (statefulResponses) body.previous_response_id = previousResponseID;
       } else {
         body.messages = requestHistory(textSurface, history);
@@ -417,12 +444,6 @@ export function Playground({ data, mode, principalID, onPrincipalIDChange, prese
         try { parsed = JSON.parse(toolDefinitions); } catch { throw new Error("Tool definitions must be valid JSON."); }
         if (!Array.isArray(parsed)) throw new Error("Tool definitions must be a JSON array.");
         body.tools = toolsForSurface(textSurface, parsed);
-      }
-      if (toolsOpen && toolResult.trim()) {
-        if (!toolCallID.trim()) throw new Error("Enter the provider's tool call ID before adding a tool result.");
-        if (textSurface === "/v1/responses") body.input = [...asList(body.input), { type: "function_call_output", call_id: toolCallID.trim(), output: toolResult.trim() }];
-        else if (textSurface === "/v1/messages") body.messages = [...asList(body.messages), { role: "user", content: [{ type: "tool_result", tool_use_id: toolCallID.trim(), content: toolResult.trim() }] }];
-        else body.messages = [...asList(body.messages), { role: "tool", content: toolResult.trim(), tool_call_id: toolCallID.trim() }];
       }
       if (mode === "admin") body.principal_id = principalID;
       if (!streamAnswers || !streamable) {
@@ -469,8 +490,8 @@ export function Playground({ data, mode, principalID, onPrincipalIDChange, prese
         return;
       }
       setResult(null);
-      setTurns(turns);
-      setDraft((current) => current || text);
+      if (streamed.content || streamed.reasoning) setTurns([...history, { ...streamed, streaming: false, incomplete: true }]);
+      else { setTurns(turns); setDraft((current) => current || text); }
       reportError(cause);
     } finally {
       if (request === executionRequest.current) {
@@ -819,13 +840,13 @@ export function Playground({ data, mode, principalID, onPrincipalIDChange, prese
           {trace.length ? <div class="trace-list"><h3>Fallback and exclusion diagnostics</h3>{trace.map((attempt, index) => <div key={`${index}-${stringValue(attempt.provider)}`}><span class="route-order">{index + 1}</span><span class="technical">{stringValue(attempt.provider)}/{stringValue(attempt.model)}</span><span class={`status-pill ${stringValue(attempt.status) === "served" ? "status-pill--ready" : "status-pill--attention"}`}>{sentenceCase(stringValue(attempt.status))}</span></div>)}</div> : <p class="form-help">No fallback was needed. Capability-incompatible route members are excluded before execution.</p>}
           <details class="raw-response" open={rawOpen} onToggle={(event) => setRawOpen((event.currentTarget as HTMLDetailsElement).open)}>
             <summary>Raw gateway response</summary>
-            <pre class="technical">{JSON.stringify(result.raw_response ?? result, null, 2)}</pre>
+            <pre class="technical" tabIndex={0} aria-label="Raw gateway response">{JSON.stringify(result.raw_response ?? result, null, 2)}</pre>
           </details>
         </section> : <section class="surface playground-outcome playground-outcome--idle"><p class="eyebrow">Response</p><h2>Nothing routed yet</h2><p class="muted-copy">The served provider, latency, token usage, fallback trace and the raw gateway payload appear here after a request.</p></section>}
         </aside>
       </section>
 
-      {!eligibleProjects.length ? <EmptyState title="No eligible project is available" detail="A project owner or administrator membership is required before using the playground." /> : null}
+      {!eligibleProjects.length ? <EmptyState title="No eligible project is available" detail={mode === "admin" ? "Select an active project with an owner or administrator membership for this person. The Playground does not create projects automatically." : "Ask a project owner or administrator to add you to an active project as an owner or administrator before using the Playground."} action={mode === "admin" ? <a class="button button--secondary" href="#projects">Manage projects</a> : undefined} /> : null}
     </div>
   );
 }

@@ -219,7 +219,16 @@ export function ConnectDialog({ entry, onClose, onConfigured, mode = "create", t
               Base URL
               <input value={baseURL} onInput={(event) => setBaseURL((event.currentTarget as HTMLInputElement).value)} autoComplete="url" />
             </label>
-          ) : null}
+          ) : (
+            <details>
+              <summary>Advanced endpoint</summary>
+              <label>
+                Base URL
+                <input value={baseURL} onInput={(event) => setBaseURL((event.currentTarget as HTMLInputElement).value)} autoComplete="url" />
+              </label>
+              <p class="form-help">Keep the current endpoint unless your provider documents another address. Changing it does not replace the stored credential.</p>
+            </details>
+          )}
           {fields.has("region") ? (
             <label>
               Region
@@ -815,7 +824,7 @@ export function ProviderHub({ data, mode, onChanged, onOpenDetail, onOpenPlaygro
         </section>
       ) : null}
       {filtered.length === 0 && !extensionShelfShows ? <EmptyState title="No matching provider" detail="Adjust the search or filter to inspect another registry integration." /> : null}
-      {mode === "admin" ? <ExtensionShelf data={data} extensions={extensions} search={search} filter={filter} onChanged={onChanged} onAddAccount={addAccount} onOpenDetail={onOpenDetail} /> : null}
+      {mode === "admin" ? <ExtensionShelf data={data} extensions={extensions} search={search} filter={filter} ownerID={ownerID} onChanged={onChanged} onAddAccount={addAccount} onOpenDetail={onOpenDetail} onOpenPlayground={onOpenPlayground} /> : null}
       {providerShelves.map((group) => {
         const groupEntries = filtered.filter((entry) => shelfFor(entry) === group);
         if (!groupEntries.length) return null;

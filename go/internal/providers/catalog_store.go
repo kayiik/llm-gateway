@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -396,6 +397,7 @@ func CoreModelInfo(row ModelInfo) core.ModelInfo {
 	return core.ModelInfo{
 		ID: row.ID, SupportedAPIs: row.SupportedSurfaces, Capabilities: row.TypedCapabilities,
 		DisplayName: row.Label, Vendor: row.Vendor, Free: row.Free, LegacyCapabilities: row.Capabilities,
+		WirePreservation: maps.Clone(row.WirePreservation),
 	}
 }
 
@@ -403,6 +405,7 @@ func gatewayModelInfo(row core.ModelInfo) ModelInfo {
 	return ModelInfo{
 		ID: row.ID, Vendor: row.Vendor, Label: row.DisplayName, Free: row.Free,
 		Capabilities: row.LegacyCapabilities, TypedCapabilities: row.Capabilities, SupportedSurfaces: row.SupportedAPIs,
+		WirePreservation: maps.Clone(row.WirePreservation),
 	}
 }
 

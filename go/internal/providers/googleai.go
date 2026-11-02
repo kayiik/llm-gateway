@@ -36,6 +36,8 @@ import (
 	"strings"
 	"time"
 
+	"llmgw/internal/capture"
+
 	core "github.com/kayiik/llmgw-core"
 )
 
@@ -214,7 +216,7 @@ func (p GoogleAIProvider) doContext(ctx context.Context, method, url string, bod
 	case p.apiKey != "":
 		request.Header.Set("x-goog-api-key", p.apiKey)
 	}
-	response, err := (&http.Client{Timeout: p.timeout}).Do(request)
+	response, err := capture.Wrap(&http.Client{Timeout: p.timeout}).Do(request)
 	if err != nil {
 		return nil, 0, retryableInvocation(p.label() + ": " + err.Error())
 	}
@@ -475,9 +477,9 @@ func (p GoogleAIProvider) downloadVideoFile(ctx context.Context, location *url.U
 	if p.apiKey != "" {
 		request.Header.Set("x-goog-api-key", p.apiKey)
 	}
-	client := &http.Client{Timeout: p.timeout, CheckRedirect: func(*http.Request, []*http.Request) error {
+	client := capture.Wrap(&http.Client{Timeout: p.timeout, CheckRedirect: func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
-	}}
+	}})
 	response, err := client.Do(request)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -715,7 +717,7 @@ func (p GoogleAIProvider) discoverModels(endpoint, field string) (map[string]any
 	} else if p.apiKey != "" {
 		req.Header.Set("x-goog-api-key", p.apiKey)
 	}
-	resp, err := (&http.Client{Timeout: p.timeout}).Do(req)
+	resp, err := capture.Wrap(&http.Client{Timeout: p.timeout}).Do(req)
 	if err != nil {
 		return nil, catalogError("catalog_transport_error", "Provider catalog request could not reach the upstream service.", 0)
 	}

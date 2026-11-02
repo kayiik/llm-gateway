@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -510,6 +512,20 @@ func TestAnonymousVerificationPreservesRetryAfterClassification(t *testing.T) {
 
 func TestAutoConnectFreeProvidersAPI(t *testing.T) {
 	setupAnonymousAutomationAPITest(t)
+	// This checks authentication and result enumeration, not the availability of
+	// public anonymous providers. Keep their catalog/probe failures local.
+	original := http.DefaultTransport
+	transport := original.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil || !net.ParseIP(host).IsLoopback() {
+			return nil, fmt.Errorf("offline auto-connect fixture: external network disabled")
+		}
+		return (&net.Dialer{Timeout: time.Second}).DialContext(ctx, network, address)
+	}
+	http.DefaultTransport = transport
+	t.Cleanup(func() { http.DefaultTransport = original; transport.CloseIdleConnections() })
 	server := httptest.NewServer(NewServer(Runtime{}))
 	defer server.Close()
 

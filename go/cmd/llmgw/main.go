@@ -24,6 +24,7 @@ import (
 
 	"llmgw/internal/api"
 	"llmgw/internal/buildinfo"
+	"llmgw/internal/capture"
 	"llmgw/internal/config"
 	"llmgw/internal/iam"
 	"llmgw/internal/operations"
@@ -114,6 +115,9 @@ func healthCheck() {
 }
 
 func serve() error {
+	if err := capture.ConfigureFromEnv(); err != nil {
+		return fmt.Errorf("configure selected provider capture: %w", err)
+	}
 	lock, err := operations.AcquireStateLock()
 	if err != nil {
 		return err

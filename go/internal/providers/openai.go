@@ -134,12 +134,19 @@ func (c openAICatalog) list(ctx context.Context) ([]ModelInfo, *CredentialObserv
 		if caps := extractCapabilities(m["capabilities"]); len(caps) > 0 {
 			row.Capabilities = caps
 		}
+		if c.registryID == "openrouter" {
+			row.Capabilities = openRouterCapabilities(m, row.Capabilities)
+		}
 		// "supported_endpoints" is the field name this generic OpenAI-compatible
 		// upstream (openai_compatible/bedrock/litellm/github_copilot) advertises
 		// in its own catalog response — not this gateway's wire key, so it is
 		// read as-is regardless of the supported_surfaces rename below.
 		if eps := stringList(m["supported_endpoints"]); len(eps) > 0 {
 			row.SupportedSurfaces = eps
+		} else if c.registryID == "openrouter" {
+			// OpenRouter's /models lists Chat Completions models but does not
+			// emit the generic adapter's supported_endpoints extension.
+			row.SupportedSurfaces = []string{"/chat/completions"}
 		}
 		out = append(out, row)
 	}
@@ -150,6 +157,48 @@ func (c openAICatalog) list(ctx context.Context) ([]ModelInfo, *CredentialObserv
 		}
 	}
 	return out, observation, nil
+}
+
+func openRouterCapabilities(model map[string]any, capabilities map[string]any) map[string]any {
+	if capabilities == nil {
+		capabilities = map[string]any{}
+	}
+	// The parameter list advertises support, but absence is not an explicit
+	// denial. Keep any stronger explicit evidence supplied by the upstream.
+	for _, parameter := range stringList(model["supported_parameters"]) {
+		key := map[string]string{"tools": "tool_calls", "reasoning": "reasoning", "structured_outputs": "structured_outputs"}[parameter]
+		if key != "" {
+			if _, known := capabilities[key]; !known {
+				capabilities[key] = true
+			}
+		}
+	}
+	if architecture, ok := model["architecture"].(map[string]any); ok {
+		for _, direction := range []string{"input_modalities", "output_modalities"} {
+			if modalities := stringList(architecture[direction]); len(modalities) > 0 {
+				capabilities[direction] = modalities
+				if direction == "input_modalities" {
+					for _, modality := range modalities {
+						key := map[string]string{"text": "text", "image": "vision"}[modality]
+						if key != "" {
+							if _, known := capabilities[key]; !known {
+								capabilities[key] = true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if limit := intOf(model["context_length"]); limit > 0 {
+		capabilities["context_window"] = limit
+	}
+	if top, ok := model["top_provider"].(map[string]any); ok {
+		if limit := intOf(top["max_completion_tokens"]); limit > 0 {
+			capabilities["max_output_tokens"] = limit
+		}
+	}
+	return capabilities
 }
 
 func stringList(v any) []string {

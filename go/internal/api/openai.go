@@ -396,6 +396,11 @@ func writeUpstreamError(w http.ResponseWriter, err error) {
 		writeError(w, 500, "Upstream provider is misconfigured.")
 		return
 	}
+	var invalid *core.ProviderError
+	if errors.As(err, &invalid) && invalid.Class == core.ProviderErrorInvalidRequest && providers.UpstreamStatus(err) == 0 {
+		writeError(w, http.StatusBadRequest, "Invalid request for the selected provider.")
+		return
+	}
 	var atf *router.AllTargetsFailed
 	if errors.As(err, &atf) && status >= 400 {
 		writeError(w, status, atf.Error())
@@ -425,6 +430,10 @@ func upstreamErrorStatus(err error) int {
 	}
 	if status := providers.UpstreamStatus(err); status >= 300 && status <= 599 {
 		return status
+	}
+	var invalid *core.ProviderError
+	if errors.As(err, &invalid) && invalid.Class == core.ProviderErrorInvalidRequest {
+		return http.StatusBadRequest
 	}
 	return 502
 }

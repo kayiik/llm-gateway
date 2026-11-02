@@ -134,7 +134,7 @@ func TestOAuthConnectionPersistsProviderAccountMetadata(t *testing.T) {
 	}
 	connection, err := PutOAuthProviderConnection(OAuthConnectionCreate{
 		PrincipalID: human.ID, ProviderID: "copilot", Kind: "github_oauth",
-		AccessToken: "access-one", ExpiresAt: 2000, AccountLabel: "First account",
+		AccessToken: "access-one", ExpiresAt: 2000, AccountLabel: "First account", ProjectID: "project-one",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -154,12 +154,26 @@ func TestOAuthConnectionPersistsProviderAccountMetadata(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ReplaceOAuthProviderConnectionIfCurrent(current, envelope, OAuthConnectionCreate{
+	replaced, err := ReplaceOAuthProviderConnectionIfCurrent(current, envelope, OAuthConnectionCreate{
 		PrincipalID: human.ID, ProviderID: "copilot", Name: current.Name,
 		Kind: current.Kind, Source: current.Source, MakeDefault: current.IsDefault,
-		AccessToken: "access-two", ExpiresAt: 0, AccountLabel: "",
-	}); err != nil {
+		AccessToken: "access-two", ExpiresAt: 0, AccountLabel: "", ProjectID: "project-two",
+	})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if replaced.OAuthProjectID != "project-two" || current.OAuthProjectID != "project-one" {
+		t.Fatalf("OAuth project metadata did not rotate with its credential revision: before=%q after=%q", current.OAuthProjectID, replaced.OAuthProjectID)
+	}
+	if _, err := ReplaceOAuthProviderConnectionIfCurrent(current, envelope, OAuthConnectionCreate{
+		PrincipalID: human.ID, ProviderID: "copilot", Name: current.Name,
+		Kind: current.Kind, Source: current.Source, AccessToken: "stale-token", ProjectID: "project-one",
+	}); !errors.Is(err, ErrOAuthProviderConnectionChanged) {
+		t.Fatalf("stale project metadata overwrote a refreshed OAuth connection: %v", err)
+	}
+	newEnvelope, after, ok, err := OAuthProviderConnectionSecret(human.ID, "copilot", "")
+	if err != nil || !ok || after.OAuthProjectID != "project-two" || newEnvelope.ProjectID != "project-two" {
+		t.Fatalf("refreshed OAuth project was not retained: connection=%q envelope=%q ok=%v err=%v", after.OAuthProjectID, newEnvelope.ProjectID, ok, err)
 	}
 	state, found, err = ProviderAccountStateByConnection(connection.ID)
 	if err != nil || !found || state.TokenExpiresAt != 0 ||

@@ -1,7 +1,7 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useId, useRef, useState } from "preact/hooks";
 import { CheckCircle2, ChevronDown, ChevronUp, CircleAlert, Eye, EyeOff, KeyRound, LoaderCircle, Lock, Pencil, Plug, Plus, RefreshCw, Server, ShieldCheck, Trash2, X } from "lucide-preact";
-import { sendJSON, type JSONRecord } from "../../lib/api";
+import { getJSON, sendJSON, type JSONRecord } from "../../lib/api";
 import { asList, asRecord, numberValue, stringValue } from "../../lib/records";
 import { dataTable, useTableView, type TableColumn } from "../DataTable";
 import { DisabledReason } from "../PageState";
@@ -269,14 +269,16 @@ type PanelNotice = { id: string; message: Message } | null;
 // what needs attention and the providers it serves, each with its state in
 // this gateway and a next step. Under the hub's search and filter it shows
 // what answers them and opens the first extension a match is in.
-export function ExtensionShelf({ data, extensions, search, filter, onChanged, onAddAccount, onOpenDetail }: {
+export function ExtensionShelf({ data, extensions, search, filter, ownerID = "", onChanged, onAddAccount, onOpenDetail, onOpenPlayground }: {
   data: JSONRecord;
   extensions: ExtensionsState;
   search: string;
   filter: string;
+  ownerID?: string;
   onChanged: () => Promise<void>;
   onAddAccount: (entry: JSONRecord, providerID: string) => void;
   onOpenDetail: (entryID: string) => void;
+  onOpenPlayground?: (modelID: string, providerID: string, ownerID: string) => void;
 }) {
   const [open, setOpen] = useState("");
   const [adding, setAdding] = useState(false);
@@ -300,6 +302,23 @@ export function ExtensionShelf({ data, extensions, search, filter, onChanged, on
   const openItem = items.find((item) => stringValue(item.extension.id) === open);
   const openExtension = openItem?.extension ?? {};
   const openID = stringValue(openExtension.id);
+  const catalogPath = ownerID ? `/models?principal_id=${encodeURIComponent(ownerID)}&diagnostics=1` : "/models?diagnostics=1";
+  const catalogScope = `${openID}|${catalogPath}`;
+  const [catalogResult, setCatalogResult] = useState<{ scope: string; data?: JSONRecord; error?: string } | null>(null);
+  const catalogRequest = useRef(0);
+  const catalog = catalogResult?.scope === catalogScope ? catalogResult.data : undefined;
+  const catalogError = catalogResult?.scope === catalogScope ? catalogResult.error : "";
+  const configured = Boolean(openItem?.rows.some((row) => row.instances.length));
+  useEffect(() => {
+    const request = ++catalogRequest.current;
+    if (!openID || !configured) return;
+    getJSON<JSONRecord>("admin", catalogPath).then((payload) => {
+      if (request === catalogRequest.current) setCatalogResult({ scope: catalogScope, data: payload });
+    }).catch((cause) => {
+      if (request === catalogRequest.current) setCatalogResult({ scope: catalogScope, error: errorText(cause) });
+    });
+    return () => { catalogRequest.current += 1; };
+  }, [catalogScope, configured, data]);
 
   // The gateway's state, and with it the listing, follows every change; a
   // state that does not reload leaves the listing to reload alone.
@@ -399,6 +418,21 @@ export function ExtensionShelf({ data, extensions, search, filter, onChanged, on
     { id: "serves", header: "Serves", cell: (row) => row.surfaces.length ? <span class="chip-row">{row.surfaces.map((surface) => <span class="surface-chip" key={surface}>{surfaceLabel(surface)}</span>)}</span> : "Not reported" },
     { id: "signin", header: "Sign-in", cell: (row) => row.signIn },
     { id: "state", header: "In this gateway", cell: (row) => <span class={`status-pill status-pill--${row.state.tone}`}>{row.state.label}</span> },
+    { id: "models", header: "Models", cell: (row) => {
+      if (!row.instances.length) return "—";
+      if (catalogError) return <span title={catalogError}>Catalog unavailable</span>;
+      if (!catalog) return "Loading catalog…";
+      if (!Array.isArray(catalog.data)) return "Not reported";
+      const models = asList(catalog.data).map(asRecord).filter((model) => row.instances.some((instance) => stringValue(model.owned_by) === stringValue(instance.id) || stringValue(model.id).startsWith(`${stringValue(instance.id)}/`)));
+      return models.length ? <details class="extension-models">
+        <summary>{models.length} model{models.length === 1 ? "" : "s"}</summary>
+        <ul>{models.map((model) => {
+          const id = stringValue(model.id);
+          const instance = row.instances.find((entry) => stringValue(model.owned_by) === stringValue(entry.id) || id.startsWith(`${stringValue(entry.id)}/`));
+          return <li key={id}><span class="technical">{id}</span><button class="button button--secondary button--compact" type="button" aria-label={`Open ${id} in Playground`} title={ownerID ? "Open in Playground; no inference is sent until you submit" : "Select a catalog owner before testing"} disabled={!ownerID || !onOpenPlayground} onClick={() => onOpenPlayground?.(id, row.registryID || stringValue(instance?.id), ownerID)}>Test</button></li>;
+        })}</ul>
+      </details> : "0 models";
+    } },
     {
       id: "actions", header: "Actions", headerCell: <span class="sr-only">Actions</span>, cell: (row) => {
         const adding = busy === `${openID}-${row.type}-add`;
@@ -488,6 +522,7 @@ export function ExtensionShelf({ data, extensions, search, filter, onChanged, on
         ) : null}
         <div>
           <h3 class="panel-subhead">Providers it serves {servedView.total ? <span>Add one to use it in routes. Accounts are signed in per person.</span> : null}</h3>
+          {servedView.total ? <p class="form-help">Models follow the catalog owner. Test opens Playground; submit there to send inference. Check now checks only the daemon connection.</p> : null}
           {servedView.total ? dataTable(servedView, columns, { label: `Providers ${name} serves`, rowKey: (row) => row.type, class: "served-table" }) : <p class="form-help">The daemon hasn't said what it serves, and no provider uses this extension yet. Check it once it runs.</p>}
         </div>
         {notice?.id === id ? <MessageNotice message={notice.message} /> : null}

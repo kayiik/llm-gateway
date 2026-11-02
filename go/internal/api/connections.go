@@ -270,8 +270,9 @@ func createPersonalProviderConnection(
 		})
 	}
 	if kind == "setup_token" {
-		if !strings.EqualFold(strings.TrimSpace(providerConfig.Type), "anthropic") {
-			return iam.ProviderConnection{}, &providers.ConfigError{Msg: "an Anthropic setup token is accepted only by an anthropic provider"}
+		providerType := strings.ToLower(strings.TrimSpace(providerConfig.Type))
+		if providerType != "anthropic" && providerType != providers.ExtensionTypeAnthropicSetup {
+			return iam.ProviderConnection{}, &providers.ConfigError{Msg: "an Anthropic setup token is accepted only by an anthropic or anthropic_setup_token provider"}
 		}
 		if err := ValidateAnthropicSetupToken(body.Secret); err != nil {
 			return iam.ProviderConnection{}, &providers.ConfigError{Msg: err.Error()}

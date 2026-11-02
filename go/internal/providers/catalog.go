@@ -46,6 +46,9 @@ type catalogEntry struct {
 	//     field was absent or empty.
 	//   - v5 Codex rows could omit the provider's invariant Responses surface
 	//     when the upstream catalog omitted its legacy supported_endpoints field.
+	//   - v6 OpenRouter rows could omit its Chat Completions surface, hiding
+	//     callable models from the playground's capability filters.
+	//   - v7 OpenRouter rows omitted advertised parameters, modalities and limits.
 	//
 	// Bump this whenever a release changes what a persisted row means; the
 	// cost is one forced re-discovery per provider, the alternative is
@@ -57,7 +60,7 @@ type catalogEntry struct {
 
 // catalogSchemaVersion is the stamp core's catalog service puts on every
 // catalog it stores for the gateway; see catalogEntry.SchemaVersion.
-const catalogSchemaVersion = 6
+const catalogSchemaVersion = 8
 
 // catalogTTL is how long core's catalog service serves the gateway's
 // catalogs before a read discovers them again.

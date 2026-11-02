@@ -630,6 +630,116 @@ func TestModelListAddsTypedCapabilitiesWithoutChangingLegacyFields(t *testing.T)
 	}
 }
 
+func TestModelListPreservesRicherTypedCapabilities(t *testing.T) {
+	config.Update(func(s *config.Settings) {
+		s.AllowUnauthenticatedAPI = true
+		s.Providers = map[string]*config.ProviderConfig{"typed": {Type: "echo"}}
+		s.Endpoints = map[string]*config.EndpointConfig{}
+	})
+	discovered := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	limit := int64(12345)
+	typed := &core.ModelCapabilities{
+		SchemaVersion: core.ModelCapabilitiesSchemaVersion,
+		Tools:         core.SupportSupported, Inputs: core.ModelInputCapabilities{Image: core.SupportUnsupported},
+		Limits:     core.ModelCapabilityLimits{ContextTokens: &limit},
+		Provenance: core.ModelCapabilityProvenance{Source: core.ModelCapabilitySourceUpstreamReported, Confidence: core.ModelCapabilityConfidenceHigh},
+		Freshness:  core.ModelCapabilityFreshness{DiscoveredAt: &discovered},
+	}
+	before := *typed
+	original := catalogModelsForPrincipal
+	catalogModelsForPrincipal = func(string, *config.Principal) []providers.ModelInfo {
+		return []providers.ModelInfo{{ID: "model", TypedCapabilities: typed, Capabilities: map[string]any{"tool_calls": false, "vision": true}, SupportedSurfaces: []string{"/chat/completions"}}}
+	}
+	t.Cleanup(func() { catalogModelsForPrincipal = original })
+	response, err := buildModelList(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range response["data"].([]any) {
+		row := raw.(map[string]any)
+		if row["id"] == "typed/model" {
+			got := row["typed_capabilities"].(*core.ModelCapabilities)
+			if !reflect.DeepEqual(got, typed) || !reflect.DeepEqual(before, *typed) {
+				t.Fatalf("richer typed evidence changed: got=%+v want=%+v", got, typed)
+			}
+			return
+		}
+	}
+	t.Fatal("typed model missing")
+}
+
+func TestOpenRouterDiscoverySurvivesScopedPublicListing(t *testing.T) {
+	t.Setenv("LLMGW_STATE_DIR", t.TempDir())
+	iam.ResetForTests()
+	t.Cleanup(iam.ResetForTests)
+	if _, err := iam.Initialize(); err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"advertised","supported_parameters":["tools"],"architecture":{"input_modalities":["text","image"]},"context_length":64000,"top_provider":{"max_completion_tokens":4096}},{"id":"unknown"},{"id":"unsupported","capabilities":{"supports":{"tool_calls":false,"vision":false}}},{"id":"hidden"}]}`))
+	}))
+	defer upstream.Close()
+	config.Update(func(s *config.Settings) {
+		s.AllowUnauthenticatedAPI = false
+		s.AnthropicDiscoveryAliases = false
+		s.Providers = map[string]*config.ProviderConfig{"fixture": {Type: "openai_compatible", RegistryID: "openrouter", BaseURL: upstream.URL, APIKey: "fixture"}}
+		s.Endpoints = map[string]*config.EndpointConfig{}
+	})
+	providers.ResetProviders()
+	t.Cleanup(providers.ResetProviders)
+	principal, err := iam.CreatePrincipal("service", "service:catalog-contract", "", "Catalog contract")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := iam.CreateProject("catalog-contract", "Catalog contract")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := iam.SetMembership(project.ID, principal.ID, "member"); err != nil {
+		t.Fatal(err)
+	}
+	issued, err := iam.IssueKey(iam.KeyCreate{ProjectID: project.ID, PrincipalID: principal.ID, Name: "restricted", Policy: iam.KeyPolicy{AllowedProviders: []string{"fixture"}, AllowedModels: []string{"fixture/advertised", "fixture/unknown", "fixture/unsupported"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	caller := callerOf(&config.Principal{PrincipalID: principal.ID, PrincipalKind: principal.Kind, ProjectID: project.ID, Project: project.Slug})
+	if rows := providers.RefreshCatalogForPrincipal("fixture", caller); len(rows) != 4 {
+		t.Fatalf("catalog=%+v", rows)
+	}
+	server := httptest.NewServer(NewServer(Runtime{}))
+	defer server.Close()
+	status, payload := jsonRequest(t, server.URL+"/v1/models", http.MethodGet, issued.Token, nil)
+	if status != http.StatusOK {
+		t.Fatalf("status=%d payload=%+v", status, payload)
+	}
+	rows := payload["data"].([]any)
+	byID := map[string]map[string]any{}
+	for _, raw := range rows {
+		row := raw.(map[string]any)
+		byID[row["id"].(string)] = row
+	}
+	if len(rows) != 3 || byID["fixture/advertised"] == nil || byID["fixture/hidden"] != nil {
+		t.Fatalf("scope leaked: %+v", rows)
+	}
+	for id, support := range map[string]string{"unknown": "unknown", "unsupported": "unsupported"} {
+		caps := byID["fixture/"+id]["typed_capabilities"].(map[string]any)
+		if caps["tools"] != support || caps["inputs"].(map[string]any)["image"] != support {
+			t.Fatalf("%s evidence changed: %+v", id, caps)
+		}
+	}
+	caps := byID["fixture/advertised"]["typed_capabilities"].(map[string]any)
+	inputs := caps["inputs"].(map[string]any)
+	limits := caps["limits"].(map[string]any)
+	if caps["tools"] != "supported" || inputs["image"] != "supported" || limits["context_tokens"] != float64(64000) || limits["max_output_tokens"] != float64(4096) {
+		t.Fatalf("provider metadata lost at HTTP boundary: %+v", caps)
+	}
+}
+
 func TestModelListTransportMetadataUsesExecutionDeclarationsAndPlanner(t *testing.T) {
 	t.Setenv("LLMGW_STATE_DIR", t.TempDir())
 	iam.ResetForTests()

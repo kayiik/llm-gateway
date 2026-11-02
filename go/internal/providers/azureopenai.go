@@ -376,7 +376,11 @@ func (p AzureOpenAIProvider) azureDeploymentsPage(pageURL string) (map[string]an
 	if timeout > 10 {
 		timeout = 10
 	}
-	resp, err := httpClient(timeout).Do(req)
+	client := httpClient(timeout)
+	// A deployment listing is tied to one resource. Following an HTTP redirect
+	// could send its api-key to another origin even though pagination is fenced.
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, catalogError(
 			"catalog_not_discoverable",
@@ -385,6 +389,9 @@ func (p AzureOpenAIProvider) azureDeploymentsPage(pageURL string) (map[string]an
 		)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return nil, catalogError("catalog_not_discoverable", "Azure OpenAI deployments redirected outside the configured resource; the catalog is not discoverable.", resp.StatusCode)
+	}
 	if resp.StatusCode >= 400 {
 		// The route answered and refused this credential, so the catalog is
 		// not undiscoverable — the key was rejected. Saying "not discoverable"

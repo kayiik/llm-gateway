@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"llmgw/internal/config"
 	"llmgw/internal/iam"
 	"llmgw/internal/providers"
+	"llmgw/internal/router"
 
 	core "github.com/kayiik/llmgw-core"
 )
@@ -22,8 +24,12 @@ import (
 type nativePolicyFixture struct {
 	server                 *httptest.Server
 	google, chat, messages atomic.Int32
+	responses              atomic.Int32
 	input                  chan map[string]any
 	count                  atomic.Int32
+	response               func(map[string]any) map[string]any
+	inference              func(http.ResponseWriter, *http.Request, map[string]any)
+	catalogSurfaces        []string
 }
 
 func newNativePolicyFixture(t *testing.T) *nativePolicyFixture {
@@ -36,6 +42,10 @@ func newNativePolicyFixture(t *testing.T) *nativePolicyFixture {
 		_ = decoder.Decode(&body)
 		stream, _ := body["stream"].(bool)
 		w.Header().Set("Content-Type", "application/json")
+		if fixture.inference != nil && r.URL.Path != "/models" && r.URL.Path != "/v1/models" {
+			fixture.inference(w, r, body)
+			return
+		}
 		switch {
 		case strings.Contains(r.URL.Path, "generateContent"), strings.Contains(r.URL.Path, "streamGenerateContent"):
 			fixture.google.Add(1)
@@ -66,7 +76,11 @@ func newNativePolicyFixture(t *testing.T) *nativePolicyFixture {
 			fixture.count.Add(1)
 			_, _ = fmt.Fprint(w, `{"input_tokens":5}`)
 		case r.URL.Path == "/responses":
+			fixture.responses.Add(1)
 			response := map[string]any{"id": "resp_fixture", "object": "response", "model": "reported-responses", "status": "completed", "output": []any{}, "instructions": body["instructions"]}
+			if fixture.response != nil {
+				response = fixture.response(body)
+			}
 			if metadata, ok := body["metadata"].(map[string]any); ok && metadata["fixture_instructions"] != nil {
 				response["instructions"] = metadata["fixture_instructions"]
 			}
@@ -79,7 +93,11 @@ func newNativePolicyFixture(t *testing.T) *nativePolicyFixture {
 				_, _ = fmt.Fprint(w, jsonStr(response))
 			}
 		case r.URL.Path == "/models":
-			_, _ = fmt.Fprint(w, `{"data":[{"id":"fixture","supported_endpoints":["/responses"]}]}`)
+			surfaces := fixture.catalogSurfaces
+			if surfaces == nil {
+				surfaces = []string{"/responses"}
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"data": []any{map[string]any{"id": "fixture", "supported_endpoints": surfaces}}})
 		default:
 			http.NotFound(w, r)
 		}
@@ -89,9 +107,11 @@ func newNativePolicyFixture(t *testing.T) *nativePolicyFixture {
 	t.Setenv("LLMGW_STATE_DIR", state)
 	t.Setenv("LLMGW_CONFIG", state+"/config.yaml")
 	old := *config.Get()
+	router.ResetTelemetryState()
 	iam.ResetForTests()
 	providers.ResetProviders()
 	t.Cleanup(func() {
+		router.ResetTelemetryState()
 		iam.ResetForTests()
 		providers.ResetProviders()
 		config.Update(func(s *config.Settings) { *s = old })
@@ -143,6 +163,139 @@ func (f *nativePolicyFixture) call(t *testing.T, path, model, compatibility stri
 		t.Fatal(err)
 	}
 	return response.StatusCode, string(raw)
+}
+
+func TestResponsesMetadataThroughPublicHTTP(t *testing.T) {
+	for _, metadata := range []bool{false, true} {
+		for _, path := range []string{"/v1/chat/completions", "/v1/messages", "/v1/responses"} {
+			t.Run(fmt.Sprintf("metadata=%v/%s", metadata, path), func(t *testing.T) {
+				f := newNativePolicyFixture(t)
+				config.Update(func(s *config.Settings) {
+					s.APIKey = "gateway-token"
+					s.Providers["responses"].ForceApiSupport = true
+				})
+				if rows := providers.RefreshCatalog("responses"); len(rows) != 1 {
+					t.Fatalf("fixture catalog=%+v", rows)
+				}
+				var calls atomic.Int32
+				f.response = func(map[string]any) map[string]any {
+					calls.Add(1)
+					body := map[string]any{
+						"id": "resp_fixture", "object": "response", "model": "reported-responses", "status": "completed",
+						"output": []any{map[string]any{"type": "function_call", "id": "item_fixture", "call_id": "call_fixture", "name": "lookup", "arguments": `{"q":"fixture"}`, "status": "completed"}},
+						"usage":  map[string]any{"input_tokens": 2, "output_tokens": 1, "total_tokens": 3},
+					}
+					if metadata {
+						for key, value := range map[string]any{"completed_at": 2, "frequency_penalty": 0, "presence_penalty": 0, "prompt_cache_key": "cache", "prompt_cache_retention": "24h", "safety_identifier": "safe", "vendor_request_id": "trace", "tool_usage": map[string]any{"web_search": map[string]any{"num_requests": 0}}} {
+							body[key] = value
+						}
+					}
+					return body
+				}
+				body := map[string]any{"model": "responses/fixture", "messages": []any{map[string]any{"role": "user", "content": "lookup fixture"}}, "tools": cliTool(true)}
+				if path == "/v1/messages" {
+					body["tools"], body["max_tokens"] = cliTool(false), 32
+				}
+				if path == "/v1/responses" {
+					delete(body, "messages")
+					body["input"] = "lookup fixture"
+					body["tools"] = []any{map[string]any{"type": "function", "name": "lookup", "parameters": map[string]any{"type": "object"}}}
+				}
+				status, raw := cliRequest(t, f.server.URL+path, body, "allow")
+				if calls.Load() != 1 {
+					t.Fatalf("upstream attempts=%d want one", calls.Load())
+				}
+				if metadata && path != "/v1/responses" {
+					if status != http.StatusBadRequest || !bytes.Contains(raw, []byte("response_semantics_unassessed")) {
+						t.Fatalf("unassessed metadata was not refused: status=%d body=%s", status, raw)
+					}
+					return
+				}
+				if status != http.StatusOK {
+					t.Fatalf("status=%d body=%s", status, raw)
+				}
+				if !bytes.Contains(raw, []byte(`"call_fixture"`)) {
+					t.Fatalf("missing expected function call: %s", raw)
+				}
+				var envelope map[string]any
+				if err := json.Unmarshal(raw, &envelope); err != nil {
+					t.Fatal(err)
+				}
+				var id, name string
+				var args map[string]any
+				switch path {
+				case "/v1/messages":
+					call := envelope["content"].([]any)[0].(map[string]any)
+					id, _ = call["id"].(string)
+					name, _ = call["name"].(string)
+					args, _ = call["input"].(map[string]any)
+					if envelope["stop_reason"] != "tool_use" {
+						t.Fatalf("stop reason: %s", raw)
+					}
+				case "/v1/chat/completions":
+					choice := envelope["choices"].([]any)[0].(map[string]any)
+					call := choice["message"].(map[string]any)["tool_calls"].([]any)[0].(map[string]any)
+					fn := call["function"].(map[string]any)
+					id, _ = call["id"].(string)
+					name, _ = fn["name"].(string)
+					_ = json.Unmarshal([]byte(fn["arguments"].(string)), &args)
+					if choice["finish_reason"] != "tool_calls" {
+						t.Fatalf("finish reason: %s", raw)
+					}
+				default:
+					call := envelope["output"].([]any)[0].(map[string]any)
+					id, _ = call["call_id"].(string)
+					name, _ = call["name"].(string)
+					_ = json.Unmarshal([]byte(call["arguments"].(string)), &args)
+					if envelope["status"] != "completed" || call["id"] != "item_fixture" {
+						t.Fatalf("native state changed: %s", raw)
+					}
+					if metadata && (envelope["vendor_request_id"] != "trace" || envelope["completed_at"] != float64(2)) {
+						t.Fatalf("native metadata removed: %s", raw)
+					}
+				}
+				if id != "call_fixture" || name != "lookup" || !reflect.DeepEqual(args, map[string]any{"q": "fixture"}) {
+					t.Fatalf("function semantics changed: %s", raw)
+				}
+				usage := envelope["usage"].(map[string]any)
+				inputKey, outputKey := "input_tokens", "output_tokens"
+				if path == "/v1/chat/completions" {
+					inputKey, outputKey = "prompt_tokens", "completion_tokens"
+				}
+				if usage[inputKey] != float64(2) || usage[outputKey] != float64(1) {
+					t.Fatalf("usage changed: %s", raw)
+				}
+			})
+		}
+	}
+}
+
+func TestResponsesMaterialUsageIsNotOptionalMetadata(t *testing.T) {
+	f := newNativePolicyFixture(t)
+	config.Update(func(s *config.Settings) {
+		s.APIKey = "gateway-token"
+		s.Providers["responses"].ForceApiSupport = true
+	})
+	if rows := providers.RefreshCatalog("responses"); len(rows) != 1 {
+		t.Fatalf("fixture catalog=%+v", rows)
+	}
+	f.response = func(map[string]any) map[string]any {
+		return map[string]any{
+			"id": "resp_usage", "object": "response", "model": "reported-responses", "status": "completed",
+			"output":            []any{map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "answer"}}}},
+			"usage":             map[string]any{"input_tokens": 2, "output_tokens": 1, "total_tokens": 3},
+			"tool_usage":        map[string]any{"web_search": map[string]any{"num_requests": 1}},
+			"vendor_request_id": "trace",
+		}
+	}
+	status, raw := cliRequest(t, f.server.URL+"/v1/chat/completions", map[string]any{"model": "responses/fixture", "messages": []any{map[string]any{"role": "user", "content": "hi"}}}, "allow")
+	if status != http.StatusBadRequest || !bytes.Contains(raw, []byte("response_semantics_unassessed")) || !bytes.Contains(raw, []byte("tool_usage")) {
+		t.Fatalf("nonzero usage silently dropped: status=%d body=%s", status, raw)
+	}
+	status, raw = cliRequest(t, f.server.URL+"/v1/responses", map[string]any{"model": "responses/fixture", "input": "hi"})
+	if status != http.StatusOK || !bytes.Contains(raw, []byte(`"num_requests":1`)) {
+		t.Fatalf("native usage removed: status=%d body=%s", status, raw)
+	}
 }
 
 func TestNativePolicyDirectCallsRequireExplicitCompatibility(t *testing.T) {

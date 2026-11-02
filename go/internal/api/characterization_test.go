@@ -304,7 +304,7 @@ func charNormalize(key string, value any) any {
 		}
 	}
 	switch key {
-	case "created", "created_at", "discovered_at":
+	case "created", "created_at", "discovered_at", "expires_at":
 		return "<time>"
 	}
 	return value
