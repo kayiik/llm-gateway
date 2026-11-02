@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"llmgw/internal/config"
@@ -16,6 +17,25 @@ import (
 	core "github.com/kayiik/llmgw-core"
 	"github.com/kayiik/llmgw-core/extension"
 )
+
+var providerHealthNow = time.Now
+var lastProviderProbeEventNS atomic.Int64
+
+// Some clocks return the same wall time for consecutive probes. Preserve the
+// database's stale-event fence by giving each completed probe a strictly later
+// timestamp, without changing the ordering of events supplied by other paths.
+func providerProbeEventTime() time.Time {
+	stamp := providerHealthNow().UnixNano()
+	for {
+		previous := lastProviderProbeEventNS.Load()
+		if stamp <= previous {
+			stamp = previous + 1
+		}
+		if lastProviderProbeEventNS.CompareAndSwap(previous, stamp) {
+			return time.Unix(0, stamp)
+		}
+	}
+}
 
 type configuredProviderSnapshot struct {
 	id                 string
@@ -724,10 +744,10 @@ func runProviderProbe(providerID, operation string, principal *config.Principal)
 	evidence := providers.ClassifyProviderEvidence(catalogErr, len(rows), false, false)
 	if observation != nil {
 		if catalogErr == nil {
-			_, _ = iam.RecordProviderAccountSuccessIfCurrent(accountObservation(*observation), time.Now())
+			_, _ = iam.RecordProviderAccountSuccessIfCurrent(accountObservation(*observation), providerProbeEventTime())
 		} else if catalogFailureAffectsAccount(failureCode) {
 			_, _ = iam.RecordProviderAccountFailureIfCurrent(
-				accountObservation(*observation), failureCode, time.Now(),
+				accountObservation(*observation), failureCode, providerProbeEventTime(),
 			)
 		}
 	}

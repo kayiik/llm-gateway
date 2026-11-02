@@ -424,6 +424,10 @@ func TestAccountObservationConversionRoundTrips(t *testing.T) {
 
 func TestProviderProbeRecordsCatalogFailureAndAccountRecovery(t *testing.T) {
 	t.Setenv("LLMGW_STATE_DIR", t.TempDir())
+	clock := providerHealthNow
+	instant := time.Now()
+	providerHealthNow = func() time.Time { return instant }
+	t.Cleanup(func() { providerHealthNow = clock })
 	iam.ResetForTests()
 	t.Cleanup(iam.ResetForTests)
 	key := make([]byte, 32)
