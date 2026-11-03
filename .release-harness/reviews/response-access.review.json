@@ -1,0 +1,395 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "change",
+  "contract": {
+    "digest": "da05219969e051b692980ada8e8066ac909bf88d11ad6a5af6338834a8cc384f"
+  },
+  "authoring_provenance": {
+    "status": "established",
+    "path": ".release-harness/drafts/llm-gateway.record.json",
+    "digest": "e819045146db82b3754d02e0950d13ca8527706a2b478ada58c176c24e706d2b"
+  },
+  "sources": [
+    {
+      "source_id": "primary",
+      "status": "established",
+      "repository_identity": "https://github.com/kayiik/llm-gateway.git",
+      "base_ref": "f8e8498",
+      "base_commit": "f8e8498a78086b3f6fa7922c6fa76133950e2c2d",
+      "merge_base": "f8e8498a78086b3f6fa7922c6fa76133950e2c2d",
+      "head_commit": "16ddc5b2e5054cc2474ba532325e5c9b5d224c01",
+      "head_tree": "90e7e1cd0d3ae2408a15beff1aca9f63d9ad3602",
+      "reviewed_source_digest": "fc1c2f114455d6c5aee916f43e076cd3e3e8beb5f96c6e717893dd305408a32c",
+      "changed_paths": [
+        {
+          "status": "modified",
+          "path": "go/go.mod",
+          "old_blob": "0464c3b4055ac0ae2f53ddd9c516a576d9864639",
+          "new_blob": "2007c9526972211ae79a32e196105c4f0d0ebdc3"
+        },
+        {
+          "status": "modified",
+          "path": "go/go.sum",
+          "old_blob": "5f8ad2c418feba2840f254675054b22afa28eb93",
+          "new_blob": "47822237c338e2c2d63e28a010d681e266ffbe7d"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/admin.go",
+          "old_blob": "aaeff3683e7a5ab632e827999c18614fb86dd057",
+          "new_blob": "f8d4059a3c60df336f9424b19a02da1471c27e8e"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/compatibility_policy_test.go",
+          "old_blob": "017e2883681e9c17e45df00b181e4a30ef863a2e",
+          "new_blob": "d8df1ca7697a2c0712bd1125072c4fa81f291668"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/endpoint_capabilities.go",
+          "old_blob": "9d83f8b0c09271fe96a34de69d5fa983086a908d",
+          "new_blob": "1540b6277b4fca37834aa4b51a89132256cae3f5"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/api/key_access.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "6a2a2038ffbbb50153e9f46a165db566ca2db4e5"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/key_scope_test.go",
+          "old_blob": "6a12a7f1f3b59047135e2c2cf6e5602fc4ee716c",
+          "new_blob": "cc33d2a5f74d78932442c67c23c6ce5c63340c25"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/keypolicy_test.go",
+          "old_blob": "0c7cf33816218383bb5fa2aaf3a8b2599a06ea44",
+          "new_blob": "1ac84db97bc34e6f8fc68656ac2a9e85d360f9d1"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/keypolicy.go",
+          "old_blob": "ff7e095f79cd51992025fe7df6fd9b17ce6a0833",
+          "new_blob": "0498ecacafc40844621190e18b0af70b130a2998"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/models.go",
+          "old_blob": "53fc2908591a580a778527d8764715d139f13985",
+          "new_blob": "05f081fc080d6c0cf27bbced824579b6806c90d6"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/native_policy_integration_test.go",
+          "old_blob": "e41d37615df6d557db507196029b1f4b5c2ce4be",
+          "new_blob": "04401366f3274533aaf68c66135de63bd3f0ecdb"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/playground.go",
+          "old_blob": "c979a74fead69fe8797ee3f33b8b9e0ad354ae55",
+          "new_blob": "4a26f891e6adbb0e281665e14d0bce21bfc18360"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/provider_lifecycle_test.go",
+          "old_blob": "0fd7c30a97bd0c968af711c50e7be18c3ab68ea2",
+          "new_blob": "ed426df97cfa717814c027783a6aae1ec39e9c69"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/provider_status.go",
+          "old_blob": "1782310556a0f24a496c3016bab011656f9e018a",
+          "new_blob": "232be4cce70cf135310a263610381a4e359145ab"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/qualification_policy_test.go",
+          "old_blob": "e35166028e6292c89cb41d5ed1bd4cd36d0aa344",
+          "new_blob": "7087d9ea272047179c2a88df59bee5e8a1e120ab"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/api/recorded_phase_conversion_test.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "a859a705d7ebf3aa60defc6e35a8b94d9e9958f2"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/server.go",
+          "old_blob": "6c12b21f630e052daedb5452433903c34d19e0b3",
+          "new_blob": "d863967d99206f721d28e854fc49e6b71301c8d6"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/catalog_read_test.go",
+          "old_blob": "35d3b0d5540d8feb22591d6608d7e425acc461d2",
+          "new_blob": "166ce077ed618840b2a614113dfb090fcdda99ce"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/catalog.go",
+          "old_blob": "46fbd8ace07e96fd7c6b8a647782ae61c12d93f8",
+          "new_blob": "00c47dde94c7d6babeae1304b6dee5ea03b96872"
+        },
+        {
+          "status": "deleted",
+          "path": "go/internal/web/console/dist/assets/index-BWcKED0o.js",
+          "old_blob": "b6d386f424c2c62c30e6f1765121359166479393",
+          "new_blob": "0000000000000000000000000000000000000000"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/web/console/dist/assets/index-C3yTTrz8.css",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "fd833ad0e8a26585ebfded2280c63461690f9ea6"
+        },
+        {
+          "status": "deleted",
+          "path": "go/internal/web/console/dist/assets/index-CJRE0bW9.css",
+          "old_blob": "a2cfee6b60cd59db15c18b4dbce83037f04c08a7",
+          "new_blob": "0000000000000000000000000000000000000000"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/web/console/dist/assets/index-DrNwpmpN.js",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "0e2e6f73dd389d44ad9c3578b69ce9ac889670be"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/dist/index.html",
+          "old_blob": "4c09125143eb60bbd2e3ec27650c54303f53e880",
+          "new_blob": "693c8265552248e03d8d85a10da9a48855b0b38b"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/web/console/src/components/KeyAccessInspector.tsx",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "bd1c2a05ffb8407ba4ab8da0370a240aa6a36d8e"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/src/components/KeyScopeEditor.tsx",
+          "old_blob": "0bc87af627c83e9b9740bf6643544c7d08fe3364",
+          "new_blob": "970c0a4c635de303bb0fac2a9eaeea47d84ac8c3"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/src/pages/ApiKeys.tsx",
+          "old_blob": "902fcb9f44c83bc7332325d4e4edd335220a7dd8",
+          "new_blob": "14226aa1b324fd3491ae1f74cc5444e6f002763e"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/src/pages/ProjectDetail.tsx",
+          "old_blob": "a3507508a97342ee817b96a67f5f01eea75ab164",
+          "new_blob": "d06e1c4988646bf57d1c3d16b0bfbd6e0c5bdf81"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/src/pages/RouteDetail.tsx",
+          "old_blob": "631d1a6cbbc38fde421f8a6c413b0bb83ce7332e",
+          "new_blob": "b9170513e53207aafb19c4b77d6bb5074e38775a"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/src/styles/keys.css",
+          "old_blob": "564ebdf282a1bece8494bb80b961a5b9a24e04a9",
+          "new_blob": "2cb084e8f04117bddfb47aa0a8795dd2b51c9704"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/tests/key-dates.test.mjs",
+          "old_blob": "f7d0e811e564df1126fe67d3e31353b37f7e3aed",
+          "new_blob": "212a8e9ce094011db494c5d388bea2b9ee2aca7e"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/tests/key-lifecycle.test.mjs",
+          "old_blob": "5337e4e6dd7151d1e377fd06d1a7422e01227870",
+          "new_blob": "d56e792f9241b938f5ab2f6207314dd8a8d45e04"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/tests/project-page.test.mjs",
+          "old_blob": "7c94050d0caf126b6bdde9b634ccf4e7c375dfde",
+          "new_blob": "10e272f5aafb1f20d0ce22fd5b612f1058164f67"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/web/console/tests/smoke.test.mjs",
+          "old_blob": "d3d2b83839b2ebe5c7fc77bdd532721bcaa3eafa",
+          "new_blob": "231646c8d40f38042fbdf58f42f400f6fbe209fe"
+        },
+        {
+          "status": "modified",
+          "path": "test/integration/embeddings-matrix.mjs",
+          "old_blob": "81d83e41320612be72e2d6a05456e269c8267265",
+          "new_blob": "397edee3cb4474199bcbd47344de146cffdfe9e6"
+        },
+        {
+          "status": "modified",
+          "path": "test/integration/phase-matrix.mjs",
+          "old_blob": "24379b971ee0026d52d72155e200abe8080073bd",
+          "new_blob": "98aa08abbe485c8ae3b9a46767e2b6f312da00d8"
+        },
+        {
+          "status": "modified",
+          "path": "test/integration/real-wire-matrix.mjs",
+          "old_blob": "896fe397246df8c6d50b9de39aa7840e5acaca13",
+          "new_blob": "ba740332a97faf859fba80d24158fabc1061ad7e"
+        },
+        {
+          "status": "modified",
+          "path": "test/integration/routing-matrix.mjs",
+          "old_blob": "33219f0665b77566bec7ca26873f0e7eff673afb",
+          "new_blob": "b1ac76452bc9d69e9c8f6204aa1a6c51ae30a75b"
+        },
+        {
+          "status": "modified",
+          "path": "test/qualification/installed-browser.mjs",
+          "old_blob": "ff764a5819f7a542ade7e2f8da91de90c5267e3f",
+          "new_blob": "42ae6bb8ede8352d49bf4c9ab83c9ccc7ca4d224"
+        }
+      ]
+    }
+  ],
+  "facts": [
+    {
+      "id": "F1",
+      "claim": "The reviewed primary source is the clean committed Git tree at 16ddc5b2e5054cc2474ba532325e5c9b5d224c01. Its comparison with the previous reviewed head covers 39 changed product paths, including the released Translate pin, conversion and catalog policy, key-access API and console, provider-probe clock correction, tests and rebuilt console assets.",
+      "status": "observed",
+      "evidence": { "source": "16ddc5b2e5054cc2474ba532325e5c9b5d224c01", "method": "Release-Harness exact Git source capture and reviewed source diff" }
+    },
+    {
+      "id": "F2",
+      "claim": "The committed Go module requires published llm-translate v0.0.7 without a local replacement. That Translate release points to a CI-passing source; Gateway module verification, build, vet, staticcheck and vulnerability scan exited successfully with GOWORK=off.",
+      "status": "observed",
+      "evidence": { "source": "16ddc5b2e5054cc2474ba532325e5c9b5d224c01", "method": "Go module graph and local build, vet, staticcheck and govulncheck; published Translate release and CI status" }
+    },
+    {
+      "id": "F3",
+      "claim": "The full Gateway Go test suite passed against the pinned released module. A frozen-clock regression went red before the provider-probe timestamp correction and passed 100 consecutive executions afterward; the stale-event account guard also passed.",
+      "status": "observed",
+      "evidence": { "source": "16ddc5b2e5054cc2474ba532325e5c9b5d224c01", "method": "GOWORK=off go test ./... -count=1 and targeted frozen-clock account-recovery/IAM guard tests" }
+    },
+    {
+      "id": "F4",
+      "claim": "The canonical Dockerfile built a disposable image from the committed Gateway Go tree and the pinned public Translate module. Installed CLI version/build identity and CLI health checks passed on first start and restart in both isolated profiles. The local qualification version and commit label are not release build stamps.",
+      "status": "observed",
+      "evidence": { "source": "16ddc5b2e5054cc2474ba532325e5c9b5d224c01", "method": "Canonical Dockerfile build and installed first-start/restart CLI checks with the private fresh/upgrade receipts" }
+    },
+    {
+      "id": "F5",
+      "claim": "The isolated installed Gateway answered the public health check without caller credentials and served a models list to an authorized project key. Scoped catalog and route-member tests checked the changed model listing and authorization boundaries.",
+      "status": "observed",
+      "evidence": { "source": "16ddc5b2e5054cc2474ba532325e5c9b5d224c01", "method": "Installed first-start/restart health and public-catalog cases; Gateway caller-scope, catalog and key-policy Go tests" }
+    },
+    {
+      "id": "F6",
+      "claim": "Installed Chat, Responses and Messages refusal/compatibility cases and the full Go suite passed after changing the conversion and route-save policy. The public API error-envelope assertions remained satisfied under the three respective ingress handlers.",
+      "status": "observed",
+      "evidence": { "source": "16ddc5b2e5054cc2474ba532325e5c9b5d224c01", "method": "Installed native phase, protocol-boundary, header/body refusal and conversion matrices plus full Go API tests" }
+    },
+    {
+      "id": "F7",
+      "claim": "An unauthenticated administrator request remains refused. The new key-access read is scoped to the administrator or owning portal principal, returns no key token, and refuses another portal owner; first-start/restart browser authentication journeys passed.",
+      "status": "observed",
+      "evidence": { "source": "16ddc5b2e5054cc2474ba532325e5c9b5d224c01", "method": "Gateway key-access HTTP regression and installed browser sign-in, unauthorized API and current-access journeys" }
+    },
+    {
+      "id": "F8",
+      "claim": "The embedded console is served by the canonical image. The console passed lint, 283 component tests, a deterministic rebuild with check:dist, and the installed desktop/mobile browser journeys on first start and restart.",
+      "status": "observed",
+      "evidence": { "source": "16ddc5b2e5054cc2474ba532325e5c9b5d224c01", "method": "npm lint/test/check:dist and installed first-start/restart browser receipts" }
+    },
+    {
+      "id": "F9",
+      "claim": "The gateway metrics endpoint refused callers without its separate token, retained its build-identity metric and reset process counters on restart under the installed fixture suite.",
+      "status": "observed",
+      "evidence": { "source": "16ddc5b2e5054cc2474ba532325e5c9b5d224c01", "method": "Installed metrics token/build-identity case and process restart recovery" }
+    },
+    {
+      "id": "F10",
+      "claim": "Both exact-source fresh and upgrade profiles passed all 48 selected fixture cases and first-start/restart browser checks, with zero live provider calls. Upgrade archive, rekey, original snapshot and rollback checks passed; the runner cleaned its temporary resources.",
+      "status": "observed",
+      "evidence": { "source": "16ddc5b2e5054cc2474ba532325e5c9b5d224c01", "method": "Private canonical-image fresh and upgrade installed receipts, including rollback and image-identity assertions" }
+    },
+    {
+      "id": "F11",
+      "claim": "Gateway full race verification was not established on this host: native Windows race requires unavailable CGO support, and an isolated Linux attempt timed out. It is not an accepted-contract assertion or a claimed passing check.",
+      "status": "not_established"
+    }
+  ],
+  "impact": {
+    "assertions": [
+      {
+        "id": "A1",
+        "impact": "unchanged",
+        "supported_by": ["F2", "F4"]
+      },
+      {
+        "id": "A2",
+        "impact": "unchanged",
+        "supported_by": ["F4"]
+      },
+      {
+        "id": "A3",
+        "impact": "unchanged",
+        "supported_by": ["F5", "F10"]
+      },
+      {
+        "id": "A4",
+        "impact": "unchanged",
+        "supported_by": ["F3", "F5", "F10"]
+      },
+      {
+        "id": "A5",
+        "impact": "unchanged",
+        "supported_by": ["F3", "F6", "F10"]
+      },
+      {
+        "id": "A6",
+        "impact": "unchanged",
+        "supported_by": ["F3", "F6", "F10"]
+      },
+      {
+        "id": "A7",
+        "impact": "unchanged",
+        "supported_by": ["F3", "F6", "F10"]
+      },
+      {
+        "id": "A8",
+        "impact": "unchanged",
+        "supported_by": ["F7", "F10"]
+      },
+      {
+        "id": "A9",
+        "impact": "unchanged",
+        "supported_by": ["F8", "F10"]
+      },
+      {
+        "id": "A10",
+        "impact": "unchanged",
+        "supported_by": ["F9", "F10"]
+      }
+    ],
+    "requires": [],
+    "possible_binding_changes": [
+      "The release binding must use the final Gateway build identity and artifact from the committed source. The local qualification image is disposable evidence, not a deployment image."
+    ]
+  },
+  "questions": [],
+  "conclusion": {
+    "action": "reuse_contract",
+    "summary": "Propose reuse of accepted assertions A1–A10 for exact source 16ddc5b2e5054cc2474ba532325e5c9b5d224c01. Every accepted CLI, public HTTP, administrator-auth, console and metrics boundary was exercised against the canonical local build and retains its stated behavior; there are no exact requires identities. Shared catalog and key-policy behavior, response-phase conversion, explicit ingress validation, and the provider-probe timestamp correction change implementations but not those ten propositions. This review records fixture-only evidence and does not certify live provider entitlement, the unfinished full Gateway race check, or an unstamped image as a published release. Exact review confirmation by an authorized operator remains required."
+  },
+  "proposed": {
+    "by": "release review author",
+    "at": "2026-11-03T00:11:12.179Z"
+  }
+}
