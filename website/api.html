@@ -6,6 +6,7 @@
 <h2 id="routes">Endpoint inventory</h2><div class="table-wrap"><table><thead><tr><th>Method</th><th>Path</th><th>Contract</th></tr></thead><tbody>
 <tr><td>GET</td><td><code>/health</code></td><td>Process liveness and build identity; no provider readiness.</td></tr>
 <tr><td>GET</td><td><code>/v1/models</code></td><td>Configured, credential/policy-eligible models, endpoints, and safe aliases.</td></tr>
+<tr><td>GET</td><td><code>/v1/client-snapshot</code></td><td>Offline-enabled project keys only: eligible direct targets and upstream calling credentials. Treat the response as a secret.</td></tr>
 <tr><td>POST</td><td><code>/v1/chat/completions</code></td><td>Chat, tools, streaming, vision filtering, and eligible ordered failover.</td></tr>
 <tr><td>POST</td><td><code>/v1/responses</code></td><td>Native Responses or strict stateless Chat fallback.</td></tr>
 <tr><td>POST</td><td><code>/v1/messages</code></td><td>Native or strict adapted Anthropic Messages.</td></tr>

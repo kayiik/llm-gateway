@@ -1379,6 +1379,7 @@ type keyBody struct {
 	AllowedModels       []string `json:"allowed_models"`
 	AllowedRoutes       []string `json:"allowed_routes"`
 	RoutesOnly          bool     `json:"routes_only"`
+	OfflineAccess       bool     `json:"offline_access"`
 	AllowedProviders    []string `json:"allowed_providers"`
 	RPM                 int      `json:"rpm"`
 	DailyRequests       int      `json:"daily_requests"`
@@ -1447,6 +1448,7 @@ func handleCreateKey(w http.ResponseWriter, r *http.Request) {
 	}
 	policy := keyPolicyFromBody(body)
 	policy.AdminManaged = true
+	policy.OfflineAccess = body.OfflineAccess
 	issued, err := iam.IssueKey(iam.KeyCreate{
 		ProjectID: project.ID, PrincipalID: principalID, Name: name,
 		ExpiresAt: body.ExpiresAt, Policy: policy,
@@ -1496,6 +1498,7 @@ type keyUpdateBody struct {
 	AllowedModels       *[]string `json:"allowed_models"`
 	AllowedRoutes       *[]string `json:"allowed_routes"`
 	RoutesOnly          *bool     `json:"routes_only"`
+	OfflineAccess       *bool     `json:"offline_access"`
 	AllowedProviders    *[]string `json:"allowed_providers"`
 	RPM                 *int      `json:"rpm"`
 	DailyRequests       *int      `json:"daily_requests"`
@@ -1553,6 +1556,10 @@ func handleUpdateKey(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.RoutesOnly != nil {
 		policy.RoutesOnly = *body.RoutesOnly
+		changedPolicy = true
+	}
+	if body.OfflineAccess != nil {
+		policy.OfflineAccess = *body.OfflineAccess
 		changedPolicy = true
 	}
 	if body.AllowedModels != nil {

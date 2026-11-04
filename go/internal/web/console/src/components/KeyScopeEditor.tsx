@@ -9,6 +9,7 @@ export function keyPolicySummary(policy: JSONRecord): string {
   const routes = asList(policy.allowed_routes).map(String).map((value) => value.trim()).filter(Boolean);
   if (policy.routes_only === true) parts.push(`Routes only: ${routes.join(", ") || "none (blocked)"}`);
   else if (routes.length) parts.push(`Routes: ${routes.join(", ")} (direct models also allowed)`);
+  if (policy.offline_access === true) parts.push("Offline access: export scoped upstream credentials");
   const providers = asList(policy.allowed_providers).map(String).map((value) => value.trim()).filter(Boolean);
   const models = asList(policy.allowed_models).map(String).map((value) => value.trim()).filter(Boolean);
   if (providers.length) parts.push(`Providers: ${providers.join(", ")}`);
@@ -18,8 +19,8 @@ export function keyPolicySummary(policy: JSONRecord): string {
   return parts.length ? `${parts.join("; ")}. Project limits also apply.` : "Inherits project access and limits";
 }
 
-export function KeyScopeEditor({ data, policy, onChange }: {
-  data: JSONRecord; policy: JSONRecord; onChange: (policy: JSONRecord) => void;
+export function KeyScopeEditor({ data, policy, onChange, canEditOfflineAccess = false }: {
+  data: JSONRecord; policy: JSONRecord; onChange: (policy: JSONRecord) => void; canEditOfflineAccess?: boolean;
 }) {
   const endpoints = endpointsOf(data);
   const routeDraft = asList(policy.allowed_routes).map(String);
@@ -43,7 +44,8 @@ export function KeyScopeEditor({ data, policy, onChange }: {
   const advanced = policy.routes_only === true || selectedRoutes.length > 0 || selectedProviders.length > 0 || asList(policy.allowed_models).length > 0;
   return <section class="key-scope">
     <h3>What can this key call?</h3>
-    <p class="form-help">Project rules always apply. A key can narrow access, never expand it.</p>
+    <p class="form-help">Project rules always apply. Key restrictions narrow model access; offline access separately permits export of eligible credentials.</p>
+    {canEditOfflineAccess ? <label class="key-scope__check"><input type="checkbox" checked={policy.offline_access === true} onChange={(event) => onChange({ ...policy, offline_access: event.currentTarget.checked })} /><span>Allow offline access <small>This key can download upstream credentials for eligible targets. Issue it only to installations that need local fallback.</small></span></label> : null}
     <details open={advanced}>
       <summary>Advanced: restrict routes, providers or models</summary>
       <label class="key-scope__check"><input type="checkbox" checked={policy.routes_only === true} onChange={(event) => onChange({ ...policy, routes_only: event.currentTarget.checked })} /><span>Selected routes only <small>Block direct model calls, including aliases.</small></span></label>

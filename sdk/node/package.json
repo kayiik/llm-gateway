@@ -1,0 +1,12 @@
+{
+  "name": "@kayiik/llmgw-client",
+  "version": "0.1.0-preview.1",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": { ".": { "types": "./index.d.mts", "import": "./index.mjs" } },
+  "types": "./index.d.mts",
+  "files": ["index.mjs", "stream.mjs", "index.d.mts", "README.md"],
+  "scripts": { "test": "node --test" },
+  "engines": { "node": ">=20" }
+}

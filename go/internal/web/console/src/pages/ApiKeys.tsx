@@ -53,7 +53,7 @@ function policyFor(key: JSONRecord): JSONRecord {
   // Admin state flattens policy; portal keys nest it. Never treat timestamps as quotas.
   const source = key.policy ? asRecord(key.policy) : key;
   return Object.fromEntries([
-    "allowed_routes", "routes_only", "allowed_providers", "allowed_models", "admin_managed",
+    "allowed_routes", "routes_only", "offline_access", "allowed_providers", "allowed_models", "admin_managed",
     ...Object.keys(keyQuotaLabels),
   ].filter((field) => source[field] !== undefined).map((field) => [field, source[field]]));
 }
@@ -111,7 +111,7 @@ export function ApiKeys({ data, mode, onChanged, initialContext }: {
   const [routeFilter, setRouteFilter] = useState(initialContext?.routeName ?? "");
   const [statusFilter, setStatusFilter] = useState(statusFilters[0].id);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const initialScope = (): JSONRecord => ({ allowed_routes: initialContext?.routeName ? [initialContext.routeName] : [], routes_only: Boolean(initialContext?.routeName), allowed_providers: [], allowed_models: [] });
+  const initialScope = (): JSONRecord => ({ allowed_routes: initialContext?.routeName ? [initialContext.routeName] : [], routes_only: Boolean(initialContext?.routeName), offline_access: false, allowed_providers: [], allowed_models: [] });
   const [scope, setScope] = useState<JSONRecord>(initialScope);
   const [quotaDrafts, setQuotaDrafts] = useState<Record<string, string>>(() => keyQuotaDraftsFor({}));
   const [secret, setSecret] = useState("");
@@ -199,7 +199,7 @@ export function ApiKeys({ data, mode, onChanged, initialContext }: {
       setMessage("Select at least one allowed route for a routes-only key.");
       return null;
     }
-    return { ...quotas.policy, allowed_routes: allowedRoutes,
+    return { ...quotas.policy, ...(mode === "admin" ? { offline_access: scope.offline_access === true } : {}), allowed_routes: allowedRoutes,
       routes_only: scope.routes_only === true, allowed_providers: lists.allowed_providers, allowed_models: lists.allowed_models };
   };
   const create = async (event: Event) => {
@@ -432,7 +432,7 @@ export function ApiKeys({ data, mode, onChanged, initialContext }: {
       <p class="form-help">{(creating ? mode === "portal" || selectedOwner?.kind === "human" : editing?.principal_kind === "human") ? "Human keys use the owner's eligible private connections first, with provider-specific fallback to shared or legacy credentials." : "Service keys use eligible shared or legacy credentials, not a human's private subscriptions."} Copilot service access requires an active project binding; Codex OAuth is human-private. Scope does not pin a credential account, and paid fallback may occur.</p>
       <div class="key-editor__limits">{keyQuotaFields.map((field) => <label key={field}>{keyQuotaLabels[field]}<input name={field} inputMode="numeric" value={quotaDrafts[field] ?? "0"} disabled={busy} onInput={(event) => setQuotaDrafts((current) => ({ ...current, [field]: event.currentTarget.value }))} /></label>)}</div>
       <p class="form-help">Use 0 for no additional key limit. Project access rules and usage ceilings still apply; key settings cannot raise them. These are configured limits; a key's limits action in the list shows how much of each its current window has used.</p>
-      <KeyScopeEditor data={data} policy={{ ...scope, ...keyQuotaPolicyFromDrafts(quotaDrafts).policy }} onChange={setScope} />
+       <KeyScopeEditor data={data} policy={{ ...scope, ...keyQuotaPolicyFromDrafts(quotaDrafts).policy }} onChange={setScope} canEditOfflineAccess={mode === "admin"} />
       <footer><button class="button button--secondary" type="button" disabled={busy} onClick={() => { setCreating(false); setEditing(null); }}>Cancel</button><button class="button button--primary" type="submit" disabled={busy}>{editing ? <Save size={16} /> : <Plus size={16} />}{busy ? "Saving..." : editing ? "Save key" : "Create key"}</button></footer>
     </form> : null}
     {listError ? <ErrorState title="Keys are unavailable" detail={listError} action={<button class="button button--secondary" type="button" onClick={() => setReload((current) => current + 1)}>Retry</button>} />

@@ -502,7 +502,7 @@ test("the project policy editor covers every writable project policy field", () 
   const keyPolicy = models.match(/type KeyPolicy struct \{([\s\S]*?)\n\}/);
   assert.ok(keyPolicy, "iam.KeyPolicy struct not found");
   const writable = [...keyPolicy[1].matchAll(/^\s*\w+\s+(\S+)\s+`json:"([^",]+)(?:,[^"]*)?"`/gm)]
-    .filter(([, , field]) => !["-", "allowed_routes", "routes_only", "admin_managed"].includes(field))
+    .filter(([, , field]) => !["-", "allowed_routes", "routes_only", "offline_access", "admin_managed"].includes(field))
     .map(([, type, field]) => ({ type, field }));
   const allowlists = writable.filter(({ type }) => type === "[]string").map(({ field }) => field);
   const numeric = writable.filter(({ type }) => /^(?:u?int(?:8|16|32|64)?|float(?:32|64))$/.test(type)).map(({ field }) => field);

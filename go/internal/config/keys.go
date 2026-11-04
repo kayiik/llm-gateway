@@ -53,6 +53,7 @@ type Principal struct {
 	AllowedModels       []string `json:"-"`
 	AllowedRoutes       []string `json:"-"`
 	RoutesOnly          bool     `json:"-"`
+	OfflineAccess       bool     `json:"-"`
 	AllowedProviders    []string `json:"-"`
 	RPM                 int      `json:"-"`
 	DailyRequests       int      `json:"-"`

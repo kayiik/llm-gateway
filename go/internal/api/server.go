@@ -123,6 +123,7 @@ func (s *server) handler() http.Handler {
 	mux.HandleFunc("POST /v1/images/generations", handleImageGenerations)
 	mux.HandleFunc("POST /v1/videos/generations", handleVideoGenerations)
 	mux.HandleFunc("GET /v1/models", handleModels)
+	mux.HandleFunc("GET /v1/client-snapshot", handleClientSnapshot)
 
 	// Anthropic facade
 	mux.HandleFunc("POST /v1/messages", handleMessages)

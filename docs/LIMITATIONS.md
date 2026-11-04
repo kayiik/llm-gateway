@@ -52,9 +52,12 @@ from implying behavior the implementation does not provide.
   and correlated tools. It does not reconcile actually heard playback with
   provider history: truncation refusal/session closure is not successful
   heard-history continuation. See the [API contract](API.md).
-- A gateway-first SDK with centrally delivered emergency credentials, encrypted
-  cache and reconnect usage reporting is proposed, not implemented. The public
-  provider roster is catalog metadata, not that emergency SDK feature.
+- The initial gateway-first SDK sources support bounded JSON calls, native SSE
+  pass-through, text-only converted streams, and cached direct access for
+  eligible API-key transports. They do not provide tool/media stream
+  translation, a universal provider adapter, an encrypted cache, or reconnect
+  usage reporting. The public provider roster is catalog metadata, not a
+  credential-delivery endpoint.
 
 ## Client confidence
 

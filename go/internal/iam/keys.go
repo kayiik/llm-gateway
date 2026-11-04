@@ -219,7 +219,8 @@ WHERE k.secret_hash=? AND k.deleted_at IS NULL`, sum[:]).Scan(
 		Key: keyName, Role: role, Token: token,
 		AllowedModels: allowedModels, AllowedProviders: allowedProviders,
 		AllowedRoutes: scope.AllowedRoutes, RoutesOnly: scope.RoutesOnly,
-		RPM: rpm, DailyRequests: daily, MonthlyRequests: monthly,
+		OfflineAccess: scope.OfflineAccess,
+		RPM:           rpm, DailyRequests: daily, MonthlyRequests: monthly,
 		DailyInputTokens: dailyIn, DailyOutputTokens: dailyOut,
 		MonthlyTotalTokens: monthlyTokens,
 		DailyCostMicroUSD:  dailyCost, MonthlyCostMicroUSD: monthlyCost,
@@ -606,8 +607,9 @@ func keyScopeJSON(p KeyPolicy) string {
 	data, _ := json.Marshal(struct {
 		AllowedRoutes []string `json:"allowed_routes,omitempty"`
 		RoutesOnly    bool     `json:"routes_only,omitempty"`
+		OfflineAccess bool     `json:"offline_access,omitempty"`
 		AdminManaged  bool     `json:"admin_managed,omitempty"`
-	}{p.AllowedRoutes, p.RoutesOnly, p.AdminManaged})
+	}{p.AllowedRoutes, p.RoutesOnly, p.OfflineAccess, p.AdminManaged})
 	return string(data)
 }
 

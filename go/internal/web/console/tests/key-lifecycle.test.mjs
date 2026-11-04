@@ -167,6 +167,28 @@ test("service identity requires an explicit choice before issuing a key", async 
   assert.equal("principal_id" in sent[0], false, "the server creates or reuses the selected service identity");
 });
 
+test("an administrator explicitly grants offline credential export on a new key", async () => {
+  const sent = [];
+  const listing = fakeKeyListing([]);
+  globalThis.__api = {
+    getJSON: async (mode, path) => listing.answer(path),
+    sendJSON: async (mode, path, method, body) => { sent.push({ mode, path, body }); return { token: "fixture-token" }; },
+  };
+  const render = mount(() => ApiKeys({ data, mode: "admin", onChanged: async () => {}, initialContext: { projectID: "project-1" } }));
+  let tree = render();
+  const editor = find(tree, (node) => typeof node.type === "function" && node.type.name === "KeyScopeEditor");
+  assert.equal(editor.props.canEditOfflineAccess, true);
+  assert.equal(editor.props.policy.offline_access, false, "ordinary keys do not export credentials by default");
+  editor.props.onChange({ ...editor.props.policy, offline_access: true });
+  find(tree, (node) => typeof node.type === "function" && node.props?.label === "Acts as").props.onChange("");
+  tree = render();
+  find(tree, (node) => node.type === "form").props.onSubmit({ preventDefault() {} });
+  await settle();
+  assert.equal(sent.length, 1);
+  assert.deepEqual({ mode: sent[0].mode, path: sent[0].path, offline_access: sent[0].body.offline_access },
+    { mode: "admin", path: "/keys", offline_access: true });
+});
+
 test("access inspector shows backend-filtered routes and direct models for a saved key", async () => {
   const listing = fakeKeyListing([key("live", "active")]);
   const requests = [];

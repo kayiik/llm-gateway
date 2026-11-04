@@ -27,6 +27,7 @@ from a non-loopback `Origin` are refused with `403`; see
 | --- | --- | --- |
 | `GET` | `/health` | Process liveness and build identity. It does not probe providers or database freshness. |
 | `GET` | `/v1/models` | Configured, credential- and policy-eligible models, endpoint pseudo-models, and unambiguous aliases. |
+| `GET` | `/v1/client-snapshot` | Offline-access project keys only: key-scoped, eligible API-key targets and calling credentials; `Cache-Control: no-store`. |
 | `POST` | `/v1/chat/completions` | OpenAI-shaped chat, tools, streaming, usage, and vision target filtering. |
 | `POST` | `/v1/responses` | Native Responses or strict compatible stateless Chat fallback. |
 | `POST` | `/v1/messages` | Native Anthropic Messages or strict Chat adaptation. |
@@ -38,6 +39,19 @@ from a non-loopback `Origin` are refused with `403`; see
 | `GET` | `/v1/realtime?model=…` | Native WebSocket relay or explicitly permitted bounded Gemini Live adaptation. |
 | `POST` | `/v1/images/generations` | Image generation from a capable provider; returns inline `b64_json`. |
 | `POST` | `/v1/videos/generations` | Starts a video operation or polls one when `operation` is supplied. |
+
+The administrator can enable `offline_access` when issuing or updating a project
+key. This permits that key to retrieve upstream credentials for the eligible
+direct targets. A static administrator key, a local-mode caller, and an ordinary
+project key cannot call the snapshot endpoint. The versioned snapshot has
+`selectors` (each with ordered target IDs, the route's `ingress` when set,
+and `allow_adaptation`) and `targets`
+(upstream URL, model, native dialect, and API key). The initial export covers
+configured, catalog-confirmed OpenAI-compatible and Anthropic API-key targets
+with an explicit upstream URL; it omits targets the SDK cannot call directly.
+Protect any saved response like an upstream credential. The gateway cannot
+enforce key revocation or quotas on requests made from a saved response while
+it is unreachable.
 
 ## Bare aliases
 

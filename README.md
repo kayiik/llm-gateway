@@ -86,6 +86,9 @@ has the details.
 | Copilot CLI BYOK | `COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:8787/v1`, a project key, explicit wire API, and exact wire model |
 | OpenAI SDKs | `OPENAI_BASE_URL=http://127.0.0.1:8787/v1` and `OPENAI_API_KEY=<GATEWAY_PROJECT_KEY>` |
 
+An initial [Node.js, Python, and Go gateway client SDK slice](sdk/README.md)
+adds key-scoped cached local fallback for supported JSON calls and text streams.
+
 Give each client a gateway-issued project key from the console's **API keys**
 page. `LLMGW_API_KEY` is the administrator key; use it for administration only.
 Use an ID returned by `GET /v1/models`. Complete, copyable profiles and their

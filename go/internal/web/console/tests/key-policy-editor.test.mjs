@@ -66,6 +66,6 @@ test("the existing-key editor renders and submits every quota field", () => {
   assert.match(keys, /keyQuotaFields\.map\(\(field\) => <label/);
   assert.match(keys, /<input name=\{field\}/);
   assert.match(keys, /form\?\.get\(field\)/);
-  assert.match(keys, /return \{ \.\.\.quotas\.policy, allowed_routes:/);
+  assert.match(keys, /return \{ \.\.\.quotas\.policy,[^\n]*allowed_routes:/);
   assert.doesNotMatch(keys, /server preserves all other quota limits/);
 });

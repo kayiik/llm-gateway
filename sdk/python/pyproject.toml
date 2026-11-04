@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llmgw-client"
+version = "0.1.0rc1"
+description = "Gateway-first JSON client with local fallback"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+readme = "README.md"
+
+[tool.setuptools.packages.find]
+include = ["llmgw_client*"]
+
+[tool.setuptools.package-data]
+llmgw_client = ["py.typed"]
