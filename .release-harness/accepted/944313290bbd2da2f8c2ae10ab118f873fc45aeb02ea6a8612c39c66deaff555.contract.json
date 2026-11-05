@@ -1,0 +1,55 @@
+{
+  "assertions": [
+    {
+      "description": "the gateway tests preserve default denial, key and project scoping, and usable direct-credential snapshots",
+      "expect": {
+        "exit_code": 0
+      },
+      "id": "A1",
+      "kind": "cli",
+      "target": "gateway-snapshot"
+    },
+    {
+      "description": "the Node client tests cover nine JSON and text-SSE dialect paths, cache isolation, fallback, and stream failure boundaries",
+      "expect": {
+        "exit_code": 0
+      },
+      "id": "A2",
+      "kind": "cli",
+      "target": "node-sdk"
+    },
+    {
+      "description": "the Python client tests cover nine JSON and text-SSE dialect paths, cache isolation, fallback, and stream failure boundaries",
+      "expect": {
+        "exit_code": 0
+      },
+      "id": "A3",
+      "kind": "cli",
+      "target": "python-sdk"
+    },
+    {
+      "description": "the Go client tests cover nine JSON and text-SSE dialect paths, cache isolation, fallback, and stream failure boundaries",
+      "expect": {
+        "exit_code": 0
+      },
+      "id": "A4",
+      "kind": "cli",
+      "target": "go-sdk"
+    },
+    {
+      "description": "the actual gateway handler delivers a scoped snapshot and all three clients survive its loss with direct JSON and converted SSE",
+      "expect": {
+        "exit_code": 0
+      },
+      "id": "A5",
+      "kind": "cli",
+      "target": "sdk-e2e"
+    }
+  ],
+  "schema_version": "1.0.0",
+  "subject": {
+    "id": "llm-gateway-sdk-preview",
+    "name": "LLM Gateway client SDK source preview"
+  },
+  "digest": "944313290bbd2da2f8c2ae10ab118f873fc45aeb02ea6a8612c39c66deaff555"
+}

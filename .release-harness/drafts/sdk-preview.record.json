@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0.0",
+  "authored_by": "agent-session",
+  "claims": [
+    {
+      "id": "snapshot-grant-tests",
+      "claim": "ordinary and static administrator keys cannot export an offline snapshot, offline access is admin-granted, project/key allowlists filter targets, and unsupported credential kinds are omitted",
+      "status": "observed",
+      "evidence": { "source": "go/internal/api/client_snapshot_test.go:22-113,327-420" }
+    },
+    {
+      "id": "snapshot-http-test",
+      "claim": "the real HTTP handler serves a key-scoped snapshot whose direct credentials call an isolated upstream",
+      "status": "observed",
+      "evidence": { "source": "go/internal/api/client_snapshot_test.go:114-326" }
+    },
+    {
+      "id": "node-sdk-contract-tests",
+      "claim": "Node tests exercise nine plain-text JSON/SSE ingress-to-target dialect paths, cached fallback, stream cancellation, truncation, and refusal to replay an opened stream",
+      "status": "observed",
+      "evidence": { "source": "sdk/node/index.test.mjs:27-260; sdk/node/stream.test.mjs:46-162" }
+    },
+    {
+      "id": "python-sdk-contract-tests",
+      "claim": "Python tests exercise nine plain-text JSON/SSE ingress-to-target dialect paths, cached fallback, stream cancellation, truncation, and refusal to replay an opened stream",
+      "status": "observed",
+      "evidence": { "source": "sdk/python/test_client.py:71-178; sdk/python/test_stream.py:63-253" }
+    },
+    {
+      "id": "go-sdk-contract-tests",
+      "claim": "Go module tests exercise nine plain-text JSON/SSE ingress-to-target dialect paths, cached fallback, stream cancellation, truncation, and refusal to replay an opened stream",
+      "status": "observed",
+      "evidence": { "source": "sdk/go/client_test.go:16-292; sdk/go/stream_test.go:109-425" }
+    },
+    {
+      "id": "sdk-three-language-e2e",
+      "claim": "the opt-in gateway HTTP fixture primes Node, Python and Go client caches, closes the gateway listener, then checks direct JSON and SSE conversion for each against a synthetic upstream",
+      "status": "observed",
+      "evidence": { "source": "go/internal/api/client_snapshot_test.go:114-326" }
+    }
+  ]
+}

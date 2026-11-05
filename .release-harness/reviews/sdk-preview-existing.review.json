@@ -1,0 +1,213 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "change",
+  "contract": {
+    "digest": "da05219969e051b692980ada8e8066ac909bf88d11ad6a5af6338834a8cc384f"
+  },
+  "authoring_provenance": {
+    "status": "established",
+    "path": ".release-harness/drafts/llm-gateway.record.json",
+    "digest": "e819045146db82b3754d02e0950d13ca8527706a2b478ada58c176c24e706d2b"
+  },
+  "sources": [
+    {
+      "source_id": "primary",
+      "status": "established",
+      "repository_identity": "https://github.com/kayiik/llm-gateway.git",
+      "base_ref": "6b4e927",
+      "base_commit": "6b4e9278bd072a6a121740d339fef7c924f5381a",
+      "merge_base": "6b4e9278bd072a6a121740d339fef7c924f5381a",
+      "head_commit": "8aea559fceb8445e980e1d22b12df1ff343a9985",
+      "head_tree": "d3f17db58d5ac0d551dc400592961fc2b232f910",
+      "reviewed_source_digest": "caa4efa60d69551748c001f19d23bd28fa4cf4329d8284443af45773a258a0e4",
+      "changed_paths": [
+        {
+          "status": "modified",
+          "path": "docs/API.md",
+          "old_blob": "9be9522b44f69c5eae0eff352fd3f39dd6ddfc3b",
+          "new_blob": "bbcb296a7f37018539b2344c3a594253b3d6f431"
+        },
+        {
+          "status": "modified",
+          "path": "docs/LIMITATIONS.md",
+          "old_blob": "246ec6589c900dc643a78376ec5035e95635f4ed",
+          "new_blob": "c0f2f05d5c26075d304ba7f6175d6cceec51ba67"
+        },
+        {
+          "status": "added",
+          "path": "docs/SDK_DESIGN.md",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "d7040ed078afb38736908019f65ea42742448c48"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/admin.go",
+          "old_blob": "f8d4059a3c60df336f9424b19a02da1471c27e8e",
+          "new_blob": "5471854cdd56093a9c71accae301e3efafc4e70b"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/api/client_snapshot_test.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "0887b1d9be9287b9b2e88680facd3f40fb167c3f"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/api/client_snapshot.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "61df491ef3f15cb62077960996dff5e3a2e7d310"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/server.go",
+          "old_blob": "d863967d99206f721d28e854fc49e6b71301c8d6",
+          "new_blob": "1197393a6e63e873b0587d1ef4f79b46ddf25fda"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/config/keys.go",
+          "old_blob": "7c9c31abe70fb85e76bf630349068096604d378c",
+          "new_blob": "c760c87d378660ae08149e722b44fd07c3a998db"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/keys.go",
+          "old_blob": "c01d8cbf88af45bd412b76bf42264372185d1bb3",
+          "new_blob": "c4ce05be0ce02db6177775fad6bfe39579fa893b"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/models.go",
+          "old_blob": "4adb023aa92ec9832c1f54a41e72963084e9b236",
+          "new_blob": "8429f8e5ce6b1bc6fa891db52c4dc1ff542b434f"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/providers/offline.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "67756070c6dd261303e64a40e996acda665b27ff"
+        },
+        {
+          "status": "renamed",
+          "path": "go/internal/web/console/dist/assets/index-DrNwpmpN.js",
+          "old_blob": "0e2e6f73dd389d44ad9c3578b69ce9ac889670be",
+          "new_blob": "5bc8aef9c3030198b5e8fa8f246d07423633b8ab"
+        },
+        {
+          "status": "modified",
+          "path": "README.md",
+          "old_blob": "40f94dc04e36c8326e0c2d9eb9b0b359f57ef3f8",
+          "new_blob": "3181c5252f177a52c553457e985955bea0173e38"
+        }
+      ]
+    }
+  ],
+  "facts": [
+    {
+      "id": "F1",
+      "claim": "The exact primary source is commit 8aea559fceb8445e980e1d22b12df1ff343a9985. Against its parent it changes the key policy, adds an offline snapshot endpoint and SDK modules, updates the console and its built asset, and documents a source-only SDK preview. No existing gateway CLI, health, request-error or metrics handler was edited.",
+      "status": "observed",
+      "evidence": { "source": "8aea559fceb8445e980e1d22b12df1ff343a9985", "method": "Release-Harness exact Git source capture, git diff 6b4e927..8aea559 --name-status and inspected changed source" }
+    },
+    {
+      "id": "F2",
+      "claim": "Gateway Go build, vet, full test suite and staticcheck passed for the reviewed implementation. Built-binary vulnerability scan found no known vulnerabilities; source-mode scanning cannot load this Go 1.27 module with the installed scanner loader.",
+      "status": "observed",
+      "evidence": { "source": "go/cmd/llmgw/main.go; go/internal/api/client_snapshot_test.go", "method": "Local go build ./..., go vet ./..., go test ./..., go run honnef.co/go/tools/cmd/staticcheck@latest ./..., govulncheck -mode=binary" }
+    },
+    {
+      "id": "F3",
+      "claim": "Gateway snapshot tests refuse ordinary and static administrator keys, require an admin-granted project-key offline flag, intersect key/project scopes, and omit credential kinds unsupported by the direct SDK. Existing public model listing and malformed-request handlers were not changed.",
+      "status": "observed",
+      "evidence": { "source": "go/internal/api/client_snapshot.go:28-112; go/internal/api/client_snapshot_test.go:22-113,327-406", "method": "Source review, focused snapshot HTTP tests, full go/internal/api test suite" }
+    },
+    {
+      "id": "F4",
+      "claim": "The console API-key editor can set offline access, its assets were rebuilt, lint and 284 console tests passed, and npm run check:dist reported no difference after the intended rebuilt assets were staged. Existing console-serving tests passed in the gateway Go suite.",
+      "status": "observed",
+      "evidence": { "source": "go/internal/web/console/src/pages/ApiKeys.tsx; go/internal/web/console/src/components/KeyScopeEditor.tsx; go/internal/web/console/dist/index.html", "method": "npm run lint, npm test, npm run check:dist, go test ./internal/api" }
+    },
+    {
+      "id": "F5",
+      "claim": "All three SDK suites passed on their stated minimum runtimes, the real gateway HTTP fixture delivered scoped snapshots and then after shutdown all three SDKs made both direct JSON and converted SSE calls to a synthetic upstream in three consecutive runs. Native streams pass through and unsupported cross-dialect content fails closed.",
+      "status": "observed",
+      "evidence": { "source": "sdk/node/index.test.mjs; sdk/node/stream.test.mjs; sdk/python/test_client.py; sdk/python/test_stream.py; sdk/go/client_test.go; sdk/go/stream_test.go; go/internal/api/client_snapshot_test.go:114-326", "method": "Node 20, Python 3.10, Go 1.23 local tests and LLMGW_SDK_E2E=1 go test ./internal/api -run TestClientSnapshotHTTPProvidesUsableDirectConnection -count=3" }
+    },
+    {
+      "id": "F6",
+      "claim": "Existing malformed Chat, Responses and Messages error handlers, administrator authentication and default-off metrics remain covered by the gateway test suite; the SDK change adds only a separate data-plane read and an admin-only key policy flag.",
+      "status": "observed",
+      "evidence": { "source": "go/internal/api/openai.go; go/internal/api/responses_api.go; go/internal/api/anthropic.go; go/internal/api/sso.go; go/internal/api/metrics.go; go/internal/api/admin.go", "method": "Source diff and full Go API test suite" }
+    },
+    {
+      "id": "F7",
+      "claim": "No real upstream account or provider was qualified by this SDK preview work. The evidence is gateway-owned synthetic fixture behavior and does not certify provider entitlement, token rotation, media or tool translation.",
+      "status": "not_established"
+    }
+  ],
+  "impact": {
+    "assertions": [
+      {
+        "id": "A1",
+        "impact": "unchanged",
+        "supported_by": ["F1", "F2"]
+      },
+      {
+        "id": "A2",
+        "impact": "unchanged",
+        "supported_by": ["F1", "F2"]
+      },
+      {
+        "id": "A3",
+        "impact": "unchanged",
+        "supported_by": ["F1", "F2"]
+      },
+      {
+        "id": "A4",
+        "impact": "unchanged",
+        "supported_by": ["F1", "F2", "F3"]
+      },
+      {
+        "id": "A5",
+        "impact": "unchanged",
+        "supported_by": ["F1", "F2", "F6"]
+      },
+      {
+        "id": "A6",
+        "impact": "unchanged",
+        "supported_by": ["F1", "F2", "F6"]
+      },
+      {
+        "id": "A7",
+        "impact": "unchanged",
+        "supported_by": ["F1", "F2", "F6"]
+      },
+      {
+        "id": "A8",
+        "impact": "unchanged",
+        "supported_by": ["F1", "F3", "F6"]
+      },
+      {
+        "id": "A9",
+        "impact": "unchanged",
+        "supported_by": ["F2", "F4"]
+      },
+      {
+        "id": "A10",
+        "impact": "unchanged",
+        "supported_by": ["F1", "F2", "F6"]
+      }
+    ],
+    "requires": [],
+    "possible_binding_changes": ["The SDK preview uses a separate source-only tag; the existing v* binary/image release workflow is not its execution binding."]
+  },
+  "questions": [],
+  "conclusion": {
+    "action": "reuse_contract",
+    "summary": "Propose reusing the gateway's accepted A1-A10 assertions for exact source 8aea559. The new offline snapshot and SDK source preview do not change the ten CLI, health, model-listing, malformed-request, admin-auth, console-serving or metrics promises; the console was rebuilt and checked. The SDK's new public claims are proposed separately in the sdk-preview draft and are not certified by A1-A10. Evidence is synthetic fixture-only, with no live-provider qualification or claim of published package artifacts. An attributable release-owner confirmation is still required."
+  },
+  "proposed": {
+    "by": "agent-session",
+    "at": "2026-11-04T22:42:02.276Z"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "schema_version": "1.0.0",
+  "proposition": {
+    "subject": {
+      "id": "llm-gateway-sdk-preview",
+      "name": "LLM Gateway client SDK source preview"
+    },
+    "assertions": [
+      {
+        "id": "A1",
+        "kind": "cli",
+        "target": "gateway-snapshot",
+        "description": "the gateway tests preserve default denial, key and project scoping, and usable direct-credential snapshots",
+        "expect": { "exit_code": 0 },
+        "supported_by": ["snapshot-grant-tests", "snapshot-http-test"]
+      },
+      {
+        "id": "A2",
+        "kind": "cli",
+        "target": "node-sdk",
+        "description": "the Node client tests cover nine JSON and text-SSE dialect paths, cache isolation, fallback, and stream failure boundaries",
+        "expect": { "exit_code": 0 },
+        "supported_by": ["node-sdk-contract-tests"]
+      },
+      {
+        "id": "A3",
+        "kind": "cli",
+        "target": "python-sdk",
+        "description": "the Python client tests cover nine JSON and text-SSE dialect paths, cache isolation, fallback, and stream failure boundaries",
+        "expect": { "exit_code": 0 },
+        "supported_by": ["python-sdk-contract-tests"]
+      },
+      {
+        "id": "A4",
+        "kind": "cli",
+        "target": "go-sdk",
+        "description": "the Go client tests cover nine JSON and text-SSE dialect paths, cache isolation, fallback, and stream failure boundaries",
+        "expect": { "exit_code": 0 },
+        "supported_by": ["go-sdk-contract-tests"]
+      },
+      {
+        "id": "A5",
+        "kind": "cli",
+        "target": "sdk-e2e",
+        "description": "the actual gateway handler delivers a scoped snapshot and all three clients survive its loss with direct JSON and converted SSE",
+        "expect": { "exit_code": 0 },
+        "supported_by": ["sdk-three-language-e2e"]
+      }
+    ]
+  },
+  "questions": [
+    {
+      "id": "Q1",
+      "question": "For the source-only preview, should the three SDK clients and the gateway snapshot be one accepted subject, qualified by these fixture assertions without a blanket real-provider certification?",
+      "blocking": true,
+      "resolution": "Yes. This is one source-only preview of the scoped gateway snapshot and all three client SDKs. The fixture-backed assertions qualify the preview's owned behavior, without certifying every live upstream provider.",
+      "resolved_by": "kayiik"
+    }
+  ]
+}

@@ -1,0 +1,136 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "baseline",
+  "contract": {
+    "digest": "944313290bbd2da2f8c2ae10ab118f873fc45aeb02ea6a8612c39c66deaff555"
+  },
+  "authoring_provenance": {
+    "status": "not_available",
+    "reason": "No retained authoring record was selected."
+  },
+  "sources": [
+    {
+      "source_id": "primary",
+      "status": "established",
+      "repository_identity": "https://github.com/kayiik/llm-gateway.git",
+      "head_commit": "8aea559fceb8445e980e1d22b12df1ff343a9985",
+      "head_tree": "d3f17db58d5ac0d551dc400592961fc2b232f910",
+      "reviewed_source_digest": "caa4efa60d69551748c001f19d23bd28fa4cf4329d8284443af45773a258a0e4",
+      "changed_paths": []
+    }
+  ],
+  "facts": [
+    {
+      "id": "F1",
+      "claim": "Commit 8aea559fceb8445e980e1d22b12df1ff343a9985 adds an offline snapshot handler with a deny-by-default key flag, key/project policy intersection, and direct API-key credential-kind filtering. The gateway's focused snapshot tests and full API suite passed.",
+      "status": "observed",
+      "evidence": {
+        "source": "go/internal/api/client_snapshot.go:28-112; go/internal/api/client_snapshot_test.go:22-114,327-406",
+        "method": "Exact-source code review, focused Go API tests and full go test ./..."
+      }
+    },
+    {
+      "id": "F2",
+      "claim": "The Node client preserves gateway-first calls and project-key-bound cache, and tests nine text-only JSON and SSE dialect directions, cancellation, proxy-outage control, error terminals and no replay after a stream opens. Its suite passed under Node 20 and the local current runtime.",
+      "status": "observed",
+      "evidence": {
+        "source": "sdk/node/index.mjs; sdk/node/stream.mjs; sdk/node/index.test.mjs; sdk/node/stream.test.mjs",
+        "method": "npm test; npm exec --yes --package=node@20 -- node --test index.test.mjs stream.test.mjs"
+      }
+    },
+    {
+      "id": "F3",
+      "claim": "The Python client preserves gateway-first calls and project-key-bound cache, and tests nine text-only JSON and SSE dialect directions, cancellation, proxy-outage control, error terminals and no replay after a stream opens. Its suite passed under Python 3.10 and the local current runtime.",
+      "status": "observed",
+      "evidence": {
+        "source": "sdk/python/llmgw_client/__init__.py; sdk/python/llmgw_client/_stream.py; sdk/python/test_client.py; sdk/python/test_stream.py",
+        "method": "python -m unittest test_stream.py test_client.py; uv run --python 3.10 --no-project python -m unittest test_stream.py test_client.py"
+      }
+    },
+    {
+      "id": "F4",
+      "claim": "The Go client preserves gateway-first calls and project-key-bound cache, and tests nine text-only JSON and SSE dialect directions, cancellation, proxy-outage control, error terminals and no replay after a stream opens. Its module suite passed under Go 1.23 and the local current runtime; vet and staticcheck passed.",
+      "status": "observed",
+      "evidence": {
+        "source": "sdk/go/client.go; sdk/go/stream.go; sdk/go/stream_bridge.go; sdk/go/client_test.go; sdk/go/stream_test.go",
+        "method": "go test ./...; GOTOOLCHAIN=go1.23.12 go test ./...; go vet ./...; go run honnef.co/go/tools/cmd/staticcheck@latest ./..."
+      }
+    },
+    {
+      "id": "F5",
+      "claim": "An opt-in HTTP fixture started the real gateway handler, issued a project-key-scoped snapshot and let Node, Python and Go save it. After the gateway listener closed, all three sent both JSON and incremental SSE Chat requests to a synthetic Anthropic-shaped direct target, converted the answers and reached a success terminal. Three consecutive local runs passed.",
+      "status": "observed",
+      "evidence": {
+        "source": "go/internal/api/client_snapshot_test.go:114-326; sdk/go/client_test.go:235-292",
+        "method": "LLMGW_SDK_E2E=1 go test ./internal/api -run TestClientSnapshotHTTPProvidesUsableDirectConnection -count=3"
+      }
+    },
+    {
+      "id": "F6",
+      "claim": "A real upstream provider account, entitlement and the behavior of all vendor-specific media, tool or opaque stream fields were not established by fixture traffic. This SDK preview does not certify those paths.",
+      "status": "not_established"
+    },
+    {
+      "id": "F7",
+      "claim": "GitHub main-branch CI for commit 8aea559 passed, including Go build, vet, test, race, vulnerability scan, platform-specific checks, console tests and committed-dist verification, cross-compilation and deterministic Docker acceptance. Its Pages workflow also succeeded. CI does not separately run the three SDK module suites.",
+      "status": "observed",
+      "evidence": {
+        "source": "https://github.com/kayiik/llm-gateway/actions/runs/41927990353",
+        "method": "gh run watch --exit-status and gh run view for the exact commit; gh run list for Pages"
+      }
+    }
+  ],
+  "impact": {
+    "assertions": [
+      {
+        "id": "A1",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F5",
+          "F7"
+        ]
+      },
+      {
+        "id": "A2",
+        "impact": "unchanged",
+        "supported_by": [
+          "F2"
+        ]
+      },
+      {
+        "id": "A3",
+        "impact": "unchanged",
+        "supported_by": [
+          "F3"
+        ]
+      },
+      {
+        "id": "A4",
+        "impact": "unchanged",
+        "supported_by": [
+          "F4"
+        ]
+      },
+      {
+        "id": "A5",
+        "impact": "unchanged",
+        "supported_by": [
+          "F5"
+        ]
+      }
+    ],
+    "requires": [],
+    "possible_binding_changes": []
+  },
+  "questions": [],
+  "conclusion": {
+    "action": "reuse_contract",
+    "summary": "Propose baseline reuse of the accepted SDK-preview contract for exact committed source 8aea559. The five assertions are supported by gateway snapshot tests, the three language suites on their stated runtimes, and a repeated cross-language real-handler/synthetic-upstream JSON-plus-SSE fixture. Source-only publication does not claim real-provider entitlement, media/tool stream translation, SDK package registry publication, encrypted cache or offline quota enforcement. Operator confirmation of this exact baseline review is required before certification."
+  },
+  "proposed": {
+    "by": "agent-session",
+    "at": "2026-11-04T23:36:19.482Z"
+  },
+  "digest": "148b5e63278de05b8eb8d7e1a08407a5ee0b5ec7bfc04608f00a98adcac939d1"
+}
