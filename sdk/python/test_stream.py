@@ -143,7 +143,7 @@ class HTTPStreamHandler(BaseHTTPRequestHandler):
             first = data.find(b"\r\n\r\n") + 4
             self.wfile.write(data[:first])
             self.wfile.flush()
-            time.sleep(0.15)
+            time.sleep(1.1)
             data = data[first:]
         for offset in range(0, len(data), 13):
             try:
@@ -226,7 +226,9 @@ class HTTPStreamTests(unittest.TestCase):
         gateway, url = self.serve("chat", {"version": 1, "selectors": {}, "targets": {}})
         gateway.stall = True
         with tempfile.TemporaryDirectory() as directory:
-            client = Client(url, "project-key", Path(directory) / "cache.json", lambda *_: [], stream_idle_timeout=0.02)
+            # A 20 ms opening deadline made this fail under concurrent CI load
+            # before the stream opened; the longer gap still proves read-idle expiry.
+            client = Client(url, "project-key", Path(directory) / "cache.json", lambda *_: [], stream_idle_timeout=0.5)
             with client.stream("chat", "coding", {"messages": [{"role": "user", "content": "hi"}]}) as stream:
                 events = iter(stream)
                 next(events)
