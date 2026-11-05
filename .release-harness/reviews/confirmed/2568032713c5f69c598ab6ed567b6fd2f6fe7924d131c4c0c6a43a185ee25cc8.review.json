@@ -1,0 +1,148 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "change",
+  "contract": {
+    "digest": "da05219969e051b692980ada8e8066ac909bf88d11ad6a5af6338834a8cc384f"
+  },
+  "authoring_provenance": {
+    "status": "not_available",
+    "reason": "No retained authoring record was selected."
+  },
+  "sources": [
+    {
+      "source_id": "primary",
+      "status": "established",
+      "repository_identity": "https://github.com/kayiik/llm-gateway.git",
+      "base_ref": "8aea559",
+      "base_commit": "8aea559fceb8445e980e1d22b12df1ff343a9985",
+      "merge_base": "8aea559fceb8445e980e1d22b12df1ff343a9985",
+      "head_commit": "8cf82ed58f49eecca12eed9392019470b8b0092e",
+      "head_tree": "d3d7f0721fbdf3ca9cac4e828e73e484cbfdabe8",
+      "reviewed_source_digest": "590986c7e2a03d657965f9e885947c219821fe20e74a369f9138d9c52456ab2c",
+      "changed_paths": [
+        {
+          "status": "modified",
+          "path": "sdk/python/test_stream.py",
+          "old_blob": "3a95269d10c746cf32a8ab1032bc590e6a623fcc",
+          "new_blob": "308079aa12d80d29b267639be28580239a79a639"
+        }
+      ]
+    }
+  ],
+  "facts": [
+    {
+      "id": "F1",
+      "claim": "The exact reviewed product source differs from 8aea559 only in sdk/python/test_stream.py, increasing a Python test HTTP opening/idle deadline and stall interval. No gateway CLI, health, models, request-error, administrator-auth, console or metrics implementation changed.",
+      "status": "observed",
+      "evidence": {
+        "source": "sdk/python/test_stream.py:142-150,225-236",
+        "method": "Release-Harness exact Git source capture and git diff 8aea559..25fac22 --name-status"
+      }
+    },
+    {
+      "id": "F2",
+      "claim": "The gateway A1-A10 contract was confirmed for the previous exact source. The only product delta is a Python SDK fixture, so it changes none of those ten asserted paths or their route behavior; main-branch CI passed on source commit 25fac22.",
+      "status": "observed",
+      "evidence": {
+        "source": "25fac22; .release-harness/reviews/confirmed/915523dd2ab1e1df71293b562d41449dfc0636203f97d168a8a04a1a6074c8b6.review.json; https://github.com/kayiik/llm-gateway/actions/runs/42034607742",
+        "method": "Exact-source diff, previous confirmed gateway review, and GitHub CI for the corrected source"
+      }
+    }
+  ],
+  "impact": {
+    "assertions": [
+      {
+        "id": "A1",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2"
+        ]
+      },
+      {
+        "id": "A2",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2"
+        ]
+      },
+      {
+        "id": "A3",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2"
+        ]
+      },
+      {
+        "id": "A4",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2"
+        ]
+      },
+      {
+        "id": "A5",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2"
+        ]
+      },
+      {
+        "id": "A6",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2"
+        ]
+      },
+      {
+        "id": "A7",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2"
+        ]
+      },
+      {
+        "id": "A8",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2"
+        ]
+      },
+      {
+        "id": "A9",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2"
+        ]
+      },
+      {
+        "id": "A10",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2"
+        ]
+      }
+    ],
+    "requires": [],
+    "possible_binding_changes": []
+  },
+  "questions": [],
+  "conclusion": {
+    "action": "reuse_contract",
+    "summary": "Propose reusing the gateway's accepted A1-A10 assertions for the exact source after a Python SDK test-only timing correction. No implementation or test of the ten gateway CLI/HTTP/auth/console/metrics promises changed; the previous source passed the gateway suite and CI. This review makes no broader live-provider claim. Exact release-owner confirmation remains required."
+  },
+  "proposed": {
+    "by": "agent-session",
+    "at": "2026-11-05T13:20:45.326Z"
+  },
+  "digest": "2568032713c5f69c598ab6ed567b6fd2f6fe7924d131c4c0c6a43a185ee25cc8"
+}

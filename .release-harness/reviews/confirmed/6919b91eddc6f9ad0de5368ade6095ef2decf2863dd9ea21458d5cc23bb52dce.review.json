@@ -1,0 +1,135 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "change",
+  "contract": {
+    "digest": "944313290bbd2da2f8c2ae10ab118f873fc45aeb02ea6a8612c39c66deaff555"
+  },
+  "authoring_provenance": {
+    "status": "not_available",
+    "reason": "No retained authoring record was selected."
+  },
+  "sources": [
+    {
+      "source_id": "primary",
+      "status": "established",
+      "repository_identity": "https://github.com/kayiik/llm-gateway.git",
+      "base_ref": "8aea559",
+      "base_commit": "8aea559fceb8445e980e1d22b12df1ff343a9985",
+      "merge_base": "8aea559fceb8445e980e1d22b12df1ff343a9985",
+      "head_commit": "8cf82ed58f49eecca12eed9392019470b8b0092e",
+      "head_tree": "d3d7f0721fbdf3ca9cac4e828e73e484cbfdabe8",
+      "reviewed_source_digest": "590986c7e2a03d657965f9e885947c219821fe20e74a369f9138d9c52456ab2c",
+      "changed_paths": [
+        {
+          "status": "modified",
+          "path": "sdk/python/test_stream.py",
+          "old_blob": "3a95269d10c746cf32a8ab1032bc590e6a623fcc",
+          "new_blob": "308079aa12d80d29b267639be28580239a79a639"
+        }
+      ]
+    }
+  ],
+  "facts": [
+    {
+      "id": "F1",
+      "claim": "The exact reviewed product source differs from 8aea559 only in sdk/python/test_stream.py: the idle fixture keeps the stream open for 1.1 seconds and permits 0.5 seconds for opening/idle, replacing a 0.15-second stall and a flaky 0.02-second deadline. No SDK implementation, snapshot handler, or other product test changed.",
+      "status": "observed",
+      "evidence": {
+        "source": "sdk/python/test_stream.py:142-150,225-236",
+        "method": "Release-Harness exact Git source capture and git diff 8aea559..25fac22 -- sdk/python/test_stream.py"
+      }
+    },
+    {
+      "id": "F2",
+      "claim": "All 12 Python SDK tests passed on the local interpreter and Python 3.10 after the fixture correction. The isolated stream-idle case now opens the HTTP response before its read-idle deadline and still requires a StreamProtocolError on a stalled read.",
+      "status": "observed",
+      "evidence": {
+        "source": "sdk/python/test_stream.py:225-236",
+        "method": "python -W always::ResourceWarning -m unittest discover -s sdk/python -p test_*.py; uv run --python 3.10 --no-project python -m unittest test_stream.py test_client.py"
+      }
+    },
+    {
+      "id": "F3",
+      "claim": "Gateway snapshot, Node and Go client source, and the synthetic cross-language JSON/SSE gateway fixture are byte-for-byte unchanged from the previously confirmed baseline. The corrected Python fixture does not alter those accepted behavior assertions.",
+      "status": "observed",
+      "evidence": {
+        "source": "8aea559fceb8445e980e1d22b12df1ff343a9985..25fac22; go/internal/api/client_snapshot_test.go; sdk/node; sdk/go",
+        "method": "git diff --name-status and previous confirmed baseline review 148b5e63278de05b"
+      }
+    },
+    {
+      "id": "F4",
+      "claim": "Real upstream provider entitlement and unqualified media/tool dialect behavior remain outside this fixture-backed source-only preview.",
+      "status": "not_established"
+    },
+    {
+      "id": "F5",
+      "claim": "Main-branch CI succeeded on source commit 25fac22. A local exploratory run of all five SDK-preview assertions with corrected executable bindings passed 5/5; its sealed verdict is UNPROVEN because exploratory runs cannot certify.",
+      "status": "observed",
+      "evidence": {
+        "source": "https://github.com/kayiik/llm-gateway/actions/runs/42034607742; .release-harness/runs/run-20261105T132232-6bwg2r",
+        "method": "gh run list for exact source; release-harness verify run-20261105T132232-6bwg2r"
+      }
+    }
+  ],
+  "impact": {
+    "assertions": [
+      {
+        "id": "A1",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A2",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3"
+        ]
+      },
+      {
+        "id": "A3",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F5"
+        ]
+      },
+      {
+        "id": "A4",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A5",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      }
+    ],
+    "requires": [],
+    "possible_binding_changes": []
+  },
+  "questions": [],
+  "conclusion": {
+    "action": "reuse_contract",
+    "summary": "Propose reusing SDK preview assertions A1-A5 for the exact source after the Python stream-idle fixture stabilization. The only changed product path is the Python test, and the 0.5-second opening/idle deadline still verifies a 1.1-second stalled stream without misclassifying a slow connection opening. Python 3.10 and current-runtime suites passed; snapshot, Node, Go, and three-language synthetic E2E contract surfaces are unchanged. This review does not add real-provider qualification. Exact release-owner confirmation remains required."
+  },
+  "proposed": {
+    "by": "agent-session",
+    "at": "2026-11-05T13:19:59.154Z"
+  },
+  "digest": "6919b91eddc6f9ad0de5368ade6095ef2decf2863dd9ea21458d5cc23bb52dce"
+}
