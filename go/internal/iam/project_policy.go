@@ -27,13 +27,13 @@ func SetProjectPolicy(projectID string, policy KeyPolicy) (ProjectPolicy, error)
 	models, _ := json.Marshal(policy.AllowedModels)
 	providers, _ := json.Marshal(policy.AllowedProviders)
 	now := time.Now().Unix()
-	_, err = db.Exec(`
+	result, err := db.Exec(`
 INSERT INTO project_policies(
  project_id,allowed_models_json,allowed_providers_json,rpm,daily_requests,
  monthly_requests,daily_input_tokens,daily_output_tokens,monthly_total_tokens,
  daily_cost_microusd,monthly_cost_microusd,daily_credits_milli,
  monthly_credits_milli,updated_at
-) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+) SELECT id,?,?,?,?,?,?,?,?,?,?,?,?,? FROM current_projects WHERE id=?
 ON CONFLICT(project_id) DO UPDATE SET
  allowed_models_json=excluded.allowed_models_json,
  allowed_providers_json=excluded.allowed_providers_json,rpm=excluded.rpm,
@@ -46,13 +46,16 @@ ON CONFLICT(project_id) DO UPDATE SET
  daily_credits_milli=excluded.daily_credits_milli,
  monthly_credits_milli=excluded.monthly_credits_milli,
  updated_at=excluded.updated_at`,
-		projectID, string(models), string(providers), policy.RPM,
+		string(models), string(providers), policy.RPM,
 		policy.DailyRequests, policy.MonthlyRequests, policy.DailyInputTokens,
 		policy.DailyOutputTokens, policy.MonthlyTotalTokens,
 		policy.DailyCostMicroUSD, policy.MonthlyCostMicroUSD,
-		policy.DailyCreditsMilli, policy.MonthlyCreditsMilli, now,
+		policy.DailyCreditsMilli, policy.MonthlyCreditsMilli, now, projectID,
 	)
 	if err != nil {
+		return ProjectPolicy{}, err
+	}
+	if err := requireProjectAffected(result); err != nil {
 		return ProjectPolicy{}, err
 	}
 	return ProjectPolicy{ProjectID: projectID, KeyPolicy: policy, UpdatedAt: now}, nil
@@ -63,15 +66,19 @@ func GetProjectPolicy(projectID string) (ProjectPolicy, error) {
 	if err != nil {
 		return ProjectPolicy{}, err
 	}
+	return readProjectPolicy(db, projectID)
+}
+
+func readProjectPolicy(db interface{ QueryRow(string, ...any) *sql.Row }, projectID string) (ProjectPolicy, error) {
 	var policy ProjectPolicy
 	var models, providers string
 	policy.ProjectID = projectID
-	err = db.QueryRow(`
+	err := db.QueryRow(`
 SELECT allowed_models_json,allowed_providers_json,rpm,daily_requests,
        monthly_requests,daily_input_tokens,daily_output_tokens,
        monthly_total_tokens,daily_cost_microusd,monthly_cost_microusd,
        daily_credits_milli,monthly_credits_milli,updated_at
-FROM project_policies WHERE project_id=?`, projectID).Scan(
+FROM project_policies WHERE project_id=? AND project_id IN (SELECT id FROM current_projects)`, projectID).Scan(
 		&models, &providers, &policy.RPM, &policy.DailyRequests,
 		&policy.MonthlyRequests, &policy.DailyInputTokens,
 		&policy.DailyOutputTokens, &policy.MonthlyTotalTokens,

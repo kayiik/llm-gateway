@@ -91,6 +91,35 @@ type projectBody struct {
 	Name string `json:"name"`
 }
 
+func requireAdminProject(w http.ResponseWriter, r *http.Request, id string) (iam.Project, bool) {
+	if !adminAuthed(w, r) {
+		return iam.Project{}, false
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		writeError(w, 400, "project_id required")
+		return iam.Project{}, false
+	}
+	project, found, err := iam.ProjectByID(id)
+	if err != nil {
+		writeError(w, 500, "Identity store unavailable.")
+		return iam.Project{}, false
+	}
+	if !found {
+		writeError(w, 404, "unknown project")
+		return iam.Project{}, false
+	}
+	return project, true
+}
+
+func writeProjectChangeError(w http.ResponseWriter, err error, status int, message string) {
+	if errors.Is(err, iam.ErrProjectNotFound) {
+		writeError(w, 404, "unknown project")
+		return
+	}
+	writeError(w, status, message)
+}
+
 func handleListProjects(w http.ResponseWriter, r *http.Request) {
 	if !adminAuthed(w, r) {
 		return
@@ -121,6 +150,24 @@ func handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, project)
 }
 
+func handleDeleteProject(w http.ResponseWriter, r *http.Request) {
+	if !adminAuthed(w, r) {
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	_, err := iam.DeleteProject(id, newAdminAuditEvent(r, nil))
+	switch {
+	case errors.Is(err, iam.ErrProjectNotFound):
+		writeError(w, http.StatusNotFound, "unknown project")
+	case errors.Is(err, iam.ErrProjectNotDisabled):
+		writeError(w, http.StatusConflict, "Disable the project before deleting it.")
+	case err != nil:
+		writeError(w, http.StatusInternalServerError, "Identity store unavailable.")
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	}
+}
+
 func handleProjectStatus(w http.ResponseWriter, r *http.Request) {
 	if !adminAuthed(w, r) {
 		return
@@ -131,7 +178,7 @@ func handleProjectStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := iam.SetProjectStatus(strings.TrimSpace(body.ID), strings.TrimSpace(body.Status)); err != nil {
-		writeError(w, 400, err.Error())
+		writeProjectChangeError(w, err, 400, err.Error())
 		return
 	}
 	auditAdmin(r, "project.status", "project", body.ID, map[string]any{"status": body.Status})
@@ -139,10 +186,11 @@ func handleProjectStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGetProjectPolicy(w http.ResponseWriter, r *http.Request) {
-	if !adminAuthed(w, r) {
+	project, ok := requireAdminProject(w, r, r.PathValue("id"))
+	if !ok {
 		return
 	}
-	policy, err := iam.GetProjectPolicy(strings.TrimSpace(r.PathValue("id")))
+	policy, err := iam.GetProjectPolicy(project.ID)
 	if err != nil {
 		writeError(w, 500, "Project policy store unavailable.")
 		return
@@ -161,7 +209,7 @@ func handleSetProjectPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := iam.SetProjectPolicy(strings.TrimSpace(r.PathValue("id")), policy)
 	if err != nil {
-		writeError(w, 400, err.Error())
+		writeProjectChangeError(w, err, 400, err.Error())
 		return
 	}
 	auditAdmin(r, "project.policy", "project", result.ProjectID, nil)
@@ -176,10 +224,11 @@ type credentialBindingBody struct {
 }
 
 func handleListProviderCredentialBindings(w http.ResponseWriter, r *http.Request) {
-	if !adminAuthed(w, r) {
+	project, ok := requireAdminProject(w, r, r.PathValue("id"))
+	if !ok {
 		return
 	}
-	items, err := iam.ListProviderCredentialBindings(strings.TrimSpace(r.PathValue("id")))
+	items, err := iam.ListProviderCredentialBindings(project.ID)
 	if err != nil {
 		writeError(w, 500, "Credential binding store unavailable.")
 		return
@@ -201,7 +250,7 @@ func handleSetProviderCredentialBinding(w http.ResponseWriter, r *http.Request) 
 		strings.TrimSpace(body.PrincipalKind), strings.TrimSpace(body.CredentialID),
 	)
 	if err != nil {
-		writeError(w, 400, err.Error())
+		writeProjectChangeError(w, err, 400, err.Error())
 		return
 	}
 	providers.ResetProviders()
@@ -214,7 +263,8 @@ func handleSetProviderCredentialBinding(w http.ResponseWriter, r *http.Request) 
 }
 
 func handleProviderCredentialBindingStatus(w http.ResponseWriter, r *http.Request) {
-	if !adminAuthed(w, r) {
+	project, ok := requireAdminProject(w, r, r.PathValue("id"))
+	if !ok {
 		return
 	}
 	var body credentialBindingBody
@@ -222,19 +272,18 @@ func handleProviderCredentialBindingStatus(w http.ResponseWriter, r *http.Reques
 		writeError(w, 400, "invalid body")
 		return
 	}
-	projectID := strings.TrimSpace(r.PathValue("id"))
 	providerID := strings.TrimSpace(body.ProviderID)
 	principalKind := strings.TrimSpace(body.PrincipalKind)
 	status := strings.TrimSpace(body.Status)
 	if err := iam.SetProviderCredentialBindingStatus(
-		projectID, providerID, principalKind, status,
+		project.ID, providerID, principalKind, status,
 	); err != nil {
-		writeError(w, 400, err.Error())
+		writeProjectChangeError(w, err, 400, err.Error())
 		return
 	}
 	providers.ResetProviders()
-	providers.ForgetCatalogForProject(providerID, projectID)
-	auditAdmin(r, "provider_credential_binding.status", "project", projectID, map[string]any{
+	providers.ForgetCatalogForProject(providerID, project.ID)
+	auditAdmin(r, "provider_credential_binding.status", "project", project.ID, map[string]any{
 		"provider_id": providerID, "principal_kind": principalKind, "status": status,
 	})
 	writeJSON(w, 200, map[string]any{"ok": true})
@@ -333,15 +382,11 @@ type membershipBody struct {
 }
 
 func handleListMemberships(w http.ResponseWriter, r *http.Request) {
-	if !adminAuthed(w, r) {
+	project, ok := requireAdminProject(w, r, r.URL.Query().Get("project_id"))
+	if !ok {
 		return
 	}
-	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
-	if projectID == "" {
-		writeError(w, 400, "project_id required")
-		return
-	}
-	items, err := iam.ListMemberships(projectID)
+	items, err := iam.ListMemberships(project.ID)
 	if err != nil {
 		writeError(w, 500, "Identity store unavailable.")
 		return
@@ -362,7 +407,7 @@ func handleSetMembership(w http.ResponseWriter, r *http.Request) {
 		strings.TrimSpace(body.ProjectID), strings.TrimSpace(body.PrincipalID),
 		strings.TrimSpace(body.Role),
 	); err != nil {
-		writeError(w, 400, err.Error())
+		writeProjectChangeError(w, err, 400, err.Error())
 		return
 	}
 	auditAdmin(r, "membership.set", "project", body.ProjectID, map[string]any{
@@ -382,7 +427,7 @@ func handleDeleteMembership(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := iam.RemoveMembership(projectID, principalID); err != nil {
-		writeError(w, 500, "Identity store unavailable.")
+		writeProjectChangeError(w, err, 500, "Identity store unavailable.")
 		return
 	}
 	auditAdmin(r, "membership.remove", "project", projectID, map[string]any{"principal_id": principalID})

@@ -123,6 +123,10 @@ func MigrateLegacyKeys() (MigrationResult, error) {
 			return MigrationResult{}, fmt.Errorf("legacy project %q: %w", entry.Project, err)
 		}
 		projectID, created, err := ensureProjectTx(tx, projectSlug, projectSlug)
+		if err == ErrProjectNotFound {
+			// Historical imports may still refer to a deliberately removed project.
+			continue
+		}
 		if err != nil {
 			_ = tx.Rollback()
 			return MigrationResult{}, err
@@ -212,8 +216,12 @@ ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_
 
 func ensureProjectTx(tx *sql.Tx, slug, name string) (string, bool, error) {
 	var id string
-	err := tx.QueryRow("SELECT id FROM projects WHERE slug=?", slug).Scan(&id)
+	var deletedAt sql.NullInt64
+	err := tx.QueryRow("SELECT id,deleted_at FROM projects WHERE slug=?", slug).Scan(&id, &deletedAt)
 	if err == nil {
+		if deletedAt.Valid {
+			return "", false, ErrProjectNotFound
+		}
 		return id, false, nil
 	}
 	if err != sql.ErrNoRows {

@@ -606,6 +606,14 @@ CREATE TABLE target_quota_counters (
 );
 `,
 	},
+	{
+		version: 27,
+		sql: `
+ALTER TABLE projects ADD COLUMN deleted_at INTEGER CHECK (deleted_at IS NULL OR status='disabled');
+CREATE VIEW current_projects AS
+SELECT id,slug,name,status,created_at,updated_at FROM projects WHERE deleted_at IS NULL;
+`,
+	},
 }
 
 func SchemaVersion() int { return len(migrations) }

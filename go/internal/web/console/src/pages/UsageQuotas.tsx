@@ -73,9 +73,9 @@ export function UsageQuotas({ data, mode }: { data: JSONRecord; mode: ConsoleMod
   const groupName = (row: JSONRecord) => {
     const value = stringValue(row[groupBy.field]);
     if (!value) return groupBy.id === "key" || groupBy.id === "project" ? "Administrator or local" : "Not routed";
-    // A key group names its key, a deleted one included, which no key list does.
+    // Historical groups can name a key or project that has left the directory.
     if (groupBy.id === "key") return stringValue(row.key_name, value);
-    if (groupBy.id === "project") return names.project.get(value) ?? value;
+    if (groupBy.id === "project") return stringValue(row.project_name) || names.project.get(value) || value;
     return value;
   };
 

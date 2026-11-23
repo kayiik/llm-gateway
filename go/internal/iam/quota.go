@@ -2,7 +2,6 @@ package iam
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -78,7 +77,7 @@ func CheckAndConsumeRequest(p *config.Principal, now time.Time) error {
 	if err := checkPolicyCounters("key", keyPolicy, counters, quotaWindowEnds(now)); err != nil {
 		return err
 	}
-	projectPolicy, err := projectPolicyTx(tx, p.ProjectID)
+	projectPolicy, err := requestProjectPolicy(tx, p.ProjectID)
 	if err != nil {
 		return err
 	}
@@ -211,32 +210,11 @@ FROM project_quota_counters WHERE project_id=? AND period=? AND period_start=?`,
 	return c, err
 }
 
-func projectPolicyTx(tx *sql.Tx, projectID string) (ProjectPolicy, error) {
-	var policy ProjectPolicy
-	var models, providers string
-	policy.ProjectID = projectID
-	err := tx.QueryRow(`
-SELECT allowed_models_json,allowed_providers_json,rpm,daily_requests,
-       monthly_requests,daily_input_tokens,daily_output_tokens,
-       monthly_total_tokens,daily_cost_microusd,monthly_cost_microusd,
-       daily_credits_milli,monthly_credits_milli,updated_at
-FROM project_policies WHERE project_id=?`, projectID).Scan(
-		&models, &providers, &policy.RPM, &policy.DailyRequests,
-		&policy.MonthlyRequests, &policy.DailyInputTokens,
-		&policy.DailyOutputTokens, &policy.MonthlyTotalTokens,
-		&policy.DailyCostMicroUSD, &policy.MonthlyCostMicroUSD,
-		&policy.DailyCreditsMilli, &policy.MonthlyCreditsMilli,
-		&policy.UpdatedAt,
-	)
-	if err == sql.ErrNoRows {
-		return ProjectPolicy{ProjectID: projectID}, nil
-	}
-	if err != nil {
+func requestProjectPolicy(tx *sql.Tx, projectID string) (ProjectPolicy, error) {
+	if err := requireCurrentProject(tx, projectID); err != nil {
 		return ProjectPolicy{}, err
 	}
-	_ = json.Unmarshal([]byte(models), &policy.AllowedModels)
-	_ = json.Unmarshal([]byte(providers), &policy.AllowedProviders)
-	return policy, nil
+	return readProjectPolicy(tx, projectID)
 }
 
 func quotaPeriods(now time.Time) (minute, day, month int64) {
@@ -288,7 +266,7 @@ func CheckAndConsumeProjectRequest(projectID string, now time.Time) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	policy, err := projectPolicyTx(tx, projectID)
+	policy, err := requestProjectPolicy(tx, projectID)
 	if err != nil {
 		return err
 	}

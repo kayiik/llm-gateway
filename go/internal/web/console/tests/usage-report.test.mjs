@@ -97,11 +97,13 @@ test("the usage chart shows the chosen metric and the breakdown names its rows",
         control_plane: { groups: {
           provider: [{ provider: "openai", requests: 3, errors: 1, input_tokens: 100, output_tokens: 20, cost_microusd: 1500000, average_latency_ms: 812 }],
           key: [{ key_id: "k1", key_name: "ci key", requests: 2 }, { key_id: "", requests: 1 }, { key_id: "k-deleted", key_name: "retired key", requests: 1 }],
+          project: [{ project_id: "p-retired", project_name: "Archived research", requests: 1 }, { project_id: "p-live", requests: 1 }, { project_id: "p-unknown", requests: 1 }],
         } },
       };
     },
   };
-  const render = mount(() => UsageQuotas({ data: { providers: [], projects: [] }, mode: "admin" }));
+  const projects = [{ id: "p-live", name: "Current research" }];
+  const render = mount(() => UsageQuotas({ data: { providers: [], projects }, mode: "admin" }));
   render();
   await settle();
   let tree = render();
@@ -123,6 +125,11 @@ test("the usage chart shows the chosen metric and the breakdown names its rows",
   assert.match(text(tree), /ci key/, "a key is named, not shown by ID");
   assert.match(text(tree), /retired key/, "a deleted key is named as the report names it");
   assert.match(text(tree), /Administrator or local/);
+  select("project").props.onInput(input("project"));
+  tree = render();
+  assert.deepEqual(findAll(tree, (node) => node.type === "td" && node.props.class === "technical").map(text), ["Archived research", "Current research", "p-unknown"]);
+  const picker = find(tree, (node) => node.props?.label === "Project");
+  assert.deepEqual(picker.props.options.map((option) => option.value), ["all", "p-live"]);
 });
 
 test("the portal filters by the providers the user's usage names and breaks it down", async () => {

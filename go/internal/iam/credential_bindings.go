@@ -36,11 +36,16 @@ func SetProviderCredentialBinding(
 	if err != nil {
 		return ProviderCredentialBinding{}, err
 	}
-	if err := validateBindingTargets(db, projectID, providerID, credentialID); err != nil {
+	tx, err := db.Begin()
+	if err != nil {
+		return ProviderCredentialBinding{}, err
+	}
+	defer tx.Rollback()
+	if err := validateBindingTargets(tx, projectID, providerID, credentialID); err != nil {
 		return ProviderCredentialBinding{}, err
 	}
 	now := time.Now().Unix()
-	_, err = db.Exec(`
+	_, err = tx.Exec(`
 INSERT INTO provider_credential_bindings(
  project_id,provider_id,principal_kind,credential_id,status,created_at,updated_at
 ) VALUES(?,?,?,?,'active',?,?)
@@ -51,26 +56,33 @@ ON CONFLICT(project_id,provider_id,principal_kind) DO UPDATE SET
 	if err != nil {
 		return ProviderCredentialBinding{}, err
 	}
-	return providerCredentialBinding(projectID, providerID, principalKind)
+	binding, err := providerCredentialBinding(tx, projectID, providerID, principalKind)
+	if err != nil {
+		return ProviderCredentialBinding{}, err
+	}
+	return binding, tx.Commit()
 }
 
 func validateBindingTargets(
-	db *sql.DB, projectID, providerID, credentialID string,
+	tx *sql.Tx, projectID, providerID, credentialID string,
 ) error {
 	var projectStatus, credentialProvider, credentialStatus, ownerKind, ownerStatus string
-	err := db.QueryRow(`
-SELECT p.status,c.provider_id,c.status,o.kind,o.status
-FROM projects p
-JOIN provider_credentials c ON c.id=?
-JOIN principals o ON o.id=c.principal_id
+	err := tx.QueryRow(`
+SELECT p.status,COALESCE(c.provider_id,''),COALESCE(c.status,''),COALESCE(o.kind,''),COALESCE(o.status,'')
+FROM current_projects p
+LEFT JOIN provider_credentials c ON c.id=?
+LEFT JOIN principals o ON o.id=c.principal_id
 WHERE p.id=?`, credentialID, projectID).Scan(
 		&projectStatus, &credentialProvider, &credentialStatus, &ownerKind, &ownerStatus,
 	)
 	if err == sql.ErrNoRows {
-		return fmt.Errorf("project or provider credential not found")
+		return ErrProjectNotFound
 	}
 	if err != nil {
 		return err
+	}
+	if credentialProvider == "" {
+		return fmt.Errorf("provider credential not found")
 	}
 	if projectStatus != "active" || credentialStatus != "active" || ownerStatus != "active" {
 		return fmt.Errorf("project and provider credential must be active")
@@ -96,7 +108,7 @@ func SetProviderCredentialBindingStatus(
 	}
 	res, err := db.Exec(`
 UPDATE provider_credential_bindings SET status=?,updated_at=?
-WHERE project_id=? AND provider_id=? AND principal_kind=?`,
+WHERE project_id=? AND provider_id=? AND principal_kind=? AND project_id IN (SELECT id FROM current_projects)`,
 		status, time.Now().Unix(), strings.TrimSpace(projectID),
 		strings.TrimSpace(providerID), strings.TrimSpace(principalKind),
 	)
@@ -113,10 +125,10 @@ func ListProviderCredentialBindings(projectID string) ([]ProviderCredentialBindi
 	}
 	query := `
 SELECT project_id,provider_id,principal_kind,credential_id,status,created_at,updated_at
-FROM provider_credential_bindings`
+FROM provider_credential_bindings WHERE project_id IN (SELECT id FROM current_projects)`
 	args := []any{}
 	if projectID = strings.TrimSpace(projectID); projectID != "" {
-		query += " WHERE project_id=?"
+		query += " AND project_id=?"
 		args = append(args, projectID)
 	}
 	query += " ORDER BY project_id,provider_id,principal_kind"
@@ -313,14 +325,10 @@ func decryptStoredCredential(
 }
 
 func providerCredentialBinding(
-	projectID, providerID, principalKind string,
+	tx *sql.Tx, projectID, providerID, principalKind string,
 ) (ProviderCredentialBinding, error) {
-	db, err := DB()
-	if err != nil {
-		return ProviderCredentialBinding{}, err
-	}
 	var binding ProviderCredentialBinding
-	err = db.QueryRow(`
+	err := tx.QueryRow(`
 SELECT project_id,provider_id,principal_kind,credential_id,status,created_at,updated_at
 FROM provider_credential_bindings
 WHERE project_id=? AND provider_id=? AND principal_kind=?`,

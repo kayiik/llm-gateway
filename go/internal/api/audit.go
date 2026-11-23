@@ -21,6 +21,15 @@ func auditAdmin(
 func auditAdminResult(
 	r *http.Request, action, targetType, targetID, result string, detail map[string]any,
 ) {
+	event := newAdminAuditEvent(r, detail)
+	event.Action, event.TargetType, event.TargetID = action, targetType, targetID
+	event.Result = result
+	if err := iam.RecordAudit(event); err != nil {
+		log.Printf("record admin audit: %v", err)
+	}
+}
+
+func newAdminAuditEvent(r *http.Request, detail map[string]any) iam.AuditEvent {
 	actor := getAdminActor(r)
 	if detail == nil {
 		detail = map[string]any{}
@@ -32,12 +41,9 @@ func auditAdminResult(
 	if id := requestIDFrom(r.Context()); id != "" {
 		detail["request_id"] = id
 	}
-	if err := iam.RecordAudit(iam.AuditEvent{
+	return iam.AuditEvent{
 		ActorPrincipalID: actor.PrincipalID, ActorKeyID: actor.KeyID,
-		Action: action, TargetType: targetType, TargetID: targetID,
-		Result: result, Detail: detail,
-	}); err != nil {
-		log.Printf("record admin audit: %v", err)
+		Detail: detail,
 	}
 }
 

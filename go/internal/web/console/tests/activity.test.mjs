@@ -76,11 +76,11 @@ test("the requests page lists, filters and pages recorded requests", async () =>
     async getJSON(mode, path) {
       paths.push(`${mode} ${path}`);
       if (path === "/telemetry") return { recent: [{ ts: 1, requested: "fast", served: "openai/gpt", attempts: [{ provider: "slow", model: "m", ok: false, error: "timeout" }, { provider: "openai", model: "gpt", ok: true }] }] };
-      if (path.includes("before_id=2")) return { requests: [{ id: 1, ts: 1, request_id: "req_old", status_code: 200, endpoint: "chat" }], next_before_id: 0 };
+      if (path.includes("before_id=2")) return { requests: [{ id: 1, ts: 1, request_id: "req_old", status_code: 200, endpoint: "chat", project_id: "p-retired", project_name: "Archived research" }], next_before_id: 0 };
       return {
         requests: [
           { id: 3, ts: 3, request_id: "req_new", endpoint: "chat", status_code: 502, error_code: "upstream", provider: "openai", requested_model: "fast", routed_model: "gpt", key_id: "k1", key_name: "ci key", latency_ms: 812, input_tokens: 11, output_tokens: 3 },
-          { id: 2, ts: 2, request_id: "req_mid", endpoint: "messages", status_code: 200, provider: "anthropic", key_id: "k-deleted", key_name: "retired key" },
+          { id: 2, ts: 2, request_id: "req_mid", endpoint: "messages", status_code: 200, provider: "anthropic", key_id: "k-deleted", key_name: "retired key", project_id: "p-retired", project_name: "Archived research" },
         ],
         next_before_id: 2,
       };
@@ -96,6 +96,7 @@ test("the requests page lists, filters and pages recorded requests", async () =>
   assert.match(text(tree), /req_new/);
   assert.match(text(tree), /ci key/, "a key is named, not shown by ID");
   assert.match(text(tree), /retired key/, "a deleted key is named as the request records it");
+  assert.doesNotMatch(text(tree), /Archived research/, "the caller is the named key when one was used");
   assert.match(text(tree), /fast → gpt/);
   const pill = find(tree, (node) => node.type === "span" && text(node).startsWith("502"));
   assert.match(pill.props.class, /status-pill--attention/);
@@ -106,6 +107,9 @@ test("the requests page lists, filters and pages recorded requests", async () =>
   tree = render();
   assert.match(paths.at(-1), /before_id=2/);
   assert.match(text(tree), /req_old/);
+  assert.match(text(rows().find((row) => text(row).includes("req_old"))), /Archived research/, "a project-only request keeps the retired project's name");
+  const picker = find(tree, (node) => node.props?.label === "Project");
+  assert.deepEqual(picker.props.options.map((option) => option.value), ["all"]);
   assert.equal(find(tree, (node) => node.type === "button" && text(node) === "Load older requests"), undefined, "the last page offers no older one");
   assert.ok(rows().length >= 4);
 

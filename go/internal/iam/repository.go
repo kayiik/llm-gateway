@@ -16,6 +16,9 @@ const maxPrincipalNameRunes = 200
 // ErrPrincipalNotFound reports a principal that does not exist.
 var ErrPrincipalNotFound = errors.New("principal not found")
 
+var ErrProjectNotFound = errors.New("project not found")
+var ErrProjectNotDisabled = errors.New("disable the project before deleting it")
+
 // CreatePrincipal creates a principal whose display name sign-ins may
 // refresh, as an SSO sign-in provisions one.
 func CreatePrincipal(kind, externalSubject, email, displayName string) (Principal, error) {
@@ -267,7 +270,7 @@ func ProjectBySlug(slug string) (Project, bool, error) {
 		return Project{}, false, err
 	}
 	row := db.QueryRow(`
-SELECT id,slug,name,status,created_at,updated_at FROM projects WHERE slug=?`, slug)
+SELECT id,slug,name,status,created_at,updated_at FROM current_projects WHERE slug=?`, slug)
 	p, err := scanProject(row)
 	if err == sql.ErrNoRows {
 		return Project{}, false, nil
@@ -281,7 +284,7 @@ func ProjectByID(id string) (Project, bool, error) {
 		return Project{}, false, err
 	}
 	row := db.QueryRow(`
-SELECT id,slug,name,status,created_at,updated_at FROM projects WHERE id=?`, id)
+SELECT id,slug,name,status,created_at,updated_at FROM current_projects WHERE id=?`, id)
 	p, err := scanProject(row)
 	if err == sql.ErrNoRows {
 		return Project{}, false, nil
@@ -295,7 +298,7 @@ func ListProjects() ([]Project, error) {
 		return nil, err
 	}
 	rows, err := db.Query(`
-SELECT id,slug,name,status,created_at,updated_at FROM projects ORDER BY name,id`)
+SELECT id,slug,name,status,created_at,updated_at FROM current_projects ORDER BY name,id`)
 	if err != nil {
 		return nil, err
 	}
@@ -320,13 +323,74 @@ func SetProjectStatus(id, status string) error {
 		return err
 	}
 	res, err := db.Exec(
-		"UPDATE projects SET status=?,updated_at=? WHERE id=?",
+		"UPDATE projects SET status=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
 		status, time.Now().Unix(), id,
 	)
 	if err != nil {
 		return err
 	}
-	return requireAffected(res, "project")
+	return requireProjectAffected(res)
+}
+
+func requireProjectAffected(res sql.Result) error {
+	n, err := res.RowsAffected()
+	if err == nil && n == 0 {
+		return ErrProjectNotFound
+	}
+	return err
+}
+
+func requireCurrentProject(tx *sql.Tx, id string) error {
+	var exists int
+	err := tx.QueryRow("SELECT 1 FROM current_projects WHERE id=?", id).Scan(&exists)
+	if err == sql.ErrNoRows {
+		return ErrProjectNotFound
+	}
+	return err
+}
+
+// DeleteProject removes a disabled project from management and authentication.
+// Its identity, slug, and dependent history stay reserved. Only the request that
+// first removes it reports a change and records the caller's audit event.
+func DeleteProject(id string, event AuditEvent) (bool, error) {
+	db, err := DB()
+	if err != nil {
+		return false, err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	now := time.Now().Unix()
+	result, err := tx.Exec(`
+UPDATE projects SET deleted_at=?,updated_at=?
+WHERE id=? AND status='disabled' AND deleted_at IS NULL`, now, now, id)
+	if err != nil {
+		return false, err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if changed != 0 {
+		event.Action, event.TargetType, event.TargetID = "project.delete", "project", id
+		event.Result, event.Timestamp = "success", now
+		if err := recordAudit(tx, event); err != nil {
+			return false, fmt.Errorf("record project deletion: %w", err)
+		}
+		err := tx.Commit()
+		return err == nil, err
+	}
+	var deletedAt sql.NullInt64
+	err = tx.QueryRow("SELECT deleted_at FROM projects WHERE id=?", id).Scan(&deletedAt)
+	if err == sql.ErrNoRows {
+		return false, ErrProjectNotFound
+	}
+	if err == nil && !deletedAt.Valid {
+		return false, ErrProjectNotDisabled
+	}
+	return false, err
 }
 
 func SetMembership(projectID, principalID, role string) error {
@@ -339,16 +403,16 @@ func SetMembership(projectID, principalID, role string) error {
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec(`
+	result, err := db.Exec(`
 INSERT INTO project_memberships(project_id,principal_id,role,created_at)
-VALUES(?,?,?,?)
+SELECT id,?,?,? FROM current_projects WHERE id=?
 ON CONFLICT(project_id,principal_id) DO UPDATE SET role=excluded.role`,
-		projectID, principalID, role, time.Now().Unix(),
+		principalID, role, time.Now().Unix(), projectID,
 	)
 	if err != nil {
 		return fmt.Errorf("set membership: %w", err)
 	}
-	return nil
+	return requireProjectAffected(result)
 }
 
 // RemoveMembership removes a principal from a project and revokes the
@@ -365,6 +429,9 @@ func RemoveMembership(projectID, principalID string) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := requireCurrentProject(tx, projectID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(
 		"DELETE FROM project_memberships WHERE project_id=? AND principal_id=?",
 		projectID, principalID,
@@ -402,7 +469,9 @@ func listMemberships(clause string, args ...any) ([]Membership, error) {
 	}
 	rows, err := db.Query(`
 SELECT m.project_id,m.principal_id,m.role,m.created_at,n.display_name,n.kind,n.status
-FROM project_memberships m JOIN principals n ON n.id=m.principal_id `+clause, args...)
+FROM project_memberships m
+JOIN current_projects p ON p.id=m.project_id
+JOIN principals n ON n.id=m.principal_id `+clause, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -425,7 +494,8 @@ func MembershipRole(projectID, principalID string) (string, bool, error) {
 	}
 	var role string
 	err = db.QueryRow(`
-SELECT role FROM project_memberships WHERE project_id=? AND principal_id=?`,
+SELECT m.role FROM project_memberships m JOIN current_projects p ON p.id=m.project_id
+WHERE m.project_id=? AND m.principal_id=?`,
 		projectID, principalID,
 	).Scan(&role)
 	if err == sql.ErrNoRows {

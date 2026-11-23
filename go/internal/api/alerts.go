@@ -33,7 +33,7 @@ func handleCreateAlert(w http.ResponseWriter, r *http.Request) {
 	}
 	rule, err := iam.CreateAlertRule(body)
 	if err != nil {
-		writeError(w, 400, err.Error())
+		writeProjectChangeError(w, err, 400, err.Error())
 		return
 	}
 	auditAdmin(r, "alert.create", "alert_rule", rule.ID, map[string]any{

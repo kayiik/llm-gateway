@@ -54,6 +54,7 @@ type RecordedRequest struct {
 	RoutedModel    string `json:"routed_model,omitempty"`
 	Provider       string `json:"provider,omitempty"`
 	ProjectID      string `json:"project_id,omitempty"`
+	ProjectName    string `json:"project_name,omitempty"`
 	PrincipalID    string `json:"principal_id,omitempty"`
 	KeyID          string `json:"key_id,omitempty"`
 	// KeyName names the request's key, a deleted one included.
@@ -116,7 +117,7 @@ func ListUsageEvents(filter UsageEventFilter) ([]RecordedRequest, int64, error) 
 	rows, err := db.Query(`
 SELECT id,ts,COALESCE(request_id,''),COALESCE(endpoint,''),COALESCE(status_code,0),COALESCE(latency_ms,0),
        COALESCE(requested_model,''),COALESCE(routed_model,''),COALESCE(provider,''),
-       COALESCE(project_id,''),COALESCE(principal_id,''),COALESCE(key_id,''),
+       COALESCE(project_id,''),`+usageProjectNameSQL+`,COALESCE(principal_id,''),COALESCE(key_id,''),
        COALESCE(input_tokens,0),COALESCE(output_tokens,0),COALESCE(cost_microusd,0),
        COALESCE(credits_milli,0),COALESCE(error_code,''),COALESCE(is_stub,0),COALESCE(source_usage_json,'')
 FROM usage_events WHERE `+strings.Join(where, " AND ")+` ORDER BY id DESC LIMIT ?`,
@@ -133,7 +134,7 @@ FROM usage_events WHERE `+strings.Join(where, " AND ")+` ORDER BY id DESC LIMIT 
 		if err := rows.Scan(
 			&event.ID, &event.Timestamp, &event.RequestID, &event.Endpoint, &event.StatusCode, &event.LatencyMS,
 			&event.RequestedModel, &event.RoutedModel, &event.Provider,
-			&event.ProjectID, &event.PrincipalID, &event.KeyID,
+			&event.ProjectID, &event.ProjectName, &event.PrincipalID, &event.KeyID,
 			&event.InputTokens, &event.OutputTokens, &event.CostMicroUSD,
 			&event.CreditsMilli, &event.ErrorCode, &stub, &sourceUsage,
 		); err != nil {
