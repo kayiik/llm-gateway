@@ -1,0 +1,193 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "change",
+  "contract": {
+    "digest": "da05219969e051b692980ada8e8066ac909bf88d11ad6a5af6338834a8cc384f"
+  },
+  "authoring_provenance": {
+    "status": "not_available",
+    "reason": "No retained authoring record was selected."
+  },
+  "sources": [
+    {
+      "source_id": "primary",
+      "status": "established",
+      "repository_identity": "https://github.com/kayiik/llm-gateway.git",
+      "base_ref": "03d43348aaf0c3fae5a047b36365403b452704b1",
+      "base_commit": "03d43348aaf0c3fae5a047b36365403b452704b1",
+      "merge_base": "03d43348aaf0c3fae5a047b36365403b452704b1",
+      "head_commit": "f34fe599aaaeb38e48c45118a91bc79dc71003b3",
+      "head_tree": "93e308b51b612fe5c7ea51747dbd23b14db70ba1",
+      "reviewed_source_digest": "d4078be6d4036747bd7fa331620b2d9bc6c67f7aaf8c951e4da0204925153183",
+      "changed_paths": [
+        {
+          "status": "modified",
+          "path": "go/Dockerfile",
+          "old_blob": "a77a6163aee5bbee74d91ebc7275b991c9ea07a0",
+          "new_blob": "7c9c25a4539f433eb5aeb3c586a5dcbd00925225"
+        },
+        {
+          "status": "modified",
+          "path": "go/go.mod",
+          "old_blob": "2007c9526972211ae79a32e196105c4f0d0ebdc3",
+          "new_blob": "b3c38edc7fada1a7366fbafb2d86ad968ed90a0b"
+        }
+      ]
+    }
+  ],
+  "facts": [
+    {
+      "id": "F1",
+      "claim": "The exact reviewed source changes only go/go.mod and go/Dockerfile: the declared Go version moves from 1.27.3 to 1.27.4 and the Alpine builder moves to golang:1.27.4-alpine at immutable multi-architecture index digest sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280. No gateway, SDK, console, test, configuration-schema, or release-workflow implementation changed.",
+      "status": "observed",
+      "evidence": {
+        "source": "f34fe599aaaeb38e48c45118a91bc79dc71003b3",
+        "method": "Release-Harness exact Git source capture; git diff 03d43348..f34fe599 -- go/go.mod go/Dockerfile; bounded rg search for Go-version declarations"
+      }
+    },
+    {
+      "id": "F2",
+      "claim": "govulncheck reported GO-2026-6859 against the previous Go 1.27.3 declaration and reports no vulnerabilities against this exact Go 1.27.4 source.",
+      "status": "observed",
+      "evidence": {
+        "source": "go/go.mod",
+        "method": "govulncheck ./... before and after the exact toolchain declaration change"
+      }
+    },
+    {
+      "id": "F3",
+      "claim": "Under Go 1.27.4, the full gateway build, vet, CI-pinned staticcheck, hermetic Go suite, all eight release cross-compilation targets, and the real-handler SDK end-to-end test passed. Node, Python, and Go SDK suites also passed.",
+      "status": "observed",
+      "evidence": {
+        "source": "go; sdk/node; sdk/python; sdk/go",
+        "method": "go build ./...; go vet ./...; staticcheck v0.8.1 with x/tools v0.51.0; network-blocked go test ./...; CGO-disabled builds for the eight release targets; LLMGW_SDK_E2E=1 focused HTTP test; each SDK's documented test command"
+      }
+    },
+    {
+      "id": "F4",
+      "claim": "Console lint, its high-severity dependency-audit policy, all 284 console tests, committed-dist verification, documentation checks, workflow validation, live-acceptance policy tests, provider-roster tests, Dockerfile validation, and clean-state deterministic Docker acceptance all passed. Deterministic acceptance observed three of three fixture models passing and a nonblocking pass verdict.",
+      "status": "observed",
+      "evidence": {
+        "source": "go/internal/web/console; scripts/check-docs.mjs; .github/workflows; test/live-acceptance; scripts/provider-roster; go/Dockerfile",
+        "method": "Documented local and CI-equivalent validation commands against exact source f34fe599"
+      }
+    },
+    {
+      "id": "F5",
+      "claim": "The accepted CLI, health, model-listing, malformed-request, administrator-authentication, embedded-console, and default-off-metrics implementation paths are unchanged. Their full gateway and deterministic acceptance coverage passed after the toolchain update.",
+      "status": "observed",
+      "evidence": {
+        "source": ".release-harness/accepted/da05219969e051b692980ada8e8066ac909bf88d11ad6a5af6338834a8cc384f.contract.json; f34fe599aaaeb38e48c45118a91bc79dc71003b3",
+        "method": "Accepted assertion mapping, exact changed-path review, full Go tests, console tests, and deterministic Docker acceptance"
+      }
+    }
+  ],
+  "impact": {
+    "assertions": [
+      {
+        "id": "A1",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A2",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A3",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A4",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A5",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A6",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A7",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A8",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A9",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F4",
+          "F5"
+        ]
+      },
+      {
+        "id": "A10",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      }
+    ],
+    "requires": [],
+    "possible_binding_changes": [
+      "Release binaries and images now build with Go 1.27.4; the Docker builder is pinned to the reviewed 1.27.4 Alpine index digest."
+    ]
+  },
+  "questions": [],
+  "conclusion": {
+    "action": "reuse_contract",
+    "summary": "Propose reusing the accepted gateway A1-A10 contract for exact source f34fe599. The only source changes update the declared Go patch toolchain and its immutable Docker builder to the security-fixed 1.27.4 release. No asserted product implementation path changed; the full gateway, console, SDK, documentation, workflow, cross-compilation, Docker validation, vulnerability, and deterministic acceptance gates passed. This review does not add live-provider qualification or publish SDK language packages. Exact release-owner confirmation remains required."
+  },
+  "proposed": {
+    "by": "release-preparation session",
+    "at": "2026-11-23T19:48:09.963Z"
+  },
+  "digest": "89272105ebbc66182695964c9b53664ccf05467226e3af72ce8eef3ef869498d"
+}
