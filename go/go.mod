@@ -1,6 +1,6 @@
 module llmgw
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/kayiik/llm-provider-auth v0.0.2
