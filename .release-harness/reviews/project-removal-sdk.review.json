@@ -16,15 +16,27 @@
       "base_ref": "c779976b4b4e95cda9d10a7a19649de6c6ec1bfd",
       "base_commit": "c779976b4b4e95cda9d10a7a19649de6c6ec1bfd",
       "merge_base": "c779976b4b4e95cda9d10a7a19649de6c6ec1bfd",
-      "head_commit": "706fecbc285f0e3e415233aaef2b8b7ac50c4b7b",
-      "head_tree": "ae563e72ea9057eb00b542624ddfbc929f8be326",
-      "reviewed_source_digest": "534181e699a74ab019e7b5b4c27f842e0931dfe974f9506ebe1f8c5c939b558f",
+      "head_commit": "1e16e117525a756c301873d22685fbc0bd20f37e",
+      "head_tree": "bef8afdda3005522d53571c98c8a1329ff8c1c52",
+      "reviewed_source_digest": "40c5b3d5932d0fec0f66f4ef7c9f746d78c44ab1df7ec835ca9d3353e84d36bb",
       "changed_paths": [
         {
           "status": "modified",
           "path": "docs/MULTI_USER.md",
           "old_blob": "73acfa39977993b055d0c268207110fb534e8dae",
           "new_blob": "94fef3a36b4b2960f9435069853d683530e71209"
+        },
+        {
+          "status": "modified",
+          "path": "go/go.mod",
+          "old_blob": "b3c38edc7fada1a7366fbafb2d86ad968ed90a0b",
+          "new_blob": "0a2d1ca02fac2ea79f36ef0b5fdff08566a671d8"
+        },
+        {
+          "status": "modified",
+          "path": "go/go.sum",
+          "old_blob": "47822237c338e2c2d63e28a010d681e266ffbe7d",
+          "new_blob": "16a3a1ea3457214c8f07ce2972d037c6142398a8"
         },
         {
           "status": "modified",
@@ -176,11 +188,11 @@
   "facts": [
     {
       "id": "F1",
-      "claim": "The change makes removed projects ineligible for current management and credentials. The Git diff contains no file below sdk/ and no change to the client snapshot handler or SDK package bindings.",
+      "claim": "The change removes disabled projects from current management and credential eligibility and updates an indirect WebSocket dependency used by the gateway realtime bridge. No SDK package, client snapshot handler or SDK execution binding changed.",
       "status": "observed",
       "evidence": {
-        "source": "706fecbc285f0e3e415233aaef2b8b7ac50c4b7b",
-        "method": "Exact Git diff against c779976b4b4e95cda9d10a7a19649de6c6ec1bfd, and review of the current-project and credential queries."
+        "source": "1e16e117525a756c301873d22685fbc0bd20f37e",
+        "method": "Reviewed all 34 product paths with git diff --name-status --find-renames against c779976b4b4e95cda9d10a7a19649de6c6ec1bfd. The pinned review CLI lists 27 changed paths, stopping at the renamed console asset. The complete Git diff confirmed the remaining UI paths and absence of SDK changes. The reviewed source digest covers the complete tracked product tree."
       }
     },
     {
@@ -189,7 +201,7 @@
       "status": "observed",
       "evidence": {
         "source": "go/internal/api/client_snapshot_test.go, go/internal/iam/project_removal_test.go",
-        "method": "Complete Go tests and a local candidate-binary smoke with disposable state and a fixture provider."
+        "method": "Gateway snapshot and IAM tests ran in the complete Go suite on the reviewed commit. The shared-provider restart check used the initial project-removal candidate. The dependency follow-up touched only the gateway module manifest and checksums."
       }
     },
     {
@@ -198,7 +210,7 @@
       "status": "observed",
       "evidence": {
         "source": "go/internal/api/client_snapshot_test.go, sdk/README.md",
-        "method": "LLMGW_SDK_E2E=1 go test ./internal/api -run TestClientSnapshotHTTPProvidesUsableDirectConnection -count=1 from go/."
+        "method": "LLMGW_SDK_E2E=1 go test ./internal/api -run '^TestClientSnapshotHTTPProvidesUsableDirectConnection$' -count=1 -v in go/ on the reviewed commit. The gateway and provider used local fixtures."
       }
     },
     {
@@ -207,7 +219,7 @@
       "status": "observed",
       "evidence": {
         "source": "sdk/node, sdk/python, sdk/go",
-        "method": "npm test in sdk/node, python -m unittest in sdk/python, and go test ./... in sdk/go using local fixtures."
+        "method": "npm test in sdk/node, python -m unittest in sdk/python, and go test -count=1 ./... in sdk/go were all rerun on the reviewed commit with local fixtures."
       }
     }
   ],
@@ -266,10 +278,10 @@
   "questions": [],
   "conclusion": {
     "action": "reuse_contract",
-    "summary": "Propose reuse of SDK assertions A1 through A5. The gateway still issues scoped snapshots to eligible projects, and all three clients retained their accepted local fallback behavior in the end-to-end fixture. Their source and execution bindings remain suitable. Operator confirmation is pending."
+    "summary": "Propose reuse of SDK assertions A1 through A5. The gateway still delivered scoped snapshots, and Node, Python and Go used their cached direct routes for JSON and converted streams after the fixture gateway stopped. The gateway realtime dependency update did not change the three SDK packages or their execution bindings. Operator confirmation is pending."
   },
   "proposed": {
     "by": "agent-session",
-    "at": "2026-11-23T22:58:16.887Z"
+    "at": "2026-11-23T23:37:15.295Z"
   }
 }
