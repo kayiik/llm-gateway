@@ -30,9 +30,13 @@ func (rt *Runtime) googleCoreVertical() coreVertical {
 			return ok
 		},
 		provider: func(settings *config.Settings, instance string) (core.Provider, error) {
-			google, err := newCoreGoogle(instance, settings.Providers[instance])
+			cfg := settings.Providers[instance]
+			google, err := newCoreGoogle(instance, cfg)
 			if err != nil {
 				return nil, err
+			}
+			if cfg.VertexOpenAIChat {
+				return rt.vertexChatProvider(google, instance, cfg)
 			}
 			return google, nil
 		},

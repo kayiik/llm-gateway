@@ -166,6 +166,25 @@ A `vertex_ai` service-account key must name `https://oauth2.googleapis.com/token
 or `https://accounts.google.com/o/oauth2/token` as its `token_uri`, or omit it;
 the gateway refuses to store a key that names any other token endpoint.
 
+Set `vertex_openai_chat: true` on a `vertex_ai` provider to send authorized
+Chat Completions to Google's OpenAI-compatible endpoint. Each caller uses
+the credential selected by the gateway's existing connection and access
+policies. Other provider instances have their own transport settings.
+Set the option to `false` to restore Google's standard Chat transport for
+that instance. A caller whose selected connection uses an API key keeps the
+standard Vertex transport. Keep using the model ID from the
+Vertex catalog in routes. The gateway qualifies that ID with the Google
+publisher for the upstream request. It exchanges the selected service account
+for a short-lived Google Cloud access token and refreshes it as needed.
+This option requires the standard Google endpoint and a service account in the
+configured project. Catalog discovery and other native Vertex operations
+continue to use their original APIs.
+
+OpenAI Chat clients can pass tool-call metadata through successive turns, send
+image detail and completion limits, and request token usage in a streamed
+answer. A Responses client still goes through the gateway's translation
+checks and can be refused when a Google-specific field cannot be preserved.
+
 Model IDs and regional availability differ. Configure separate provider
 instances for locations that expose different model catalogs.
 

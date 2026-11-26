@@ -218,6 +218,7 @@ func handleState(w http.ResponseWriter, r *http.Request) {
 			"project":             pc.Project,
 			"location":            pc.Location,
 			"vertex_request_type": pc.VertexRequestType,
+			"vertex_openai_chat":  pc.VertexOpenAIChat,
 			"default_voice":       pc.DefaultVoice,
 			"disabled":            pc.Disabled,
 			"models":              len(models),
@@ -345,6 +346,7 @@ type providerBody struct {
 	Project             string   `json:"project"`
 	Location            string   `json:"location"`
 	VertexRequestType   *string  `json:"vertex_request_type"`
+	VertexOpenAIChat    *bool    `json:"vertex_openai_chat"`
 	PublicOAuthClientID string   `json:"public_oauth_client_id"`
 	ClearPublicOAuthID  *bool    `json:"clear_public_oauth_client_id"`
 	ForceApiSupport     flexBool `json:"force_api_support"`
@@ -480,6 +482,23 @@ func handleUpsertProvider(w http.ResponseWriter, r *http.Request) {
 		}
 		body.VertexRequestType = &value
 	}
+	vertexChat := false
+	if previous := config.Get().Providers[pid]; previous != nil && body.Type == "vertex_ai" {
+		vertexChat = previous.VertexOpenAIChat
+	}
+	if body.VertexOpenAIChat != nil {
+		vertexChat = *body.VertexOpenAIChat
+	}
+	if vertexChat {
+		if _, err := providers.VertexOpenAIChatLocation(body.Type, body.Location, body.BaseURL); err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		if key := strings.TrimSpace(body.APIKey); key != "" && !gcpauth.LooksLikeServiceAccount(key) {
+			writeError(w, 400, "vertex_openai_chat requires a Google service-account credential")
+			return
+		}
+	}
 	if err := providerEndpointCollision(pid); err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
@@ -591,8 +610,9 @@ func handleUpsertProvider(w http.ResponseWriter, r *http.Request) {
 			Type: body.Type, RegistryID: registryID, BaseURL: emptyNil(body.BaseURL),
 			Region: emptyNil(body.Region), Project: emptyNil(body.Project),
 			Location: emptyNil(body.Location), PublicOAuthClientID: strings.TrimSpace(body.PublicOAuthClientID),
-			ForceApiSupport: bool(body.ForceApiSupport),
-			UsageLimits:     body.UsageLimits,
+			ForceApiSupport:  bool(body.ForceApiSupport),
+			UsageLimits:      body.UsageLimits,
+			VertexOpenAIChat: vertexChat,
 		}
 		if previous := s.Providers[pid]; previous != nil {
 			if body.UsageLimits == nil {
