@@ -119,6 +119,85 @@ func TestAdminCreatesProviderFromRegistry(t *testing.T) {
 	}
 }
 
+func TestVertexOpenAIChatSettingIsPersistentAndClearable(t *testing.T) {
+	const admin = "fixture-admin"
+	useAuditTestSettings(t, func(s *config.Settings) {
+		s.APIKey = admin
+		s.Providers = map[string]*config.ProviderConfig{}
+	})
+	server := httptest.NewServer(NewServer(Runtime{}))
+	defer server.Close()
+	url := server.URL + "/admin/api/providers"
+	save := func(set map[string]any, want int) {
+		t.Helper()
+		body := map[string]any{"type": "vertex_ai", "id": "fixture", "location": "global"}
+		for k, v := range set {
+			body[k] = v
+		}
+		status, out := jsonRequest(t, url, http.MethodPost, admin, body)
+		if status != want {
+			t.Fatalf("save status=%d, want %d, result %+v", status, want, out)
+		}
+	}
+	const field = "vertex_openai_chat"
+	save(map[string]any{field: true, "type": "ai_studio"}, 400)
+	save(map[string]any{field: true, "base_url": "https://fixture.invalid/v1"}, 400)
+	save(map[string]any{field: true, "api_key": "fixture-placeholder"}, 400)
+	save(map[string]any{field: true}, 200)
+	save(nil, 200)
+	if !config.Get().Providers["fixture"].VertexOpenAIChat {
+		t.Fatal("omitting the transport setting cleared a saved opt-in")
+	}
+	save(map[string]any{field: false}, 200)
+	if config.Get().Providers["fixture"].VertexOpenAIChat {
+		t.Fatal("disabling the transport did not clear the opt-in")
+	}
+	save(map[string]any{field: true}, 200)
+	loaded, err := config.Load()
+	if err != nil || !loaded.Providers["fixture"].VertexOpenAIChat {
+		t.Fatalf("failed to restore the provider opt-in: %v", err)
+	}
+}
+
+func TestVertexOpenAIChatRespectsProviderPolicy(t *testing.T) {
+	handler := setupAPISmokeFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("forbidden provider call reached upstream")
+	}))
+	config.Update(func(s *config.Settings) {
+		s.Providers["vertex"] = &config.ProviderConfig{Type: "vertex_ai", VertexOpenAIChat: true}
+		s.Endpoints["chat"] = &config.EndpointConfig{Failover: []config.EndpointMember{{Provider: "vertex", Model: "sample"}}}
+	})
+	project, err := iam.CreateProject("fixture-project", "Fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	principal, err := iam.CreatePrincipal("service", "fixture-service", "", "Service")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := iam.SetMembership(project.ID, principal.ID, "member"); err != nil {
+		t.Fatal(err)
+	}
+	key, err := iam.IssueKey(iam.KeyCreate{ProjectID: project.ID, PrincipalID: principal.ID, Name: "fixture",
+		Policy: iam.KeyPolicy{AllowedProviders: []string{"fixture"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"vertex/sample", "chat"} {
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
+			strings.NewReader(fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"fixture"}]}`, target)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+key.Token)
+		req.Header.Set("X-LLMGW-Project-Id", "different-project")
+		req.Header.Set("X-LLMGW-Compatibility", "allow")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "not allowed to use any provider") {
+			t.Fatalf("%s: status %d, body %s", target, w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestProviderUpsertRejectsEndpointNameCollision(t *testing.T) {
 	t.Setenv("LLMGW_STATE_DIR", t.TempDir())
 	old := *config.Get()

@@ -1,0 +1,258 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "change",
+  "contract": {
+    "digest": "da05219969e051b692980ada8e8066ac909bf88d11ad6a5af6338834a8cc384f"
+  },
+  "authoring_provenance": {
+    "status": "not_available",
+    "reason": "No retained authoring record was selected."
+  },
+  "sources": [
+    {
+      "source_id": "primary",
+      "status": "established",
+      "repository_identity": "https://github.com/kayiik/llm-gateway.git",
+      "base_ref": "v0.0.9",
+      "base_commit": "c779976b4b4e95cda9d10a7a19649de6c6ec1bfd",
+      "merge_base": "c779976b4b4e95cda9d10a7a19649de6c6ec1bfd",
+      "head_commit": "dd5d6c1efd3fa6d455379180dc8fc89c96ba6b0b",
+      "head_tree": "d43501514b62401f6f40e798b4fae0fd714be2b0",
+      "reviewed_source_digest": "94c137aa10bd78bebb5164308c49ed02d4da1343ce9f3fc81daf00da2f497ca4",
+      "changed_paths": [
+        {
+          "status": "modified",
+          "path": "docs/CONFIGURATION.md",
+          "old_blob": "dc9bded094796f53568e180a71e023669b8f808a",
+          "new_blob": "968ce079b8d9c17f141c13d7832b42c380fb881d"
+        },
+        {
+          "status": "modified",
+          "path": "docs/PROVIDERS.md",
+          "old_blob": "fa5500bbe3c308bfb18b0a046b30d0afaf9e3cda",
+          "new_blob": "4619babf2aed7d8adaae32bbc66385b434fb977b"
+        },
+        {
+          "status": "modified",
+          "path": "go/go.mod",
+          "old_blob": "b3c38edc7fada1a7366fbafb2d86ad968ed90a0b",
+          "new_blob": "0a2d1ca02fac2ea79f36ef0b5fdff08566a671d8"
+        },
+        {
+          "status": "modified",
+          "path": "go/go.sum",
+          "old_blob": "47822237c338e2c2d63e28a010d681e266ffbe7d",
+          "new_blob": "16a3a1ea3457214c8f07ce2972d037c6142398a8"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/admin.go",
+          "old_blob": "5471854cdd56093a9c71accae301e3efafc4e70b",
+          "new_blob": "949809aa305d0fec803982674ea87d802889eb05"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/audit.go",
+          "old_blob": "1ae6d290e0eae3278ded633919c23810d701883f",
+          "new_blob": "4057b294eddc3070b13e6f204e45bcf6afe779ce"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/provider_registry_test.go",
+          "old_blob": "251e91a8d6bc1ef2b7d8e1cab5de9a64d0380b14",
+          "new_blob": "a9e75b71f54bf95b3fff7697682c6314b383cf63"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/config/config.go",
+          "old_blob": "40abe12498edd9c68822b0a0ba12e211a184bb77",
+          "new_blob": "ecc8ba66a971c8602f807ea2f4b30e3a24249f98"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/googlecredential/service_account.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "d1c4f39494c219a817e4bbc69b1d4a184e0fb726"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/connections.go",
+          "old_blob": "c7278e44c5def48eae98d65f7bf8720c3bb8a551",
+          "new_blob": "4368dfa82836f37c6bf475b4df504f71230b4955"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/providers/google_vertical.go",
+          "old_blob": "22d96d21e8c0e6bc3c9f1594b03de5bd67693ac8",
+          "new_blob": "58295b52eabfd7e32791fac30443ae14881ca709"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/providers/vertex_openai_chat_test.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "e787f3ce3d405d0dda65ad625bb2a4a3d9f75ffa"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/providers/vertex_openai_chat.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "b6dfd56e1740017ac0128ef765e4208a239de3e4"
+        }
+      ]
+    }
+  ],
+  "facts": [
+    {
+      "id": "F1",
+      "claim": "The provider transport is optional and defaults off. With the option enabled, Chat uses the credential already selected for the caller. A service account uses the official Vertex OpenAI endpoint. A selected API key keeps its standard Vertex path. Catalog discovery and other native surfaces continue through the existing Google provider.",
+      "status": "observed",
+      "evidence": {
+        "source": "dd5d6c1efd3fa6d455379180dc8fc89c96ba6b0b",
+        "method": "Exact changed paths and diff from v0.0.9; TestVertexOpenAIChatFollowsInstanceAndSelectedCredential and TestVertexOpenAIChatSettingIsPersistentAndClearable."
+      }
+    },
+    {
+      "id": "F2",
+      "claim": "Synthetic calls with two independently authorized projects reached the same configured Vertex instance. A separately restricted project could not use that provider by route or direct selector. The unmodified neighboring instance retained its existing field checks. The new transport preserved a two-turn tool exchange, a token-bounded JSON answer and streamed image input with usage.",
+      "status": "observed",
+      "evidence": {
+        "source": "go/internal/providers/vertex_openai_chat_test.go; go/internal/api/provider_registry_test.go",
+        "method": "Provider, key-governance and management API unit tests; isolated gateway service keys and synthetic live Vertex Chat calls; request receipt verification."
+      }
+    },
+    {
+      "id": "F3",
+      "claim": "The full Go suite, build, vet and pinned staticcheck passed. The separate WebSocket security dependency update leaves zero reachable vulnerabilities in govulncheck. Console lint, all 284 console tests, the repository's high-severity audit gate, committed bundle check and documentation checks passed.",
+      "status": "observed",
+      "evidence": {
+        "source": "go; go/internal/web/console; scripts/check-docs.mjs",
+        "method": "go build ./...; go vet ./...; pinned staticcheck ./...; go test ./... -count=1; govulncheck ./...; npm audit --audit-level=high; npm run lint; npm test; npm run check:dist; node scripts/check-docs.mjs."
+      }
+    },
+    {
+      "id": "F4",
+      "claim": "The Node, Python and Go SDK suites passed. The real gateway HTTP test with all three SDK clients passed, including scoped snapshots, direct JSON and converted event streams after gateway loss. No SDK sources, snapshot routes, client fallback rules or releases changed.",
+      "status": "observed",
+      "evidence": {
+        "source": "sdk/node; sdk/python; sdk/go; go/internal/api",
+        "method": "npm test; python -B -m unittest test_client test_stream; go test ./...; LLMGW_SDK_E2E=1 go test ./internal/api -run TestClientSnapshotHTTPProvidesUsableDirectConnection -count=1."
+      }
+    },
+    {
+      "id": "F5",
+      "claim": "The gateway's accepted CLI version and health commands, HTTP health and model list, malformed-request handling, management authentication, embedded console and default metrics paths keep their existing bindings. The provider setting is additive and the default behavior leaves these contracts intact.",
+      "status": "observed",
+      "evidence": {
+        "source": "go/cmd/llmgw; go/internal/api; go/internal/web/console",
+        "method": "Exact-source comparison against the accepted gateway assertions; full Go and console suites, plus the provider transport and key-governance regression tests."
+      }
+    }
+  ],
+  "impact": {
+    "assertions": [
+      {
+        "id": "A1",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A2",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A3",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A4",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A5",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A6",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A7",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A8",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A9",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      },
+      {
+        "id": "A10",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F5"
+        ]
+      }
+    ],
+    "requires": [],
+    "possible_binding_changes": [
+      "Operators can select the Vertex OpenAI Chat transport on individual providers. Existing contract fixtures and SDK bindings continue to use their current configuration."
+    ]
+  },
+  "questions": [],
+  "conclusion": {
+    "action": "reuse_contract",
+    "summary": "The gateway's existing assertions and fixtures continue to apply. A provider may opt into an additional Chat transport and retains its normal caller authorization and credential resolution. The dependency prerequisite passed the existing Go security gate."
+  },
+  "proposed": {
+    "by": "release-preparation session",
+    "at": "2026-11-26T07:39:41.749Z"
+  }
+}

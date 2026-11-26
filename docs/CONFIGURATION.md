@@ -60,6 +60,7 @@ Supported fields depend on the runtime type:
 | `project` | Cloud project, used by Vertex AI. |
 | `location` | Cloud location, used by Vertex AI. |
 | `vertex_request_type` | Optional Vertex invocation mode: `default`, `paygo`, or `dedicated`. Unset preserves Google's default routing; `dedicated` requires matching provisioned throughput and does not fall back. |
+| `vertex_openai_chat` | Set to `true` on a Vertex service-account provider to use Google's OpenAI-compatible endpoint for Chat Completions. Defaults to `false`. |
 | `default_voice` | Default voice for speech providers. |
 | `disabled` | Keep the instance configured while removing it from routing. |
 | `force_api_support` | Legacy narrow catalog-driven endpoint rewrite. Does not authorize compatibility or override a native-only request/route. |

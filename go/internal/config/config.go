@@ -52,6 +52,8 @@ type ProviderConfig struct {
 	// VertexRequestType optionally selects Google's request accounting path.
 	// Empty preserves the provider default; dedicated requires provisioned throughput.
 	VertexRequestType string `yaml:"vertex_request_type,omitempty" json:"vertex_request_type,omitempty"`
+	// VertexOpenAIChat serves Chat through this Vertex provider's OpenAI endpoint.
+	VertexOpenAIChat bool `yaml:"vertex_openai_chat,omitempty" json:"vertex_openai_chat,omitempty"`
 	// Disabled keeps the provider configured but takes it out of service:
 	// requests 404, catalogs are not refreshed, and the console shows it as
 	// disabled until it is re-enabled.
@@ -945,6 +947,9 @@ func applyConfig(s *Settings, payload map[string]any) error {
 			if v, ok := m["vertex_request_type"].(string); ok {
 				cfg.VertexRequestType = v
 			}
+			if v, ok := m["vertex_openai_chat"].(bool); ok {
+				cfg.VertexOpenAIChat = v
+			}
 			if v, ok := m["disabled"].(bool); ok {
 				cfg.Disabled = v
 			}
@@ -1357,6 +1362,7 @@ func providerFields(pc *ProviderConfig) []providerField {
 		{"project", pc.Project, pc.Project != ""},
 		{"location", pc.Location, pc.Location != ""},
 		{"vertex_request_type", pc.VertexRequestType, pc.VertexRequestType != ""},
+		{"vertex_openai_chat", pc.VertexOpenAIChat, pc.VertexOpenAIChat},
 		{"disabled", true, pc.Disabled},
 		{"timeout", timeout, pc.Timeout != nil},
 		{"force_api_support", true, pc.ForceApiSupport},

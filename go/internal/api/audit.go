@@ -85,6 +85,7 @@ func providerConfigChanges(before, after *config.ProviderConfig) []string {
 		{"project", before.Project, after.Project},
 		{"location", before.Location, after.Location},
 		{"vertex_request_type", before.VertexRequestType, after.VertexRequestType},
+		{"vertex_openai_chat", before.VertexOpenAIChat, after.VertexOpenAIChat},
 		{"public_oauth_client_id", before.PublicOAuthClientID, after.PublicOAuthClientID},
 		{"force_api_support", before.ForceApiSupport, after.ForceApiSupport},
 		{"extension", before.Extension, after.Extension},
