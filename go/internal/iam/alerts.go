@@ -67,6 +67,9 @@ var quotaLimitColumns = map[string]string{
 // its last error.
 const maxOutboxAttempts = 10
 
+// Global rules stay visible when a project is removed.
+const currentAlertScope = "(project_id IS NULL OR project_id IN (SELECT id FROM current_projects))"
+
 func CreateAlertRule(rule AlertRule) (AlertRule, error) {
 	switch rule.Kind {
 	case "quota_usage", "key_expiry":
@@ -110,14 +113,17 @@ func CreateAlertRule(rule AlertRule) (AlertRule, error) {
 	if err != nil {
 		return AlertRule{}, err
 	}
-	_, err = db.Exec(`
+	result, err := db.Exec(`
 INSERT INTO alert_rules(
  id,project_id,principal_id,kind,threshold,period,enabled,created_at,updated_at,metric
-) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+) SELECT ?,?,?,?,?,?,?,?,?,? WHERE ? IS NULL OR ? IN (SELECT id FROM current_projects)`,
 		rule.ID, nullable(rule.ProjectID), nullable(rule.PrincipalID), rule.Kind,
-		rule.Threshold, rule.Period, 1, now, now, rule.Metric,
+		rule.Threshold, rule.Period, 1, now, now, rule.Metric, nullable(rule.ProjectID), rule.ProjectID,
 	)
-	return rule, err
+	if err != nil {
+		return AlertRule{}, err
+	}
+	return rule, requireProjectAffected(result)
 }
 
 func ListAlertRules() ([]AlertRule, error) {
@@ -129,7 +135,7 @@ func ListAlertRules() ([]AlertRule, error) {
 SELECT id,COALESCE(project_id,''),COALESCE(principal_id,''),
        COALESCE((SELECT display_name FROM principals WHERE principals.id=alert_rules.principal_id),''),
        kind,metric,threshold,period,enabled,created_at,updated_at
-FROM alert_rules ORDER BY created_at,id`)
+FROM alert_rules WHERE ` + currentAlertScope + ` ORDER BY created_at,id`)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +166,7 @@ func SetAlertRuleEnabled(id string, enabled bool) error {
 		value = 1
 	}
 	res, err := db.Exec(
-		"UPDATE alert_rules SET enabled=?,updated_at=? WHERE id=?",
+		"UPDATE alert_rules SET enabled=?,updated_at=? WHERE id=? AND "+currentAlertScope,
 		value, time.Now().Unix(), id,
 	)
 	if err != nil {
@@ -174,7 +180,7 @@ func DeleteAlertRule(id string) error {
 	if err != nil {
 		return err
 	}
-	res, err := db.Exec("DELETE FROM alert_rules WHERE id=?", id)
+	res, err := db.Exec("DELETE FROM alert_rules WHERE id=? AND "+currentAlertScope, id)
 	if err != nil {
 		return err
 	}
@@ -465,8 +471,9 @@ SELECT id,COALESCE(project_id,''),COALESCE(principal_id,''),kind,metric,
 FROM alert_rules
 WHERE enabled=1
   AND (project_id IS NULL OR project_id=?)
-  AND (principal_id IS NULL OR principal_id=?)`,
-		event.ProjectID, event.PrincipalID,
+  AND (principal_id IS NULL OR principal_id=?)
+  AND NOT EXISTS (SELECT 1 FROM projects WHERE id=? AND deleted_at IS NOT NULL)`,
+		event.ProjectID, event.PrincipalID, event.ProjectID,
 	)
 	if err != nil {
 		return err
@@ -560,6 +567,7 @@ FROM alert_rules r
 JOIN api_keys k
   ON (r.project_id IS NULL OR r.project_id=k.project_id)
  AND (r.principal_id IS NULL OR r.principal_id=k.principal_id)
+JOIN current_projects p ON p.id=k.project_id
 WHERE r.enabled=1 AND r.kind='key_expiry' AND k.status='active'
   AND k.expires_at IS NOT NULL AND k.expires_at>?
   AND k.expires_at<=?`,

@@ -75,7 +75,8 @@ func ListPrincipalsPage(filter PrincipalListFilter) ([]Principal, int, error) {
 		return nil, 0, &InvalidFilterError{Message: "status must be active, disabled or all"}
 	}
 	if project := strings.TrimSpace(filter.ProjectID); project != "" {
-		add("EXISTS (SELECT 1 FROM project_memberships m WHERE m.principal_id=n.id AND m.project_id=?)", project)
+		add(`EXISTS (SELECT 1 FROM project_memberships m JOIN current_projects p ON p.id=m.project_id
+ WHERE m.principal_id=n.id AND m.project_id=?)`, project)
 	}
 	if search := strings.ToLower(strings.TrimSpace(filter.Search)); search != "" {
 		pattern := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(search) + "%"
@@ -141,7 +142,7 @@ func CountIdentities() (IdentityCounts, error) {
 	}
 	var counts IdentityCounts
 	err = db.QueryRow(`
-SELECT (SELECT COUNT(*) FROM api_keys WHERE deleted_at IS NULL),
+SELECT (SELECT COUNT(*) FROM api_keys WHERE deleted_at IS NULL AND project_id IN (SELECT id FROM current_projects)),
        (SELECT COUNT(*) FROM principals),
        (SELECT COUNT(*) FROM principals WHERE status='active' AND kind IN ('human','service')),
        (SELECT COUNT(*) FROM principals WHERE status='active' AND kind='human'),

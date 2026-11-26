@@ -101,6 +101,65 @@ test("an unknown project says so and leads back to Access", async () => {
   assert.deepEqual(navigated, ["back"]);
 });
 
+test("an administrator can permanently remove a disabled project after confirming", async (t) => {
+  const disabled = { id: "prj old", slug: "archive", name: "Archive", status: "disabled" };
+  const live = { id: "prj-live", name: "Active research", status: "active" };
+  let projects = [disabled, live];
+  let refreshes = 0;
+  let approved = false;
+  let refuse = true;
+  const prompts = [];
+  const sent = [];
+  const previousWindow = globalThis.window;
+  t.after(() => { if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow; });
+  globalThis.window = { confirm(message) { prompts.push(message); return approved; } };
+  globalThis.__api = {
+    async getJSON() { return { principals: [{ id: "prn-1", kind: "human", status: "disabled", display_name: "Sam" }], total: 1 }; },
+    async sendJSON(...args) {
+      sent.push(args);
+      if (refuse) throw new Error("Disable the project before deleting it.");
+      return { ok: true };
+    },
+  };
+  const onChanged = async () => { refreshes++; projects = [live]; };
+  const render = mount(() => Access({ data: { projects }, mode: "admin", onChanged }));
+  render();
+  await settle();
+  const deletions = (tree) => findAll(tree, (node) => node.type === "button" && node.props["aria-label"]?.startsWith("Delete"));
+  const tree = render();
+  assert.ok(find(tree, (node) => node.props?.["aria-label"] === "Enable Sam"));
+  assert.deepEqual(deletions(tree).map((button) => button.props["aria-label"]), ["Delete project Archive"]);
+  const portal = mount(() => Access({ data: { projects }, mode: "portal", onChanged }));
+  assert.equal(deletions(portal()).length, 0);
+
+  const clickDelete = () => deletions(render())[0].props.onClick();
+  clickDelete();
+  await settle();
+  assert.equal(prompts.length, 1);
+  for (const detail of [/Archive/, /project lists/i, /cannot be (re-)?enabled/i, /slug stays reserved/i, /usage/i, /provider connections/i]) assert.match(prompts[0], detail);
+  assert.deepEqual(sent, [], "cancel sends no request");
+  assert.equal(refreshes, 0);
+
+  approved = true;
+  clickDelete();
+  await settle();
+  assert.deepEqual(sent, [["admin", "/projects/prj%20old", "DELETE"]]);
+  const notice = () => find(render(), (node) => node.props?.result)?.props.result;
+  assert.equal(notice().success, false);
+  assert.match(notice().detail, /Disable the project/);
+  assert.equal(refreshes, 0);
+  assert.equal(deletions(render()).length, 1, "a refused deletion leaves the project on screen");
+
+  refuse = false;
+  clickDelete();
+  await settle();
+  assert.equal(sent.length, 2);
+  assert.equal(notice().success, true);
+  assert.equal(refreshes, 1, "refresh the shared project list after a successful deletion");
+  assert.equal(deletions(render()).length, 0);
+  assert.ok(find(render(), (node) => node.props?.["aria-label"] === "Disable Active research"));
+});
+
 test("Access opens a project's page, and Settings keeps gateway-wide options", () => {
   fakeAPI();
   const navigated = [];

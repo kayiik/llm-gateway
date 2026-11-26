@@ -9,6 +9,36 @@ import (
 	"time"
 )
 
+func TestLegacyKeyImportSkipsRemovedProjects(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("LLMGW_STATE_DIR", dir)
+	ResetForTests()
+	t.Cleanup(ResetForTests)
+	project := must(CreateProject("archived", "Archived"))
+	if err := SetProjectStatus(project.ID, "disabled"); err != nil {
+		t.Fatal(err)
+	}
+	must(DeleteProject(project.ID, AuditEvent{}))
+	old, current := must(randomToken()), must(randomToken())
+	fixture := must(json.Marshal(map[string]legacyKeyEntry{
+		old:     {Project: project.Slug, Name: "old"},
+		current: {Project: "continuing", Name: "current"},
+	}))
+	if err := os.WriteFile(filepath.Join(dir, "keys.json"), fixture, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := must(MigrateLegacyKeys())
+	if result.Keys != 1 || result.Principals != 1 || result.Projects != 1 {
+		t.Fatalf("migration imported more than the continuing project: %+v", result)
+	}
+	if _, ok, err := ResolveAPIKey(old); ok || err != nil {
+		t.Fatalf("archived project's imported key resolved: %v err=%v", ok, err)
+	}
+	if p, ok, err := ResolveAPIKey(current); err != nil || !ok || p.Project != "continuing" {
+		t.Fatalf("continuing project's imported key failed: found=%v err=%v", ok, err)
+	}
+}
+
 func TestMigrateLegacyKeysHashesAndRemovesPlaintext(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("LLMGW_STATE_DIR", dir)

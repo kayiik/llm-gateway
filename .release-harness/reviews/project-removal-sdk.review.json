@@ -1,0 +1,287 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "change",
+  "contract": {
+    "digest": "944313290bbd2da2f8c2ae10ab118f873fc45aeb02ea6a8612c39c66deaff555"
+  },
+  "authoring_provenance": {
+    "status": "not_available",
+    "reason": "No retained authoring record was selected."
+  },
+  "sources": [
+    {
+      "source_id": "primary",
+      "status": "established",
+      "repository_identity": "https://github.com/kayiik/llm-gateway.git",
+      "base_ref": "c779976b4b4e95cda9d10a7a19649de6c6ec1bfd",
+      "base_commit": "c779976b4b4e95cda9d10a7a19649de6c6ec1bfd",
+      "merge_base": "c779976b4b4e95cda9d10a7a19649de6c6ec1bfd",
+      "head_commit": "1e16e117525a756c301873d22685fbc0bd20f37e",
+      "head_tree": "bef8afdda3005522d53571c98c8a1329ff8c1c52",
+      "reviewed_source_digest": "40c5b3d5932d0fec0f66f4ef7c9f746d78c44ab1df7ec835ca9d3353e84d36bb",
+      "changed_paths": [
+        {
+          "status": "modified",
+          "path": "docs/MULTI_USER.md",
+          "old_blob": "73acfa39977993b055d0c268207110fb534e8dae",
+          "new_blob": "94fef3a36b4b2960f9435069853d683530e71209"
+        },
+        {
+          "status": "modified",
+          "path": "go/go.mod",
+          "old_blob": "b3c38edc7fada1a7366fbafb2d86ad968ed90a0b",
+          "new_blob": "0a2d1ca02fac2ea79f36ef0b5fdff08566a671d8"
+        },
+        {
+          "status": "modified",
+          "path": "go/go.sum",
+          "old_blob": "47822237c338e2c2d63e28a010d681e266ffbe7d",
+          "new_blob": "16a3a1ea3457214c8f07ce2972d037c6142398a8"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/alerts.go",
+          "old_blob": "37a811c4311a1f97c8c94a6ad48e49005fe8c354",
+          "new_blob": "5f151b3b0c8f1f2132233598fc1521d9f8f3b5f6"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/audit.go",
+          "old_blob": "1ae6d290e0eae3278ded633919c23810d701883f",
+          "new_blob": "41c9f128606c502dea771b315929833cd5bb3a12"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/iam.go",
+          "old_blob": "9a9260a73507b50395d1a96d8cd3e82c7918dcf5",
+          "new_blob": "2ef5a3fed9f90f687dd045bcb97e171434692ce9"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/limits.go",
+          "old_blob": "c035e04a1a99a951debac2dd000acc626c412fba",
+          "new_blob": "329d6f33b044e221be7c16976be20d006c8316af"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/api/project_delete_test.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "8c8dd08bb75d603a6ad41234cb732fe526c46eee"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/api/server.go",
+          "old_blob": "1197393a6e63e873b0587d1ef4f79b46ddf25fda",
+          "new_blob": "59bf04876b263afc1fd9c5a0ff890a6565aff1d2"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/alerts.go",
+          "old_blob": "f2fb8206cd4943e2f3612bd9663b210187a2e67f",
+          "new_blob": "0e11c442efbf6429438ee434a28e08d2e62b00c4"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/audit.go",
+          "old_blob": "3d045705ae187eea8f698a3c2b2ad1ebb951bfa5",
+          "new_blob": "3e9e642ba7ff063444b0bfedebd4ef8509870fdf"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/credential_bindings.go",
+          "old_blob": "41d5e53d64fa5cb6c3c586f5269bee68f2f823bb",
+          "new_blob": "a54bf325a72ef031d0942470d497d63291bfdebf"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/key_list.go",
+          "old_blob": "b67d3402a880b74461ae6c72c2e9a0a31a1e9148",
+          "new_blob": "fbaf9d04cd7a9415e211598596bf23040fc0741b"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/keys.go",
+          "old_blob": "c4ce05be0ce02db6177775fad6bfe39579fa893b",
+          "new_blob": "297210c32386b46a480dab36b252b07a7a4b8dd0"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/limits.go",
+          "old_blob": "b6995c9f39d858e0d771e26cc077bd839075af5a",
+          "new_blob": "b0ced6040297454a593fdb8d8021f227cdf3ae09"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/migration_test.go",
+          "old_blob": "8b222e375c790f559d227d741a8605834249ce9a",
+          "new_blob": "1c279242d63704571d0eaeaf51010fdf0eed19dd"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/migration.go",
+          "old_blob": "1253b2e2e9cacabdbbb47ce13fcc64ff520d996e",
+          "new_blob": "2fe4bdc257f99008b3160df2ef461b67f10304a8"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/principal_list.go",
+          "old_blob": "3a506f0446008fbad5988c09fffe3b9fd13b97c3",
+          "new_blob": "b82a1e2a75b93418ca2a803274ca5809bcd0c6d4"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/project_policy.go",
+          "old_blob": "3eb0fa25a301605b7158a2a331b54a42ee6d8151",
+          "new_blob": "07e6dd02633b9a7baf0162a9c87a500bbd3aeaeb"
+        },
+        {
+          "status": "added",
+          "path": "go/internal/iam/project_removal_test.go",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "ae142edaa1c09bd8240493058fe22872dbfd7268"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/quota.go",
+          "old_blob": "b15aff1d6e518dd3d5121164268895a9ba093615",
+          "new_blob": "7c4c310bf53b42a4b592d424fea144ce481bbf22"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/repository.go",
+          "old_blob": "899877c2363b5dadd8d31d34959fbfa337ac805d",
+          "new_blob": "1c001f3036eba5dedd2999dad1d80d61793c43a3"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/schema.go",
+          "old_blob": "c016dde29a80223a58290f9b2b6ee6bacb3014ee",
+          "new_blob": "bd7a69e77b1cb2d5433d188944bda840cb38f6f7"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/store_test.go",
+          "old_blob": "3980809f2c3015697d727b27ff62c3fbb9e01449",
+          "new_blob": "af5c027a5e9ec3cbe53d4f33c9000bef41347106"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/usage_events.go",
+          "old_blob": "fe835ebc83ac18a03f4db0ea6089e5e789d635fd",
+          "new_blob": "94ae9fd0e18990d1a066450d7b31904aaf9fe7a8"
+        },
+        {
+          "status": "modified",
+          "path": "go/internal/iam/usage.go",
+          "old_blob": "076d377c08f981f8ba81b72167c6ee0845a813f3",
+          "new_blob": "f4ce7cd853e66a966c5fc5bd7c3386bff513853c"
+        },
+        {
+          "status": "renamed",
+          "path": "go/internal/web/console/dist/assets/index-C_i6kcZX.js",
+          "old_blob": "5bc8aef9c3030198b5e8fa8f246d07423633b8ab",
+          "new_blob": "6a8ffa85f0960457e9c50d8f7b04b3e19586559f"
+        }
+      ]
+    }
+  ],
+  "facts": [
+    {
+      "id": "F1",
+      "claim": "The change removes disabled projects from current management and credential eligibility and updates an indirect WebSocket dependency used by the gateway realtime bridge. No SDK package, client snapshot handler or SDK execution binding changed.",
+      "status": "observed",
+      "evidence": {
+        "source": "1e16e117525a756c301873d22685fbc0bd20f37e",
+        "method": "Reviewed all 34 product paths with git diff --name-status --find-renames against c779976b4b4e95cda9d10a7a19649de6c6ec1bfd. The pinned review CLI lists 27 changed paths, stopping at the renamed console asset. The complete Git diff confirmed the remaining UI paths and absence of SDK changes. The reviewed source digest covers the complete tracked product tree."
+      }
+    },
+    {
+      "id": "F2",
+      "claim": "Gateway snapshot fixtures passed for default denial, key and project scope, unsupported credential kinds and a usable direct connection. The surviving project retained access to its shared fixture provider after a different disabled project was removed and the gateway restarted.",
+      "status": "observed",
+      "evidence": {
+        "source": "go/internal/api/client_snapshot_test.go, go/internal/iam/project_removal_test.go",
+        "method": "Gateway snapshot and IAM tests ran in the complete Go suite on the reviewed commit. The shared-provider restart check used the initial project-removal candidate. The dependency follow-up touched only the gateway module manifest and checksums."
+      }
+    },
+    {
+      "id": "F3",
+      "claim": "With the cross-client fixture explicitly enabled, the actual gateway handler served a scoped snapshot. The Node, Python and Go clients used the cached direct route for JSON and converted streaming responses after the fixture gateway became unavailable.",
+      "status": "observed",
+      "evidence": {
+        "source": "go/internal/api/client_snapshot_test.go, sdk/README.md",
+        "method": "LLMGW_SDK_E2E=1 go test ./internal/api -run '^TestClientSnapshotHTTPProvidesUsableDirectConnection$' -count=1 -v in go/ on the reviewed commit. The gateway and provider used local fixtures."
+      }
+    },
+    {
+      "id": "F4",
+      "claim": "The standalone SDK suites passed on the reviewed source. The Node and Python suites each passed 12 tests, and the Go SDK package passed.",
+      "status": "observed",
+      "evidence": {
+        "source": "sdk/node, sdk/python, sdk/go",
+        "method": "npm test in sdk/node, python -m unittest in sdk/python, and go test -count=1 ./... in sdk/go were all rerun on the reviewed commit with local fixtures."
+      }
+    }
+  ],
+  "impact": {
+    "assertions": [
+      {
+        "id": "A1",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F3"
+        ]
+      },
+      {
+        "id": "A2",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F4"
+        ]
+      },
+      {
+        "id": "A3",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F4"
+        ]
+      },
+      {
+        "id": "A4",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F3",
+          "F4"
+        ]
+      },
+      {
+        "id": "A5",
+        "impact": "unchanged",
+        "supported_by": [
+          "F1",
+          "F2",
+          "F3",
+          "F4"
+        ]
+      }
+    ],
+    "requires": [],
+    "possible_binding_changes": []
+  },
+  "questions": [],
+  "conclusion": {
+    "action": "reuse_contract",
+    "summary": "Propose reuse of SDK assertions A1 through A5. The gateway still delivered scoped snapshots, and Node, Python and Go used their cached direct routes for JSON and converted streams after the fixture gateway stopped. The gateway realtime dependency update did not change the three SDK packages or their execution bindings. Operator confirmation is pending."
+  },
+  "proposed": {
+    "by": "agent-session",
+    "at": "2026-11-23T23:37:15.295Z"
+  }
+}

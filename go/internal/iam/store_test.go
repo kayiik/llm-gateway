@@ -185,7 +185,10 @@ func TestMigrationsPreserveExistingIdentityData(t *testing.T) {
 	}
 	if _, err := db.Exec(`
 INSERT INTO principals(id,kind,display_name,status,created_at,updated_at)
-VALUES('prn_existing','service','Existing','active',0,0)`); err != nil {
+VALUES('prn_existing','service','Existing','active',0,0);
+INSERT INTO projects(id,slug,name,status,created_at,updated_at) VALUES
+('first','existing-active','Active','active',0,0),
+('second','existing-disabled','Disabled','disabled',0,0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := applyMigrations(db); err != nil {
@@ -196,6 +199,12 @@ VALUES('prn_existing','service','Existing','active',0,0)`); err != nil {
 		"SELECT display_name FROM principals WHERE id='prn_existing'",
 	).Scan(&name); err != nil || name != "Existing" {
 		t.Fatalf("existing principal name=%q err=%v", name, err)
+	}
+	for _, want := range []string{"active", "disabled"} {
+		var status string
+		if err := db.QueryRow("SELECT status FROM current_projects WHERE slug=?", "existing-"+want).Scan(&status); err != nil || status != want {
+			t.Fatalf("existing project status=%q want=%q err=%v", status, want, err)
+		}
 	}
 	var table string
 	if err := db.QueryRow(`

@@ -184,6 +184,21 @@ Existing persisted keys remain owner-editable until an administrator updates
 them, regardless of who originally issued them. Upgrading alone does not lock
 their policy; see [`UPGRADING.md`](UPGRADING.md).
 
+## Removing a project
+
+In **Access**, an administrator can disable a project, then select **Delete**
+on its row and confirm. Deletion permanently retires the project from the
+console and portal. Its gateway keys and memberships disappear from management
+lists, and its slug stays reserved. Recorded requests and usage reports keep
+their project and key names. Provider connections keep their existing owners.
+Upstream credentials already saved in an offline client snapshot follow the
+provider's own expiry and revocation rules.
+
+`DELETE /admin/api/projects/{id}` returns `200` with `{"ok":true}` on deletion
+and on a retry for the same project. The first deletion records a
+`project.delete` audit event. An active project returns `409` and an unknown
+project ID returns `404`.
+
 ## Policy and quotas
 
 Key and project policy support:

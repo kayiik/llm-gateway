@@ -153,8 +153,20 @@ export function Access({ data, mode, detail = "", onChanged, onNavigate }: { dat
     } finally { setBusy(""); }
   };
 
+  const deleteProject = async (id: string, name: string) => {
+    if (!window.confirm(`Delete project “${name}”? It will disappear from project lists and cannot be re-enabled. Its slug stays reserved. Historical usage and provider connections will be kept.`)) return;
+    setBusy(`projects-${id}`);
+    try {
+      await sendJSON("admin", `/projects/${encodeURIComponent(id)}`, "DELETE");
+      await onChanged();
+      setResult({ title: "Project deleted", success: true, detail: `${name} was removed from project lists.` });
+    } catch (cause) {
+      setResult({ title: "Project deletion", success: false, detail: cause instanceof Error ? cause.message : "The deletion could not be confirmed." });
+    } finally { setBusy(""); }
+  };
+
   const statusPill = (status: string) => <span class={`status-pill ${status === "active" ? "status-pill--ready" : "status-pill--muted"}`}>{sentenceCase(status)}</span>;
-  const projectName = (project: JSONRecord) => stringValue(project.name, stringValue(project.slug, stringValue(project.id)));
+  const projectName = (project: JSONRecord) => stringValue(project.name) || stringValue(project.slug) || stringValue(project.id);
   const principalColumns: TableColumn<JSONRecord>[] = [
     {
       id: "name", header: "Name", sortable: true,
@@ -194,6 +206,7 @@ export function Access({ data, mode, detail = "", onChanged, onNavigate }: { dat
           {onNavigate ? <button class="icon-button icon-button--compact" type="button" aria-label={`Keys of ${name}`} title="Keys" onClick={() => onNavigate("keys", `project=${encodeURIComponent(id)}`)}><KeyRound size={14} /></button> : null}
           <button class="icon-button icon-button--compact" type="button" aria-label={`Add a member to ${name}`} title={activePrincipals ? "Add member" : "Create an active principal first"} disabled={!activePrincipals} onClick={() => setMembershipProject(project)}><Users size={14} /></button>
           <button class="icon-button icon-button--compact" type="button" aria-label={`${active ? "Disable" : "Enable"} ${name}`} title={active ? "Disable" : "Enable"} disabled={busy === `projects-${id}`} onClick={() => void setStatus("projects", project)}><Power size={14} /></button>
+          {project.status === "disabled" && id ? <button class="button button--compact button--danger" type="button" aria-label={`Delete project ${name}`} disabled={Boolean(busy)} onClick={() => void deleteProject(id, name)}><Trash2 size={14} /> Delete</button> : null}
         </div>;
       },
     },

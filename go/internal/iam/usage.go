@@ -196,6 +196,7 @@ type UsageTotals struct {
 
 type UsageGroup struct {
 	ProjectID   string `json:"project_id,omitempty"`
+	ProjectName string `json:"project_name,omitempty"`
 	PrincipalID string `json:"principal_id,omitempty"`
 	KeyID       string `json:"key_id,omitempty"`
 	// KeyName names the key of a key group, a deleted one included.
@@ -204,6 +205,9 @@ type UsageGroup struct {
 	Model    string `json:"model,omitempty"`
 	UsageTotals
 }
+
+// History resolves names from retained project rows, including deleted projects.
+const usageProjectNameSQL = `COALESCE((SELECT name FROM projects WHERE id=usage_events.project_id),'')`
 
 // UsageStats returns totals plus project/principal/key/model/provider rollups.
 func UsageStats(since int64) (map[string]any, error) {
@@ -237,8 +241,12 @@ FROM usage_events `+where, args...))
 		{"project", "project_id"}, {"principal", "principal_id"}, {"key", "key_id"},
 		{"provider", "provider"}, {"model", "routed_model"},
 	} {
+		projectName := "''"
+		if group.name == "project" {
+			projectName = usageProjectNameSQL
+		}
 		rows, err := db.Query(`
-SELECT COALESCE(`+group.column+`,''),COUNT(*),COALESCE(SUM(input_tokens),0),
+SELECT COALESCE(`+group.column+`,''),`+projectName+`,COUNT(*),COALESCE(SUM(input_tokens),0),
        COALESCE(SUM(output_tokens),0),COALESCE(SUM(cost_microusd),0),
        COALESCE(SUM(credits_milli),0),
        COALESCE(SUM(CASE WHEN status_code>=400 THEN 1 ELSE 0 END),0),
@@ -254,7 +262,7 @@ FROM usage_events `+where+` GROUP BY `+group.column+` ORDER BY COUNT(*) DESC LIM
 			var value string
 			var item UsageGroup
 			if err := rows.Scan(
-				&value, &item.Requests, &item.InputTokens, &item.OutputTokens,
+				&value, &item.ProjectName, &item.Requests, &item.InputTokens, &item.OutputTokens,
 				&item.CostMicroUSD, &item.CreditsMilli, &item.Errors,
 				&item.AverageLatency,
 			); err != nil {

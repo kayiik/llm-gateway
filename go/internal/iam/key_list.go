@@ -116,7 +116,7 @@ func ListAPIKeysPage(filter KeyListFilter) ([]APIKey, int, error) {
 	}
 	from := `
 FROM api_keys k
-JOIN projects p ON p.id=k.project_id
+JOIN current_projects p ON p.id=k.project_id
 JOIN principals n ON n.id=k.principal_id
 WHERE ` + strings.Join(where, " AND ")
 	var total int

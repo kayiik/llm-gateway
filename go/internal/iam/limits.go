@@ -66,7 +66,7 @@ func KeyLimitUsage(key APIKey, now time.Time) ([]LimitUsage, error) {
 	if err != nil {
 		return nil, err
 	}
-	projectPolicy, err := projectPolicyTx(tx, key.ProjectID)
+	projectPolicy, err := readProjectPolicy(tx, key.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func ProjectLimitUsage(projectID string, now time.Time) ([]LimitUsage, error) {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	policy, err := projectPolicyTx(tx, projectID)
+	policy, err := readProjectPolicy(tx, projectID)
 	if err != nil {
 		return nil, err
 	}

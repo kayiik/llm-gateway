@@ -55,7 +55,8 @@ func HasAPIKeys() (bool, error) {
 	}
 	var count int
 	if err := db.QueryRow(
-		"SELECT COUNT(*) FROM api_keys WHERE status != 'revoked' AND deleted_at IS NULL",
+		`SELECT COUNT(*) FROM api_keys WHERE status!='revoked' AND deleted_at IS NULL
+ AND project_id IN (SELECT id FROM current_projects)`,
 	).Scan(&count); err != nil {
 		return false, err
 	}
@@ -77,10 +78,15 @@ func IssueKey(in KeyCreate) (IssuedKey, error) {
 	if err != nil {
 		return IssuedKey{}, err
 	}
+	tx, err := db.Begin()
+	if err != nil {
+		return IssuedKey{}, err
+	}
+	defer tx.Rollback()
 	var projectStatus, projectSlug, principalStatus, principalName, principalKind, role string
-	err = db.QueryRow(`
+	err = tx.QueryRow(`
 SELECT p.status, p.slug, n.status, n.display_name, n.kind, m.role
-FROM projects p
+FROM current_projects p
 JOIN project_memberships m ON m.project_id=p.id
 JOIN principals n ON n.id=m.principal_id
 WHERE p.id=? AND n.id=?`, in.ProjectID, in.PrincipalID).Scan(
@@ -121,7 +127,7 @@ WHERE p.id=? AND n.id=?`, in.ProjectID, in.PrincipalID).Scan(
 	models, _ := json.Marshal(in.Policy.AllowedModels)
 	providers, _ := json.Marshal(in.Policy.AllowedProviders)
 	now := time.Now().Unix()
-	_, err = db.Exec(`
+	_, err = tx.Exec(`
 INSERT INTO api_keys(
     id,prefix,secret_hash,project_id,principal_id,name,status,created_at,expires_at,
     allowed_models_json,allowed_providers_json,rpm,daily_requests,monthly_requests,
@@ -138,6 +144,9 @@ INSERT INTO api_keys(
 	)
 	if err != nil {
 		return IssuedKey{}, fmt.Errorf("issue API key: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return IssuedKey{}, err
 	}
 	key := APIKey{
 		ID: id, Prefix: displayPrefix(token), ProjectID: in.ProjectID,
@@ -242,7 +251,7 @@ SELECT k.id,k.prefix,k.project_id,p.slug,k.principal_id,n.display_name,n.kind,
        monthly_cost_microusd,daily_credits_milli,monthly_credits_milli,
        CASE WHEN k.secret_ciphertext IS NOT NULL AND k.secret_nonce IS NOT NULL THEN 1 ELSE 0 END,k.scope_json
 FROM api_keys k
-JOIN projects p ON p.id=k.project_id
+JOIN current_projects p ON p.id=k.project_id
 JOIN principals n ON n.id=k.principal_id
 WHERE k.deleted_at IS NULL`
 	args := []any{}
@@ -281,7 +290,7 @@ SELECT k.id,k.prefix,k.project_id,p.slug,k.principal_id,n.display_name,n.kind,
        k.daily_credits_milli,k.monthly_credits_milli,
        CASE WHEN k.secret_ciphertext IS NOT NULL AND k.secret_nonce IS NOT NULL THEN 1 ELSE 0 END,k.scope_json
 FROM api_keys k
-JOIN projects p ON p.id=k.project_id
+JOIN current_projects p ON p.id=k.project_id
 JOIN principals n ON n.id=k.principal_id
 WHERE k.principal_id=? AND k.deleted_at IS NULL ORDER BY k.created_at DESC,k.id`, principalID)
 	if err != nil {
@@ -316,7 +325,7 @@ SELECT k.id,k.prefix,k.project_id,p.slug,k.principal_id,n.display_name,n.kind,
        monthly_cost_microusd,daily_credits_milli,monthly_credits_milli,
        CASE WHEN k.secret_ciphertext IS NOT NULL AND k.secret_nonce IS NOT NULL THEN 1 ELSE 0 END,k.scope_json
 FROM api_keys k
-JOIN projects p ON p.id=k.project_id
+JOIN current_projects p ON p.id=k.project_id
 JOIN principals n ON n.id=k.principal_id
 WHERE k.id=? AND k.deleted_at IS NULL`, id)
 	k, err := scanAPIKey(row)
@@ -412,6 +421,7 @@ UPDATE api_keys SET status=?,expires_at=?,allowed_models_json=?,allowed_provider
  monthly_total_tokens=?,daily_cost_microusd=?,monthly_cost_microusd=?,
  daily_credits_milli=?,monthly_credits_milli=?,scope_json=?
  WHERE id=? AND deleted_at IS NULL AND (status != 'revoked' OR ? = 'revoked')
+ AND project_id IN (SELECT id FROM current_projects)
  AND (COALESCE(json_extract(scope_json, '$.admin_managed'), 0)=0 OR ?=1)`,
 		key.Status, nullInt(key.ExpiresAt), string(models), string(providers),
 		key.Policy.RPM, key.Policy.DailyRequests, key.Policy.MonthlyRequests,
@@ -462,6 +472,7 @@ func DeleteAPIKey(id, ownerPrincipalID string) (APIKey, error) {
 	result, err := db.Exec(`
 UPDATE api_keys SET deleted_at=?,secret_ciphertext=NULL,secret_nonce=NULL
 WHERE id=? AND deleted_at IS NULL
+  AND project_id IN (SELECT id FROM current_projects)
   AND (status='revoked' OR (expires_at IS NOT NULL AND expires_at>0 AND expires_at<=?))`,
 		now, key.ID, now)
 	if err != nil {
@@ -518,7 +529,7 @@ func RevealAPIKey(id string) (string, bool, error) {
 	var storedHash, ciphertext, nonce []byte
 	err = db.QueryRow(`
 SELECT project_id,principal_id,secret_hash,secret_ciphertext,secret_nonce
-FROM api_keys WHERE id=? AND deleted_at IS NULL`, strings.TrimSpace(id)).Scan(
+FROM api_keys WHERE id=? AND deleted_at IS NULL AND project_id IN (SELECT id FROM current_projects)`, strings.TrimSpace(id)).Scan(
 		&projectID, &principalID, &storedHash, &ciphertext, &nonce,
 	)
 	if err == sql.ErrNoRows {

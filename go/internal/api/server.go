@@ -249,6 +249,7 @@ func (s *server) handler() http.Handler {
 	mux.HandleFunc("POST /admin/api/principals/{id}/rename", handleRenamePrincipal)
 	mux.HandleFunc("GET /admin/api/projects", handleListProjects)
 	mux.HandleFunc("POST /admin/api/projects", handleCreateProject)
+	mux.HandleFunc("DELETE /admin/api/projects/{id}", handleDeleteProject)
 	mux.HandleFunc("POST /admin/api/projects/status", handleProjectStatus)
 	mux.HandleFunc("GET /admin/api/projects/{id}/policy", handleGetProjectPolicy)
 	mux.HandleFunc("POST /admin/api/projects/{id}/policy", handleSetProjectPolicy)

@@ -84,13 +84,14 @@ export function Requests({ data, mode }: { data: JSONRecord; mode: ConsoleMode }
               const status = numberValue(row.status_code);
               const keyID = stringValue(row.key_id);
               const projectID = stringValue(row.project_id);
+              const projectName = stringValue(row.project_name) || projectNames.get(projectID) || projectID;
               return <tr key={String(row.id)}>
                 <td class="technical">{new Date(numberValue(row.ts) * 1000).toLocaleString()}</td>
                 <td class="technical" title={stringValue(row.request_id)}>{stringValue(row.request_id)}</td>
                 <td>{stringValue(row.endpoint)}</td>
                 <td class="technical">{modelSummary(row)}</td>
                 <td>{stringValue(row.provider, "—")}</td>
-                <td>{keyID ? stringValue(row.key_name, keyID) : projectID ? projectNames.get(projectID) ?? projectID : portal ? "Portal" : "Administrator or local"}</td>
+                <td>{keyID ? stringValue(row.key_name, keyID) : projectID ? projectName : portal ? "Portal" : "Administrator or local"}</td>
                 <td><span class={`status-pill status-pill--${statusTone(status)}`} title={stringValue(row.error_code) || undefined}>{status}{stringValue(row.error_code) ? ` ${errorCodeLabel(stringValue(row.error_code))}` : ""}</span></td>
                 <td>{numberValue(row.latency_ms).toLocaleString()} ms</td>
                 <td>{tokenSummary(row)}</td>

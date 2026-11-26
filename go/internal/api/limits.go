@@ -68,16 +68,8 @@ func writeKeyLimits(w http.ResponseWriter, key iam.APIKey) {
 // handleProjectLimits answers the limits of one project's policy, each with
 // its usage in its current window.
 func handleProjectLimits(w http.ResponseWriter, r *http.Request) {
-	if !adminAuthed(w, r) {
-		return
-	}
-	project, found, err := iam.ProjectByID(strings.TrimSpace(r.PathValue("id")))
-	if err != nil {
-		writeError(w, 500, "Identity store unavailable.")
-		return
-	}
-	if !found {
-		writeError(w, 404, "unknown project")
+	project, ok := requireAdminProject(w, r, r.PathValue("id"))
+	if !ok {
 		return
 	}
 	limits, err := iam.ProjectLimitUsage(project.ID, time.Now())

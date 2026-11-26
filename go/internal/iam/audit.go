@@ -1,6 +1,7 @@
 package iam
 
 import (
+	"database/sql"
 	"encoding/json"
 	"strings"
 	"time"
@@ -25,6 +26,12 @@ func RecordAudit(event AuditEvent) error {
 	if err != nil {
 		return err
 	}
+	return recordAudit(db, event)
+}
+
+func recordAudit(db interface {
+	Exec(string, ...any) (sql.Result, error)
+}, event AuditEvent) error {
 	if event.Timestamp == 0 {
 		event.Timestamp = time.Now().Unix()
 	}
@@ -32,7 +39,7 @@ func RecordAudit(event AuditEvent) error {
 		event.Result = "success"
 	}
 	raw, _ := json.Marshal(diagnostics.SanitizeStructuredValue(event.Detail))
-	_, err = db.Exec(`
+	_, err := db.Exec(`
 INSERT INTO audit_events(
  ts,actor_principal_id,actor_key_id,action,target_type,target_id,result,detail_json
 ) VALUES(?,?,?,?,?,?,?,?)`,
